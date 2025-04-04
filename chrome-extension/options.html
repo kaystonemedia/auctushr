@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>KaystoneHR Productivity Settings</title>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-50 p-6">
+  <div class="max-w-2xl mx-auto">
+    <header class="mb-8">
+      <h1 class="text-2xl font-bold text-gray-800">Productivity Settings</h1>
+      <p class="text-gray-600">Configure your tracking preferences and privacy settings</p>
+    </header>
+
+    <div class="space-y-6">
+      <!-- General Settings -->
+      <section class="bg-white rounded-lg shadow p-6">
+        <h2 class="text-lg font-semibold mb-4">General Settings</h2>
+        
+        <div class="space-y-4">
+          <div>
+            <label class="flex items-center">
+              <input type="checkbox" id="enableTracking" class="mr-2">
+              <span>Enable Activity Tracking</span>
+            </label>
+            <p class="text-sm text-gray-500 ml-6">Track your browser activity and productivity</p>
+          </div>
+
+          <div>
+            <label class="block mb-2">Idle Detection Threshold</label>
+            <select id="idleThreshold" class="w-full p-2 border rounded">
+              <option value="1">1 minute</option>
+              <option value="3">3 minutes</option>
+              <option value="5">5 minutes</option>
+              <option value="10">10 minutes</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block mb-2">Sync Interval</label>
+            <select id="syncInterval" class="w-full p-2 border rounded">
+              <option value="1">Every minute</option>
+              <option value="5">Every 5 minutes</option>
+              <option value="15">Every 15 minutes</option>
+              <option value="30">Every 30 minutes</option>
+            </select>
+          </div>
+        </div>
+      </section>
+
+      <!-- Privacy Settings -->
+      <section class="bg-white rounded-lg shadow p-6">
+        <h2 class="text-lg font-semibold mb-4">Privacy Settings</h2>
+        
+        <div class="space-y-4">
+          <div>
+            <label class="flex items-center">
+              <input type="checkbox" id="collectUrls" class="mr-2">
+              <span>Collect Full URLs</span>
+            </label>
+            <p class="text-sm text-gray-500 ml-6">If disabled, only domains will be collected</p>
+          </div>
+
+          <div>
+            <label class="flex items-center">
+              <input type="checkbox" id="collectTitles" class="mr-2">
+              <span>Collect Page Titles</span>
+            </label>
+            <p class="text-sm text-gray-500 ml-6">Store the titles of visited pages</p>
+          </div>
+
+          <div>
+            <label class="block mb-2">Data Retention Period</label>
+            <select id="retentionPeriod" class="w-full p-2 border rounded">
+              <option value="7">7 days</option>
+              <option value="30">30 days</option>
+              <option value="90">90 days</option>
+              <option value="180">180 days</option>
+            </select>
+          </div>
+        </div>
+      </section>
+
+      <!-- Productive Domains -->
+      <section class="bg-white rounded-lg shadow p-6">
+        <h2 class="text-lg font-semibold mb-4">Productive Domains</h2>
+        
+        <div class="space-y-4">
+          <div>
+            <label class="block mb-2">Add Productive Domain</label>
+            <div class="flex gap-2">
+              <input type="text" id="newDomain" placeholder="example.com" 
+                     class="flex-1 p-2 border rounded">
+              <button id="addDomain" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+                Add
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <h3 class="text-sm font-medium mb-2">Current Productive Domains</h3>
+            <div id="domainList" class="space-y-2">
+              <!-- Domains will be inserted here -->
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Actions -->
+      <div class="flex justify-between items-center">
+        <button id="resetBtn" class="text-red-600 hover:text-red-700">
+          Reset All Settings
+        </button>
+        <button id="saveBtn" class="px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+          Save Changes
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script src="options.js"></script>
+</body>
+</html> 

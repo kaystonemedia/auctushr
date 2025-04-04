@@ -1,0 +1,12 @@
+export type ViewType =
+  | 'dashboard'
+  | 'profile'
+  | 'employees'
+  | 'attendance'
+  | 'attendance-reports'
+  | 'leave-management'
+  | 'payroll'
+  | 'productivity'
+  | 'documents'
+  | 'settings'
+  | 'team' 

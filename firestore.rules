@@ -1,0 +1,85 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function isManager() {
+      return isAuthenticated() && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'manager';
+    }
+
+    function isEmployee() {
+      return isAuthenticated() && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'employee';
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isManagerOf(userId) {
+      return isManager() && 
+        get(/databases/$(database)/documents/users/$(userId)).data.managerId == request.auth.uid;
+    }
+
+    // Users collection
+    match /users/{userId} {
+      allow read: if isAuthenticated() && (isOwner(userId) || isAdmin() || isManagerOf(userId));
+      allow create: if request.auth != null && request.auth.uid == userId;
+      allow update: if isAdmin() || isOwner(userId);
+      allow delete: if isAdmin();
+    }
+
+    // Attendance collection
+    match /attendance/{attendanceId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() || 
+        isOwner(resource.data.userId) || 
+        isManagerOf(resource.data.userId)
+      );
+      allow create: if isAuthenticated() && isOwner(request.resource.data.userId);
+      allow update: if isAuthenticated() && (
+        isAdmin() || 
+        isOwner(resource.data.userId) || 
+        isManagerOf(resource.data.userId)
+      );
+      allow delete: if isAdmin();
+    }
+
+    // Activity logs collection
+    match /activity_logs/{logId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() || 
+        isOwner(resource.data.userId) || 
+        isManagerOf(resource.data.userId)
+      );
+      allow create: if isAuthenticated() && isOwner(request.resource.data.userId);
+      allow update, delete: if isAdmin();
+    }
+
+    // Leave requests collection
+    match /leave_requests/{requestId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() || 
+        isOwner(resource.data.userId) || 
+        isManagerOf(resource.data.userId)
+      );
+      allow create: if isAuthenticated() && isOwner(request.resource.data.userId);
+      allow update: if isAuthenticated() && (
+        isAdmin() || 
+        isOwner(resource.data.userId) || 
+        isManagerOf(resource.data.userId)
+      );
+      allow delete: if isAdmin();
+    }
+  }
+} 

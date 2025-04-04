@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>KaystoneHR Productivity Tracker</title>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  <style>
+    body {
+      width: 400px;
+      height: 500px;
+      padding: 16px;
+    }
+  </style>
+</head>
+<body class="bg-gray-50">
+  <div class="flex flex-col h-full">
+    <header class="mb-4">
+      <h1 class="text-xl font-bold text-gray-800">KaystoneHR Productivity</h1>
+      <p class="text-sm text-gray-600" id="status">Tracking activity...</p>
+    </header>
+
+    <div class="flex items-center justify-between mb-6">
+      <div class="flex items-center">
+        <span class="mr-2">Tracking</span>
+        <label class="switch">
+          <input type="checkbox" id="trackingToggle" checked>
+          <span class="slider round"></span>
+        </label>
+      </div>
+      <button id="settingsBtn" class="text-sm text-blue-600">Settings</button>
+    </div>
+
+    <div class="bg-white rounded-lg shadow p-4 mb-4">
+      <h2 class="text-lg font-semibold mb-2">Current Activity</h2>
+      <div class="space-y-2">
+        <p class="text-sm">
+          <span class="text-gray-600">Site:</span>
+          <span id="currentSite" class="ml-2"></span>
+        </p>
+        <p class="text-sm">
+          <span class="text-gray-600">Duration:</span>
+          <span id="currentDuration" class="ml-2"></span>
+        </p>
+        <p class="text-sm">
+          <span class="text-gray-600">Productive Time:</span>
+          <span id="productiveTime" class="ml-2"></span>
+        </p>
+      </div>
+    </div>
+
+    <div class="bg-white rounded-lg shadow p-4 mb-4">
+      <h2 class="text-lg font-semibold mb-2">Today's Summary</h2>
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <p class="text-sm text-gray-600">Total Active</p>
+          <p id="totalActive" class="text-lg font-medium">0h 0m</p>
+        </div>
+        <div>
+          <p class="text-sm text-gray-600">Productive</p>
+          <p id="totalProductive" class="text-lg font-medium">0h 0m</p>
+        </div>
+        <div>
+          <p class="text-sm text-gray-600">Idle Time</p>
+          <p id="totalIdle" class="text-lg font-medium">0h 0m</p>
+        </div>
+        <div>
+          <p class="text-sm text-gray-600">Sites Visited</p>
+          <p id="sitesVisited" class="text-lg font-medium">0</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="mt-auto text-center">
+      <p class="text-xs text-gray-500">Last synced: <span id="lastSync">Never</span></p>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html> 
