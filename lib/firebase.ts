@@ -36,19 +36,24 @@ const firebaseConfig = {
   storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || '',
   messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || '',
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || '',
+  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID || '',
 }
 
 // Validate Firebase configuration
-Object.entries(firebaseConfig).forEach(([key, value]) => {
-  if (!value) {
-    console.warn(`Missing Firebase configuration for ${key}`)
-  }
-})
+const missingConfigs = Object.entries(firebaseConfig)
+  .filter(([_, value]) => !value)
+  .map(([key]) => key)
+
+if (missingConfigs.length > 0) {
+  console.error('Missing Firebase configuration for:', missingConfigs.join(', '))
+  throw new Error('Missing required Firebase configuration')
+}
 
 // Initialize Firebase
 let app: FirebaseApp
 try {
   app = initializeApp(firebaseConfig)
+  console.log('Firebase initialized successfully')
 } catch (error) {
   console.error('Error initializing Firebase:', error)
   throw error

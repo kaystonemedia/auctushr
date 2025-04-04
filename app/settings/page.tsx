@@ -51,6 +51,11 @@ function flattenObject(obj: SettingsObject, prefix = ''): Record<string, Setting
   }, {});
 }
 
+interface SettingsData {
+  attendance?: Partial<AttendanceSettings>;
+  system?: Partial<SystemSettings>;
+}
+
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState("attendance")
   const [attendanceSettings, setAttendanceSettings] = useState<AttendanceSettings>(DEFAULT_ATTENDANCE_SETTINGS)
@@ -63,9 +68,19 @@ export default function SettingsPage() {
       try {
         const settingsDoc = await getDoc(doc(db, "settings", "company"))
         if (settingsDoc.exists()) {
-          const data = settingsDoc.data()
-          setAttendanceSettings(data.attendance || DEFAULT_ATTENDANCE_SETTINGS)
-          setSystemSettings(data.system || DEFAULT_SYSTEM_SETTINGS)
+          const data = settingsDoc.data() as SettingsData
+          setAttendanceSettings({
+            ...DEFAULT_ATTENDANCE_SETTINGS,
+            ...data.attendance,
+            workingHours: {
+              ...DEFAULT_ATTENDANCE_SETTINGS.workingHours,
+              ...data.attendance?.workingHours
+            }
+          })
+          setSystemSettings({
+            ...DEFAULT_SYSTEM_SETTINGS,
+            ...data.system
+          })
         }
       } catch (error) {
         console.error("Error fetching settings:", error)
@@ -154,7 +169,7 @@ export default function SettingsPage() {
                     <Label>Start Time</Label>
                     <Input
                       type="time"
-                      value={attendanceSettings.workingHours.start}
+                      value={attendanceSettings.workingHours?.start || DEFAULT_ATTENDANCE_SETTINGS.workingHours.start}
                       onChange={(e) => handleAttendanceChange('workingHours', {
                         ...attendanceSettings.workingHours,
                         start: e.target.value
@@ -165,7 +180,7 @@ export default function SettingsPage() {
                     <Label>End Time</Label>
                     <Input
                       type="time"
-                      value={attendanceSettings.workingHours.end}
+                      value={attendanceSettings.workingHours?.end || DEFAULT_ATTENDANCE_SETTINGS.workingHours.end}
                       onChange={(e) => handleAttendanceChange('workingHours', {
                         ...attendanceSettings.workingHours,
                         end: e.target.value
@@ -258,9 +273,9 @@ export default function SettingsPage() {
           <div className="grid gap-6">
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg">Company Settings</CardTitle>
+                <CardTitle className="text-lg">Company Information</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-6">
+              <CardContent className="space-y-4">
                 <div className="space-y-2">
                   <Label>Company Name</Label>
                   <Input
@@ -268,67 +283,65 @@ export default function SettingsPage() {
                     onChange={(e) => handleSystemChange('companyName', e.target.value)}
                   />
                 </div>
-
-                <div className="space-y-2">
-                  <Label>Timezone</Label>
-                  <Select
-                    value={systemSettings.timezone}
-                    onValueChange={(value) => handleSystemChange('timezone', value)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select timezone" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="UTC">UTC</SelectItem>
-                      <SelectItem value="America/New_York">Eastern Time</SelectItem>
-                      <SelectItem value="America/Chicago">Central Time</SelectItem>
-                      <SelectItem value="America/Denver">Mountain Time</SelectItem>
-                      <SelectItem value="America/Los_Angeles">Pacific Time</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Date Format</Label>
-                  <Select
-                    value={systemSettings.dateFormat}
-                    onValueChange={(value) => handleSystemChange('dateFormat', value)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select date format" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="MM/DD/YYYY">MM/DD/YYYY</SelectItem>
-                      <SelectItem value="DD/MM/YYYY">DD/MM/YYYY</SelectItem>
-                      <SelectItem value="YYYY-MM-DD">YYYY-MM-DD</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Language</Label>
-                  <Select
-                    value={systemSettings.language}
-                    onValueChange={(value) => handleSystemChange('language', value)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select language" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="en">English</SelectItem>
-                      <SelectItem value="es">Spanish</SelectItem>
-                      <SelectItem value="fr">French</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
               </CardContent>
             </Card>
 
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg">Notification Settings</CardTitle>
+                <CardTitle className="text-lg">Preferences</CardTitle>
               </CardHeader>
               <CardContent className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <Label>Timezone</Label>
+                    <Select
+                      value={systemSettings.timezone}
+                      onValueChange={(value) => handleSystemChange('timezone', value)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select timezone" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="UTC">UTC</SelectItem>
+                        <SelectItem value="EST">Eastern Time</SelectItem>
+                        <SelectItem value="PST">Pacific Time</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Date Format</Label>
+                    <Select
+                      value={systemSettings.dateFormat}
+                      onValueChange={(value) => handleSystemChange('dateFormat', value)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select date format" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="MM/DD/YYYY">MM/DD/YYYY</SelectItem>
+                        <SelectItem value="DD/MM/YYYY">DD/MM/YYYY</SelectItem>
+                        <SelectItem value="YYYY-MM-DD">YYYY-MM-DD</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Language</Label>
+                    <Select
+                      value={systemSettings.language}
+                      onValueChange={(value) => handleSystemChange('language', value)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select language" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="en">English</SelectItem>
+                        <SelectItem value="es">Spanish</SelectItem>
+                        <SelectItem value="fr">French</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
                 <div className="space-y-4">
                   <div className="flex items-center space-x-2">
                     <Switch
@@ -337,9 +350,6 @@ export default function SettingsPage() {
                     />
                     <Label>Email Notifications</Label>
                   </div>
-                </div>
-
-                <div className="space-y-4">
                   <div className="flex items-center space-x-2">
                     <Switch
                       checked={systemSettings.smsNotifications}

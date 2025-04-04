@@ -27,9 +27,10 @@ export function middleware(request: NextRequest) {
 
   // Check for session cookie
   const session = request.cookies.get('session')
+  const authToken = request.cookies.get('auth-token')
 
   // If user is not authenticated and trying to access protected routes
-  if (!session) {
+  if (!session && !authToken) {
     // If trying to access root path, allow it (the page will handle redirection)
     if (pathname === "/") {
       return NextResponse.next()
