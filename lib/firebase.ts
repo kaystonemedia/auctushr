@@ -219,6 +219,18 @@ export async function checkUserExists(emailOrUid: string) {
       const userDoc = usersSnapshot.docs[0] || employeesSnapshot.docs[0]
       const userData = userDoc.data()
       
+      // If user has already set up their password, return that info
+      if (userData.hasPassword) {
+        return {
+          id: userDoc.id,
+          hasPassword: true,
+          firstLogin: false,
+          role: userData.role,
+          uid: userData.uid
+        }
+      }
+      
+      // Otherwise, return the current state
       return {
         id: userDoc.id,
         hasPassword: userData.hasPassword || false,

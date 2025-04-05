@@ -33,11 +33,14 @@ export default function SignInForm() {
 
       console.log('User exists:', userExists)
 
-      if (!userExists.hasPassword) {
-        setStep('setup')
-      } else {
+      // If user has already set up their password, go directly to password step
+      if (userExists.hasPassword) {
         setStep('password')
+        return
       }
+
+      // If user hasn't set up their password yet, go to setup step
+      setStep('setup')
     } catch (error) {
       console.error('Error checking user:', error)
       setError('An error occurred. Please try again.')
