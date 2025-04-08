@@ -46,6 +46,12 @@ export function EmployeeTable({ employees, onEdit, onDelete }: EmployeeTableProp
       const aValue = a[sortField]
       const bValue = b[sortField]
 
+      // Handle null/undefined values
+      if (!aValue && !bValue) return 0
+      if (!aValue) return 1
+      if (!bValue) return -1
+
+      // Compare values
       if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1
       if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1
       return 0
