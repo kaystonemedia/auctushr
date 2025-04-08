@@ -9,10 +9,25 @@ import { DepartmentChart } from '@/components/ui/department-chart'
 import { QuickActionCard } from '@/components/ui/quick-action-card'
 import { Users, Building2, BarChart3, Settings, BarChart, Clock, FileText } from 'lucide-react'
 
+// Define department colors for consistency
+const DEPARTMENT_COLORS = {
+  'Engineering': 'bg-blue-500',
+  'Marketing': 'bg-green-500',
+  'Sales': 'bg-indigo-500',
+  'HR': 'bg-purple-500',
+  'Finance': 'bg-orange-500',
+  'Operations': 'bg-teal-500',
+  'IT': 'bg-cyan-500',
+  'Design': 'bg-pink-500',
+  'Customer Support': 'bg-yellow-500',
+  'Research & Development': 'bg-red-500'
+} as const
+
 interface Department {
   id: string
   name: string
   employeeCount: number
+  color: string
 }
 
 export default function AdminDashboard() {
@@ -24,12 +39,11 @@ export default function AdminDashboard() {
     activeProjects: 0,
     pendingApprovals: 0
   })
-  const [departmentData, setDepartmentData] = useState([
-    { department: "Engineering", value: 0, color: "bg-blue-500" },
-    { department: "Marketing", value: 0, color: "bg-teal-500" },
-    { department: "Sales", value: 0, color: "bg-indigo-500" },
-    { department: "HR", value: 0, color: "bg-purple-500" },
-  ])
+  const [departmentData, setDepartmentData] = useState<Array<{
+    department: string
+    value: number
+    color: string
+  }>>([])
 
   useEffect(() => {
     if (user) {
@@ -41,14 +55,30 @@ export default function AdminDashboard() {
     try {
       setLoading(true)
       
-      // Fetch total employees
+      // Fetch all employees first
       const employeesSnapshot = await getDocs(collection(db, 'employees'))
       const totalEmployees = employeesSnapshot.size
+      
+      // Create a map of employees by department
+      const employeesByDepartment = new Map<string, number>()
+      employeesSnapshot.docs.forEach(doc => {
+        const data = doc.data()
+        const dept = data.department
+        employeesByDepartment.set(dept, (employeesByDepartment.get(dept) || 0) + 1)
+      })
 
-      // Fetch departments
-      const departmentsSnapshot = await getDocs(collection(db, 'departments'))
-      const departments = departmentsSnapshot.size
+      // Convert department data to the required format
+      const departmentStats = Array.from(employeesByDepartment.entries()).map(([dept, count]) => ({
+        department: dept,
+        value: count,
+        color: DEPARTMENT_COLORS[dept as keyof typeof DEPARTMENT_COLORS] || 'bg-gray-500'
+      }))
 
+      // Sort departments by employee count
+      departmentStats.sort((a, b) => b.value - a.value)
+
+      setDepartmentData(departmentStats)
+      
       // Fetch active projects
       const projectsSnapshot = await getDocs(
         query(collection(db, 'projects'), where('status', '==', 'active'))
@@ -63,27 +93,10 @@ export default function AdminDashboard() {
 
       setStats({
         totalEmployees,
-        departments,
+        departments: employeesByDepartment.size,
         activeProjects,
         pendingApprovals
       })
-
-      // Update department data with real values
-      const departmentStats = await Promise.all(
-        departmentsSnapshot.docs.map(async (doc) => {
-          const deptData = doc.data()
-          const employeesInDept = await getDocs(
-            query(collection(db, 'employees'), where('departmentId', '==', doc.id))
-          )
-          return {
-            department: deptData.name,
-            value: employeesInDept.size,
-            color: "bg-blue-500" // You can assign different colors based on department
-          }
-        })
-      )
-
-      setDepartmentData(departmentStats)
 
     } catch (error) {
       console.error('Error fetching admin data:', error)

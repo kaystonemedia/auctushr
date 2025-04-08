@@ -1,14 +1,13 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Plus, Search, Filter } from "lucide-react"
+import { Plus, Search } from "lucide-react"
 import { EmployeeTable } from "@/components/employee-table"
 import { EmployeeForm } from "@/components/employee-form"
 import { Employee, EmployeeFormData } from "@/types/employee"
 import { db } from "@/lib/firebase"
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, orderBy } from "firebase/firestore"
+import { collection, getDocs, updateDoc, deleteDoc, doc, query, orderBy, Timestamp } from "firebase/firestore"
 import { toast } from "react-hot-toast"
-import { auth } from "@/lib/firebase"
 import { createEmployee } from "@/lib/firebase"
 
 export default function EmployeesPage() {
@@ -45,31 +44,30 @@ export default function EmployeesPage() {
       console.log('Adding employee with data:', data)
       
       // Create employee using the createEmployee function
-      const user = await createEmployee({
-        ...data,
-        role: data.role || 'employee'
-      })
+      const user = await createEmployee(data)
+      console.log('Created user:', user)
+
+      if (!user) {
+        throw new Error('Failed to create employee')
+      }
 
       // Update local state
       const newEmployee = {
         id: user.uid,
         uid: user.uid,
         ...data,
+        hireDate: data.hireDate instanceof Date ? data.hireDate : new Date(data.hireDate),
+        salary: Number(data.salary),
+        status: data.status || 'active',
         hasPassword: false,
         createdAt: new Date(),
         updatedAt: new Date()
       } as Employee
       
       setEmployees(prev => [...prev, newEmployee])
-      
-      // Show success message
       toast.success("Employee added successfully")
-      
-      // Log success
-      console.log('Employee added successfully:', newEmployee)
     } catch (error) {
       console.error("Error adding employee:", error)
-      // Show more specific error message
       if (error instanceof Error) {
         toast.error(`Failed to add employee: ${error.message}`)
       } else {
@@ -84,19 +82,39 @@ export default function EmployeesPage() {
 
     try {
       const employeeRef = doc(db, "employees", selectedEmployee.id)
-      await updateDoc(employeeRef, {
+      
+      // Convert dates and prepare update data
+      const updateData = {
         ...data,
-        updatedAt: new Date()
-      })
+        hireDate: Timestamp.fromDate(
+          data.hireDate instanceof Date ? data.hireDate : new Date(data.hireDate)
+        ),
+        salary: Number(data.salary),
+        status: data.status || 'active',
+        updatedAt: Timestamp.now()
+      }
+      
+      console.log('Updating employee with data:', updateData)
+      
+      await updateDoc(employeeRef, updateData)
+      
+      // Update local state with the new data
       setEmployees(prev => prev.map(emp => 
         emp.id === selectedEmployee.id 
-          ? { ...emp, ...data }
+          ? { 
+              ...emp, 
+              ...updateData,
+              hireDate: updateData.hireDate.toDate(),
+              updatedAt: updateData.updatedAt.toDate()
+            }
           : emp
       ))
+      
       toast.success("Employee updated successfully")
     } catch (error) {
       console.error("Error updating employee:", error)
       toast.error("Failed to update employee")
+      throw error
     }
   }
 
@@ -113,15 +131,26 @@ export default function EmployeesPage() {
 
   const handleFormSubmit = async (data: EmployeeFormData) => {
     try {
+      console.log('Form submitted with data:', data)
+      
       if (selectedEmployee) {
         await handleEditEmployee(data)
       } else {
         await handleAddEmployee(data)
       }
+      
       setIsFormOpen(false)
       setSelectedEmployee(null)
+      
+      // Refresh the employees list
+      await fetchEmployees()
     } catch (error) {
       console.error("Error submitting form:", error)
+      if (error instanceof Error) {
+        toast.error(error.message)
+      } else {
+        toast.error("Failed to save employee")
+      }
     }
   }
 

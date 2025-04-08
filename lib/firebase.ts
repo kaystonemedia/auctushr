@@ -374,6 +374,11 @@ export async function createEmployee(employeeData: EmployeeFormData) {
 
   while (retryCount < maxRetries) {
     try {
+      // Validate required fields
+      if (!employeeData.email || !employeeData.firstName || !employeeData.lastName) {
+        throw new Error("Missing required fields: email, firstName, lastName")
+      }
+
       // Get default password from environment variables
       const defaultPassword = process.env.NEXT_PUBLIC_DEFAULT_PASSWORD
       if (!defaultPassword) {
@@ -391,12 +396,7 @@ export async function createEmployee(employeeData: EmployeeFormData) {
         auth,
         employeeData.email,
         defaultPassword
-      ).catch((error) => {
-        if (error.code === 'auth/network-request-failed') {
-          throw new Error('Network error. Please check your internet connection and try again.')
-        }
-        throw error
-      })
+      )
 
       const user = userCredential.user
 
@@ -423,32 +423,30 @@ export async function createEmployee(employeeData: EmployeeFormData) {
         metadata: {}
       }
 
-      // Create the user document in Firestore with the Auth user's UID as the document ID
+      // Create the user document in Firestore
       try {
         if (employeeData.role === "admin") {
           await setDoc(doc(db, "users", user.uid), {
             ...userData,
             isAdmin: true
           })
-          console.log("Admin document created in users collection")
         } else {
           const employeeDoc = {
             ...userData,
-            hireDate: Timestamp.fromDate(new Date()),
-            salary: employeeData.salary || 0,
+            hireDate: employeeData.hireDate ? Timestamp.fromDate(
+              employeeData.hireDate instanceof Date ? employeeData.hireDate : new Date(employeeData.hireDate)
+            ) : Timestamp.now(),
+            salary: Number(employeeData.salary) || 0,
             isManager: employeeData.role === "manager",
             managerId: employeeData.managerId || null,
-            managedEmployees: [] // Always initialize as an empty array instead of undefined
+            managedEmployees: []
           }
 
           await setDoc(doc(db, "employees", user.uid), employeeDoc)
-          console.log(`${employeeData.role} document created in employees collection`)
-
           await setDoc(doc(db, "users", user.uid), {
             ...userData,
             isAdmin: false
           })
-          console.log("User reference created in users collection")
         }
 
         // Verify the document was created
@@ -460,7 +458,6 @@ export async function createEmployee(employeeData: EmployeeFormData) {
           throw new Error(`Failed to create ${collectionName} document`)
         }
 
-        console.log(`Successfully created and verified ${collectionName} document for user:`, user.uid)
         return user
       } catch (dbError) {
         console.error("Error creating user document in Firestore:", dbError)
