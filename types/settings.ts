@@ -19,4 +19,46 @@ export interface SystemSettings {
   language: string
   emailNotifications: boolean
   smsNotifications: boolean
+}
+
+export interface PayrollSettings {
+  currency: {
+    code: string
+    symbol: string
+    exchangeRate: number
+    lastUpdated: Date
+  }
+  deductions: {
+    tax: {
+      enabled: boolean
+      percentage: number
+    }
+    insurance: {
+      enabled: boolean
+      percentage: number
+    }
+    other: {
+      enabled: boolean
+      items: Array<{
+        name: string
+        percentage: number
+      }>
+    }
+  }
+  hourlyRate: {
+    enabled: boolean
+    baseRate: number
+    overtimeMultiplier: number
+  }
+  idleTime: {
+    enabled: boolean
+    threshold: number // minutes
+    deductionPercentage: number
+  }
+}
+
+export interface SettingsData {
+  attendance: AttendanceSettings
+  system: SystemSettings
+  payroll: PayrollSettings
 } 

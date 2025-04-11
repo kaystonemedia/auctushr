@@ -82,7 +82,7 @@ export interface PayrollEntry {
   bonus: number
   netSalary: number
   grossSalary: number
-  status: 'pending' | 'approved' | 'paid' | 'cancelled'
+  status: 'pending' | 'processed' | 'paid' | 'cancelled'
   paymentDate?: Date
   paymentMethod: 'bank_transfer' | 'cash' | 'check'
   bankDetails?: {
@@ -114,6 +114,11 @@ export interface PayrollReport {
       grossSalary: number
       netSalary: number
       employeeCount: number
+      status: {
+        pending: number
+        processed: number
+        total: number
+      }
     }>
     byStatus: Record<string, number>
   }

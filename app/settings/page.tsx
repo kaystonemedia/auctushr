@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { db } from "@/lib/firebase"
 import { doc, getDoc, setDoc } from "firebase/firestore"
 import { toast } from "react-hot-toast"
-import { AttendanceSettings, SystemSettings } from "@/types/settings"
+import { AttendanceSettings, SystemSettings, PayrollSettings } from "@/types/settings"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
@@ -36,6 +36,39 @@ const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
   smsNotifications: false
 }
 
+const DEFAULT_PAYROLL_SETTINGS: PayrollSettings = {
+  currency: {
+    code: "USD",
+    symbol: "$",
+    exchangeRate: 1,
+    lastUpdated: new Date()
+  },
+  deductions: {
+    tax: {
+      enabled: true,
+      percentage: 20
+    },
+    insurance: {
+      enabled: true,
+      percentage: 10
+    },
+    other: {
+      enabled: false,
+      items: []
+    }
+  },
+  hourlyRate: {
+    enabled: false,
+    baseRate: 0,
+    overtimeMultiplier: 1.5
+  },
+  idleTime: {
+    enabled: false,
+    threshold: 15,
+    deductionPercentage: 5
+  }
+}
+
 type SettingsValue = string | number | boolean | string[] | { start: string; end: string }
 type SettingsObject = Record<string, SettingsValue>
 
@@ -54,12 +87,14 @@ function flattenObject(obj: SettingsObject, prefix = ''): Record<string, Setting
 interface SettingsData {
   attendance?: Partial<AttendanceSettings>;
   system?: Partial<SystemSettings>;
+  payroll?: Partial<PayrollSettings>;
 }
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState("attendance")
   const [attendanceSettings, setAttendanceSettings] = useState<AttendanceSettings>(DEFAULT_ATTENDANCE_SETTINGS)
   const [systemSettings, setSystemSettings] = useState<SystemSettings>(DEFAULT_SYSTEM_SETTINGS)
+  const [payrollSettings, setPayrollSettings] = useState<PayrollSettings>(DEFAULT_PAYROLL_SETTINGS)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
@@ -81,6 +116,10 @@ export default function SettingsPage() {
             ...DEFAULT_SYSTEM_SETTINGS,
             ...data.system
           })
+          setPayrollSettings({
+            ...DEFAULT_PAYROLL_SETTINGS,
+            ...data.payroll
+          })
         }
       } catch (error) {
         console.error("Error fetching settings:", error)
@@ -99,10 +138,12 @@ export default function SettingsPage() {
       const settingsRef = doc(db, "settings", "company")
       const flattenedAttendance = flattenObject(attendanceSettings as unknown as SettingsObject)
       const flattenedSystem = flattenObject(systemSettings as unknown as SettingsObject)
+      const flattenedPayroll = flattenObject(payrollSettings as unknown as SettingsObject)
 
       await setDoc(settingsRef, {
         attendance: flattenedAttendance,
-        system: flattenedSystem
+        system: flattenedSystem,
+        payroll: flattenedPayroll
       }, { merge: true })
 
       toast.success("Settings saved successfully")
@@ -140,21 +181,12 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Settings</h1>
-          <p className="text-sm text-gray-500 mt-1">Manage your company settings and preferences</p>
-        </div>
-        <Button onClick={handleSave} disabled={saving}>
-          {saving ? "Saving..." : "Save Changes"}
-        </Button>
-      </div>
-
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="attendance">Attendance Settings</TabsTrigger>
-          <TabsTrigger value="system">System Settings</TabsTrigger>
+    <div className="container mx-auto py-6">
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList className="grid w-full grid-cols-3">
+          <TabsTrigger value="attendance">Attendance</TabsTrigger>
+          <TabsTrigger value="system">System</TabsTrigger>
+          <TabsTrigger value="payroll">Payroll</TabsTrigger>
         </TabsList>
 
         <TabsContent value="attendance" className="mt-6">
@@ -362,7 +394,307 @@ export default function SettingsPage() {
             </Card>
           </div>
         </TabsContent>
+
+        <TabsContent value="payroll">
+          <Card>
+            <CardHeader>
+              <CardTitle>Payroll Settings</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Currency Settings */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-medium">Currency Settings</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label>Currency Code</Label>
+                    <Input
+                      value={payrollSettings.currency.code}
+                      onChange={(e) => setPayrollSettings(prev => ({
+                        ...prev,
+                        currency: { ...prev.currency, code: e.target.value }
+                      }))}
+                    />
+                  </div>
+                  <div>
+                    <Label>Currency Symbol</Label>
+                    <Input
+                      value={payrollSettings.currency.symbol}
+                      onChange={(e) => setPayrollSettings(prev => ({
+                        ...prev,
+                        currency: { ...prev.currency, symbol: e.target.value }
+                      }))}
+                    />
+                  </div>
+                  <div>
+                    <Label>Exchange Rate</Label>
+                    <Input
+                      type="number"
+                      value={payrollSettings.currency.exchangeRate}
+                      onChange={(e) => setPayrollSettings(prev => ({
+                        ...prev,
+                        currency: { ...prev.currency, exchangeRate: Number(e.target.value) }
+                      }))}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Deductions Settings */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-medium">Deductions</h3>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label>Tax</Label>
+                      <p className="text-sm text-gray-500">Enable and set tax percentage</p>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <Switch
+                        checked={payrollSettings.deductions.tax.enabled}
+                        onCheckedChange={(checked) => setPayrollSettings(prev => ({
+                          ...prev,
+                          deductions: {
+                            ...prev.deductions,
+                            tax: { ...prev.deductions.tax, enabled: checked }
+                          }
+                        }))}
+                      />
+                      <Input
+                        type="number"
+                        value={payrollSettings.deductions.tax.percentage}
+                        onChange={(e) => setPayrollSettings(prev => ({
+                          ...prev,
+                          deductions: {
+                            ...prev.deductions,
+                            tax: { ...prev.deductions.tax, percentage: Number(e.target.value) }
+                          }
+                        }))}
+                        className="w-24"
+                        disabled={!payrollSettings.deductions.tax.enabled}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label>Insurance</Label>
+                      <p className="text-sm text-gray-500">Enable and set insurance percentage</p>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <Switch
+                        checked={payrollSettings.deductions.insurance.enabled}
+                        onCheckedChange={(checked) => setPayrollSettings(prev => ({
+                          ...prev,
+                          deductions: {
+                            ...prev.deductions,
+                            insurance: { ...prev.deductions.insurance, enabled: checked }
+                          }
+                        }))}
+                      />
+                      <Input
+                        type="number"
+                        value={payrollSettings.deductions.insurance.percentage}
+                        onChange={(e) => setPayrollSettings(prev => ({
+                          ...prev,
+                          deductions: {
+                            ...prev.deductions,
+                            insurance: { ...prev.deductions.insurance, percentage: Number(e.target.value) }
+                          }
+                        }))}
+                        className="w-24"
+                        disabled={!payrollSettings.deductions.insurance.enabled}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <Label>Other Deductions</Label>
+                        <p className="text-sm text-gray-500">Enable and add custom deductions</p>
+                      </div>
+                      <Switch
+                        checked={payrollSettings.deductions.other.enabled}
+                        onCheckedChange={(checked) => setPayrollSettings(prev => ({
+                          ...prev,
+                          deductions: {
+                            ...prev.deductions,
+                            other: { ...prev.deductions.other, enabled: checked }
+                          }
+                        }))}
+                      />
+                    </div>
+                    {payrollSettings.deductions.other.enabled && (
+                      <div className="space-y-4">
+                        {payrollSettings.deductions.other.items.map((item, index) => (
+                          <div key={index} className="flex items-center gap-4">
+                            <Input
+                              value={item.name}
+                              onChange={(e) => {
+                                const newItems = [...payrollSettings.deductions.other.items]
+                                newItems[index] = { ...item, name: e.target.value }
+                                setPayrollSettings(prev => ({
+                                  ...prev,
+                                  deductions: {
+                                    ...prev.deductions,
+                                    other: { ...prev.deductions.other, items: newItems }
+                                  }
+                                }))
+                              }}
+                              placeholder="Deduction Name"
+                            />
+                            <Input
+                              type="number"
+                              value={item.percentage}
+                              onChange={(e) => {
+                                const newItems = [...payrollSettings.deductions.other.items]
+                                newItems[index] = { ...item, percentage: Number(e.target.value) }
+                                setPayrollSettings(prev => ({
+                                  ...prev,
+                                  deductions: {
+                                    ...prev.deductions,
+                                    other: { ...prev.deductions.other, items: newItems }
+                                  }
+                                }))
+                              }}
+                              placeholder="Percentage"
+                              className="w-24"
+                            />
+                            <Button
+                              variant="outline"
+                              onClick={() => {
+                                const newItems = payrollSettings.deductions.other.items.filter((_, i) => i !== index)
+                                setPayrollSettings(prev => ({
+                                  ...prev,
+                                  deductions: {
+                                    ...prev.deductions,
+                                    other: { ...prev.deductions.other, items: newItems }
+                                  }
+                                }))
+                              }}
+                            >
+                              Remove
+                            </Button>
+                          </div>
+                        ))}
+                        <Button
+                          variant="outline"
+                          onClick={() => setPayrollSettings(prev => ({
+                            ...prev,
+                            deductions: {
+                              ...prev.deductions,
+                              other: {
+                                ...prev.deductions.other,
+                                items: [...prev.deductions.other.items, { name: '', percentage: 0 }]
+                              }
+                            }
+                          }))}
+                        >
+                          Add Deduction
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Hourly Rate Settings */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-medium">Hourly Rate Settings</h3>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label>Enable Hourly Rate</Label>
+                    <p className="text-sm text-gray-500">Calculate salary based on hours worked</p>
+                  </div>
+                  <Switch
+                    checked={payrollSettings.hourlyRate.enabled}
+                    onCheckedChange={(checked) => setPayrollSettings(prev => ({
+                      ...prev,
+                      hourlyRate: { ...prev.hourlyRate, enabled: checked }
+                    }))}
+                  />
+                </div>
+                {payrollSettings.hourlyRate.enabled && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label>Base Hourly Rate</Label>
+                      <Input
+                        type="number"
+                        value={payrollSettings.hourlyRate.baseRate}
+                        onChange={(e) => setPayrollSettings(prev => ({
+                          ...prev,
+                          hourlyRate: { ...prev.hourlyRate, baseRate: Number(e.target.value) }
+                        }))}
+                      />
+                    </div>
+                    <div>
+                      <Label>Overtime Multiplier</Label>
+                      <Input
+                        type="number"
+                        value={payrollSettings.hourlyRate.overtimeMultiplier}
+                        onChange={(e) => setPayrollSettings(prev => ({
+                          ...prev,
+                          hourlyRate: { ...prev.hourlyRate, overtimeMultiplier: Number(e.target.value) }
+                        }))}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Idle Time Settings */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-medium">Idle Time Settings</h3>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label>Enable Idle Time Tracking</Label>
+                    <p className="text-sm text-gray-500">Deduct salary for idle time</p>
+                  </div>
+                  <Switch
+                    checked={payrollSettings.idleTime.enabled}
+                    onCheckedChange={(checked) => setPayrollSettings(prev => ({
+                      ...prev,
+                      idleTime: { ...prev.idleTime, enabled: checked }
+                    }))}
+                  />
+                </div>
+                {payrollSettings.idleTime.enabled && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label>Idle Time Threshold (minutes)</Label>
+                      <Input
+                        type="number"
+                        value={payrollSettings.idleTime.threshold}
+                        onChange={(e) => setPayrollSettings(prev => ({
+                          ...prev,
+                          idleTime: { ...prev.idleTime, threshold: Number(e.target.value) }
+                        }))}
+                      />
+                    </div>
+                    <div>
+                      <Label>Deduction Percentage</Label>
+                      <Input
+                        type="number"
+                        value={payrollSettings.idleTime.deductionPercentage}
+                        onChange={(e) => setPayrollSettings(prev => ({
+                          ...prev,
+                          idleTime: { ...prev.idleTime, deductionPercentage: Number(e.target.value) }
+                        }))}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
+
+      <div className="mt-6">
+        <Button onClick={handleSave} disabled={saving}>
+          {saving ? "Saving..." : "Save Settings"}
+        </Button>
+      </div>
     </div>
   )
 } 

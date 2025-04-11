@@ -31,14 +31,20 @@ export function middleware(request: NextRequest) {
 
   // If user is not authenticated and trying to access protected routes
   if (!session && !authToken) {
-    // If trying to access root path, allow it (the page will handle redirection)
+    // If trying to access root path, redirect to sign-in
     if (pathname === "/") {
-      return NextResponse.next()
+      const signInUrl = new URL("/auth/sign-in", request.url)
+      return NextResponse.redirect(signInUrl)
     }
     // For all other protected routes, redirect to sign-in
     const signInUrl = new URL("/auth/sign-in", request.url)
     signInUrl.searchParams.set("callbackUrl", pathname)
     return NextResponse.redirect(signInUrl)
+  }
+
+  // If user is authenticated and trying to access auth pages, redirect to dashboard
+  if ((session || authToken) && pathname.startsWith("/auth/")) {
+    return NextResponse.redirect(new URL("/dashboard", request.url))
   }
 
   // Allow access to all other routes

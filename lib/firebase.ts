@@ -16,14 +16,16 @@ import {
   doc, 
   setDoc, 
   getDoc, 
-  enableIndexedDbPersistence, 
   Timestamp, 
   collection, 
   query, 
   where, 
   getDocs, 
   updateDoc,
-  serverTimestamp 
+  serverTimestamp,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentSingleTabManager
 } from "firebase/firestore"
 import { EmployeeFormData } from '@/types/employee'
 import { FirebaseApp } from 'firebase/app'
@@ -61,25 +63,16 @@ try {
 
 export { app }
 export const auth = getAuth(app)
-export const db = getFirestore(app)
 
-// Enable offline persistence for Firestore - must be called before any other Firestore operations
-if (typeof window !== 'undefined') { // Only enable persistence on the client side
-  try {
-    enableIndexedDbPersistence(db).catch((err) => {
-      if (err.code === "failed-precondition") {
-        console.warn("Multiple tabs open, persistence can only be enabled in one tab at a time.")
-      } else if (err.code === "unimplemented") {
-        console.warn("The current browser doesn't support persistence")
-      } else {
-        console.warn("Persistence setup failed:", err)
-      }
-    })
-  } catch (error) {
-    console.warn("Error enabling persistence:", error)
-  }
+// Initialize Firestore with persistent cache
+export const db = initializeFirestore(app, {
+  localCache: persistentLocalCache(
+    /*settings=*/{ tabManager: persistentSingleTabManager() }
+  )
+})
 
-  // Set persistence to LOCAL
+// Set persistence to LOCAL for auth
+if (typeof window !== 'undefined') {
   setPersistence(auth, browserLocalPersistence).catch((error) => {
     console.warn("Error setting auth persistence:", error)
   })

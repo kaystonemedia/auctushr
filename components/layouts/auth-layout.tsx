@@ -4,37 +4,31 @@ import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/auth-context'
 
-export default function AuthLayout({
-  children,
-}: {
+interface AuthLayoutProps {
   children: React.ReactNode
-}) {
+}
+
+export default function AuthLayout({ children }: AuthLayoutProps) {
   const { user, loading } = useAuth()
   const router = useRouter()
 
   useEffect(() => {
     if (!loading && user) {
-      router.push('/')
+      router.push("/dashboard")
     }
   }, [user, loading, router])
 
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
       </div>
     )
   }
 
-  if (user) {
-    return null
-  }
-
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-      <div className="max-w-md w-full space-y-8 p-8">
-        {children}
-      </div>
+    <div className="flex min-h-screen flex-col">
+      <main className="flex-1">{children}</main>
     </div>
   )
 } 

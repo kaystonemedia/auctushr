@@ -8,12 +8,34 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { PayrollForm } from './payroll-form'
 import { PayrollSummary } from './payroll-summary'
-import { PayrollEntry } from '@/types/payroll'
+import { PayrollEntry, PayrollDeduction, PayrollAllowance } from '@/types/payroll'
 import { collection, query, where, getDocs, orderBy, addDoc, updateDoc, doc } from 'firebase/firestore'
 import { db, auth } from '@/lib/firebase'
 import { Loader2, CheckCircle2, AlertCircle } from 'lucide-react'
 import { onAuthStateChanged } from 'firebase/auth'
 import { format } from 'date-fns'
+
+interface User {
+  uid: string
+  role: string
+  name: string
+  email: string
+}
+
+interface Employee {
+  id: string
+  firstName: string
+  lastName: string
+  email: string
+  department: string
+  position: string
+  salary: number
+  status: string
+  photoURL?: string
+  lastPayrollDate?: string
+  deductions?: PayrollDeduction[]
+  allowances?: PayrollAllowance[]
+}
 
 // Add this before the PayrollDashboard component
 const defaultReport = {
@@ -35,16 +57,16 @@ const defaultReport = {
 }
 
 export function PayrollDashboard() {
-  const [user, setUser] = useState<any>(null)
+  const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [payrollPeriods, setPayrollPeriods] = useState<PayrollEntry[]>([])
-  const [employees, setEmployees] = useState<any[]>([])
+  const [employees, setEmployees] = useState<Employee[]>([])
   const [showPayrollForm, setShowPayrollForm] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedPeriod, setSelectedPeriod] = useState<string>('')
   const [processingPayroll, setProcessingPayroll] = useState<string | null>(null)
-  const [selectedEmployee, setSelectedEmployee] = useState<any>(null)
+  const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null)
   const [currentReport, setCurrentReport] = useState(defaultReport)
 
   const calculateReport = (periods: PayrollEntry[]) => {
@@ -72,15 +94,36 @@ export function PayrollDashboard() {
                 department: dept,
                 count: 0,
                 grossSalary: 0,
-                netSalary: 0
+                netSalary: 0,
+                status: {
+                  pending: 0,
+                  processed: 0,
+                  total: 0
+                }
               }
             }
             acc[dept].count++
             acc[dept].grossSalary += entry.grossSalary || 0
             acc[dept].netSalary += entry.netSalary || 0
+            acc[dept].status.total++
+            if (entry.status === 'pending') {
+              acc[dept].status.pending++
+            } else if (entry.status === 'processed' || entry.status === 'paid') {
+              acc[dept].status.processed++
+            }
             return acc
-          }, {} as Record<string, { department: string; count: number; grossSalary: number; netSalary: number }>)
-        ).map(([_, value]) => value),
+          }, {} as Record<string, {
+            department: string
+            count: number
+            grossSalary: number
+            netSalary: number
+            status: {
+              pending: number
+              processed: number
+              total: number
+            }
+          }>)
+        ).map(([, value]) => value),
         byStatus: Object.entries(
           periods.reduce((acc, entry) => {
             if (!acc[entry.status]) {
@@ -111,14 +154,19 @@ export function PayrollDashboard() {
         // Get user data from Firestore
         const userDoc = await getDocs(query(collection(db, 'users'), where('uid', '==', user.uid)))
         const userData = userDoc.docs[0]?.data()
-
+        
         if (!userData?.role || userData.role !== 'admin') {
           setError('You do not have permission to access the payroll dashboard.')
           setLoading(false)
           return
         }
 
-        setUser(userData)
+        setUser({
+          uid: user.uid,
+          role: userData.role,
+          name: userData.name || '',
+          email: userData.email || ''
+        })
 
         // Fetch employees
         const employeesQuery = query(collection(db, 'users'), where('role', '==', 'employee'))
@@ -126,7 +174,7 @@ export function PayrollDashboard() {
         const employeesData = employeesSnapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data()
-        }))
+        })) as Employee[]
         setEmployees(employeesData)
 
         // Fetch payroll periods
@@ -166,7 +214,7 @@ export function PayrollDashboard() {
       }
 
       // Validate required fields
-      if (!employee.name) {
+      if (!employee.firstName || !employee.lastName) {
         throw new Error('Employee name is required')
       }
 
@@ -179,7 +227,7 @@ export function PayrollDashboard() {
       // Add payroll entry
       const payrollEntry = {
         employeeId,
-        employeeName: employee.name,
+        employeeName: `${employee.firstName} ${employee.lastName}`,
         department: employee.department || 'Unassigned',
         period: selectedPeriod,
         grossSalary,
@@ -188,7 +236,7 @@ export function PayrollDashboard() {
         netSalary,
         status: 'processed',
         processedAt: new Date().toISOString(),
-        processedBy: user.uid
+        processedBy: user?.uid || ''
       }
 
       await addDoc(collection(db, 'payrollEntries'), payrollEntry)
@@ -240,11 +288,6 @@ export function PayrollDashboard() {
     )
   }
 
-  const filteredEmployees = employees.filter(employee =>
-    employee.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    employee.email?.toLowerCase().includes(searchQuery.toLowerCase())
-  )
-
   const getDepartmentColor = (department: string) => {
     const colors: { [key: string]: { bg: string; text: string; border: string } } = {
       'Engineering': { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' },
@@ -288,7 +331,7 @@ export function PayrollDashboard() {
               <PayrollForm 
                 employee={{
                   id: selectedEmployee?.id || '',
-                  name: selectedEmployee?.name || '',
+                  name: selectedEmployee ? `${selectedEmployee.firstName} ${selectedEmployee.lastName}` : '',
                   department: selectedEmployee?.department,
                   salary: selectedEmployee?.salary
                 }}
@@ -309,6 +352,73 @@ export function PayrollDashboard() {
         </CardHeader>
         <CardContent>
           <PayrollSummary report={currentReport} />
+        </CardContent>
+      </Card>
+
+      <Card className="border-primary/20 shadow-lg">
+        <CardHeader>
+          <CardTitle className="text-primary">Departmental Overview</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {currentReport.summary.byDepartment.map((dept) => (
+              <Card key={dept.department} className="border-primary/10 hover:border-primary/30 transition-all duration-200 hover:shadow-md">
+                <CardHeader>
+                  <CardTitle className="text-lg">{dept.department}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-500">Employees</span>
+                      <span className="font-medium">{dept.count}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-500">Gross Salary</span>
+                      <span className="font-medium">
+                        {new Intl.NumberFormat('en-US', {
+                          style: 'currency',
+                          currency: 'USD'
+                        }).format(dept.grossSalary)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-500">Net Salary</span>
+                      <span className="font-medium">
+                        {new Intl.NumberFormat('en-US', {
+                          style: 'currency',
+                          currency: 'USD'
+                        }).format(dept.netSalary)}
+                      </span>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-gray-500">Status</span>
+                        <div className="flex gap-2">
+                          <span className={`px-2 py-1 rounded-full text-xs ${
+                            dept.status.pending > 0 ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'
+                          }`}>
+                            {dept.status.pending > 0 ? 'Pending' : 'Processed'}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div
+                          className="bg-primary h-2 rounded-full"
+                          style={{
+                            width: `${(dept.status.processed / dept.status.total) * 100}%`
+                          }}
+                        />
+                      </div>
+                      <div className="flex justify-between text-xs text-gray-500">
+                        <span>{dept.status.processed} processed</span>
+                        <span>{dept.status.pending} pending</span>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
         </CardContent>
       </Card>
 
@@ -335,59 +445,45 @@ export function PayrollDashboard() {
                 </tr>
               </thead>
               <tbody>
-                {filteredEmployees.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="p-4 text-center text-muted-foreground">
-                      No employees found
-                    </td>
-                  </tr>
-                ) : (
-                  filteredEmployees.map((employee) => (
-                    <tr 
-                      key={employee.id}
-                      className="border-b transition-colors hover:bg-primary/5"
-                    >
+                {employees
+                  .filter(employee => 
+                    searchQuery === '' || 
+                    `${employee.firstName} ${employee.lastName}`.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                    employee.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                    employee.department.toLowerCase().includes(searchQuery.toLowerCase())
+                  )
+                  .map((employee) => (
+                    <tr key={employee.id} className="border-b hover:bg-gray-50">
                       <td className="p-4 align-middle">
-                        <div className="flex items-center gap-2">
-                          {employee.profileImage ? (
-                            <img 
-                              src={employee.profileImage} 
-                              alt={employee.name}
-                              className="h-8 w-8 rounded-full ring-2 ring-primary/20"
-                            />
-                          ) : (
-                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary font-medium ring-2 ring-primary/20">
-                              {employee.name.charAt(0).toUpperCase()}
-                            </div>
-                          )}
-                          <span className="font-medium text-primary/90">{employee.name}</span>
+                        <div className="flex items-center gap-3">
+                          <img
+                            src={employee.photoURL || `https://ui-avatars.com/api/?name=${employee.firstName}+${employee.lastName}`}
+                            alt=""
+                            className="h-10 w-10 rounded-full"
+                          />
+                          <div>
+                            <div className="font-medium">{employee.firstName} {employee.lastName}</div>
+                            <div className="text-gray-500">{employee.position}</div>
+                          </div>
                         </div>
                       </td>
-                      <td className="p-4 align-middle text-muted-foreground">{employee.email}</td>
+                      <td className="p-4 align-middle">{employee.email}</td>
+                      <td className="p-4 align-middle">{employee.department}</td>
                       <td className="p-4 align-middle">
-                        <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 ${getDepartmentColor(employee.department).bg} ${getDepartmentColor(employee.department).text} ${getDepartmentColor(employee.department).border}`}>
-                          {employee.department || 'Unassigned'}
+                        <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                          employee.status === 'active' ? 'bg-green-100 text-green-800' :
+                          employee.status === 'inactive' ? 'bg-red-100 text-red-800' :
+                          'bg-yellow-100 text-yellow-800'
+                        }`}>
+                          {employee.status}
                         </span>
-                      </td>
-                      <td className="p-4 align-middle">
-                        {employee.lastPayrollDate ? (
-                          <span className="inline-flex items-center gap-1 text-green-600">
-                            <CheckCircle2 className="h-4 w-4" />
-                            Processed {format(new Date(employee.lastPayrollDate), 'MMM d, yyyy')}
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 text-yellow-600">
-                            <AlertCircle className="h-4 w-4" />
-                            Pending
-                          </span>
-                        )}
                       </td>
                       <td className="p-4 align-middle">
                         <Button
                           variant="outline"
                           size="sm"
                           onClick={() => {
-                            if (employee && employee.id && employee.name) {
+                            if (employee && employee.id) {
                               setSelectedEmployee(employee)
                               setShowPayrollForm(true)
                             } else {
@@ -405,8 +501,7 @@ export function PayrollDashboard() {
                         </Button>
                       </td>
                     </tr>
-                  ))
-                )}
+                  ))}
               </tbody>
             </table>
           </div>
@@ -418,13 +513,13 @@ export function PayrollDashboard() {
           <DialogHeader>
             <DialogTitle>Process Payroll</DialogTitle>
           </DialogHeader>
-          {selectedEmployee && selectedEmployee.id && selectedEmployee.name ? (
+          {selectedEmployee ? (
             <PayrollForm
               employee={{
-                id: selectedEmployee?.id || '',
-                name: selectedEmployee?.name || '',
-                department: selectedEmployee?.department,
-                salary: selectedEmployee?.salary
+                id: selectedEmployee.id,
+                name: `${selectedEmployee.firstName} ${selectedEmployee.lastName}`,
+                department: selectedEmployee.department || 'Unassigned',
+                salary: selectedEmployee.salary || 0
               }}
               onSuccess={() => {
                 setShowPayrollForm(false)
@@ -433,8 +528,14 @@ export function PayrollDashboard() {
               onCancel={() => setShowPayrollForm(false)}
             />
           ) : (
-            <div className="p-4 text-center text-red-600">
-              Invalid employee data. Please try again.
+            <div className="p-4 text-center">
+              <p className="text-gray-600">Please select an employee first</p>
+              <Button 
+                onClick={() => setShowPayrollForm(false)} 
+                className="mt-4"
+              >
+                Close
+              </Button>
             </div>
           )}
         </DialogContent>

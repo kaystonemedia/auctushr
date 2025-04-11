@@ -42,7 +42,7 @@ export function PayrollForm({ employee, onSuccess, onCancel }: PayrollFormProps)
   }
 
   const [formData, setFormData] = useState({
-    baseSalary: employee?.salary ?? 0,
+    baseSalary: employee.salary || 0,
     bonuses: {
       performance: 0,
       overtime: 0,
