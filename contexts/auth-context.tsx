@@ -7,9 +7,11 @@ import { doc, getDoc } from 'firebase/firestore'
 import type { User } from '@/types/user'
 import { useRouter } from 'next/navigation'
 import { ROLE_PERMISSIONS } from '@/types/user'
+import Cookies from 'js-cookie'
 
 interface AuthContextType {
   user: User | null
+  firebaseUser: any | null
   loading: boolean
   error: Error | null
   isOnline: boolean
@@ -19,6 +21,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
+  firebaseUser: null,
   loading: true,
   error: null,
   isOnline: true,
@@ -28,6 +31,7 @@ const AuthContext = createContext<AuthContextType>({
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
+  const [firebaseUser, setFirebaseUser] = useState<any | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
   const [isOnline, setIsOnline] = useState(true)
@@ -36,6 +40,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = async () => {
     try {
       await signOut(auth)
+      Cookies.remove('user-role')
       router.push('/auth/sign-in')
     } catch (error) {
       console.error('Error signing out:', error)
@@ -65,15 +70,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       try {
         if (firebaseUser) {
+          setFirebaseUser(firebaseUser)
           const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid))
           if (userDoc.exists()) {
             const userData = userDoc.data()
+            const userRole = userData.role || 'employee'
+            
+            Cookies.set('user-role', userRole, { 
+              expires: 7, // 7 days
+              sameSite: 'lax',
+              secure: process.env.NODE_ENV === 'production'
+            })
+
             setUser({
               id: userDoc.id,
               uid: firebaseUser.uid,
               email: firebaseUser.email || '',
               name: userData.name || '',
-              role: userData.role || 'employee',
+              role: userRole,
               department: userData.department,
               managerId: userData.managerId,
               createdAt: userData.createdAt?.toDate(),
@@ -82,6 +96,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         } else {
           setUser(null)
+          setFirebaseUser(null)
+          Cookies.remove('user-role')
         }
       } catch (err) {
         console.error('Error in auth state change:', err)
@@ -97,6 +113,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   return (
     <AuthContext.Provider value={{
       user,
+      firebaseUser,
       loading,
       error,
       isOnline,

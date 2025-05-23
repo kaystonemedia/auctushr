@@ -1,34 +1,26 @@
 import { db } from './firebase'
-import { collection, doc, updateDoc, arrayUnion, Timestamp, getDocs, addDoc } from 'firebase/firestore'
+import { collection, doc, updateDoc, arrayUnion, Timestamp, getDocs, addDoc, query, where } from 'firebase/firestore'
 import { AttendanceRecord, AttendanceSettings } from '@/types/attendance'
-
-interface OfficeLocation {
-  id: string
-  name: string
-  latitude: number
-  longitude: number
-  radius: number // in meters
-  workingHours: {
-    start: string
-    end: string
-  }
-}
+import { OfficeLocation, LocationSettings } from '@/types/settings'
+import { countries } from './countries'
 
 export class LocationService {
   private static instance: LocationService
   private watchId: number | null = null
   private currentRecord: AttendanceRecord | null = null
   private settings: AttendanceSettings
+  private locationSettings: LocationSettings
   private officeLocations: OfficeLocation[] = []
 
-  private constructor(settings: AttendanceSettings) {
+  private constructor(settings: AttendanceSettings, locationSettings: LocationSettings) {
     this.settings = settings
+    this.locationSettings = locationSettings
     this.loadOfficeLocations()
   }
 
-  public static getInstance(settings: AttendanceSettings): LocationService {
+  public static getInstance(settings: AttendanceSettings, locationSettings: LocationSettings): LocationService {
     if (!LocationService.instance) {
-      LocationService.instance = new LocationService(settings)
+      LocationService.instance = new LocationService(settings, locationSettings)
     }
     return LocationService.instance
   }
@@ -36,7 +28,8 @@ export class LocationService {
   private async loadOfficeLocations(): Promise<void> {
     try {
       const locationsRef = collection(db, 'office_locations')
-      const snapshot = await getDocs(locationsRef)
+      const q = query(locationsRef, where('isActive', '==', true))
+      const snapshot = await getDocs(q)
       this.officeLocations = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
@@ -46,11 +39,38 @@ export class LocationService {
     }
   }
 
-  public async validateLocation(latitude: number, longitude: number): Promise<{
+  public async validateLocation(latitude: number, longitude: number, countryCode?: string): Promise<{
     isValid: boolean
     location?: OfficeLocation
     distance?: number
+    countryValid?: boolean
+    message?: string
   }> {
+    // First validate country if required
+    if (this.locationSettings.requireLocationValidation && countryCode) {
+      const isCountryAllowed = this.locationSettings.allowedCountries.includes(countryCode)
+      if (!isCountryAllowed) {
+        return {
+          isValid: false,
+          countryValid: false,
+          message: `Check-in not allowed in ${countries.find(c => c.code === countryCode)?.name}. Allowed countries: ${this.locationSettings.allowedCountries.map(code => countries.find(c => c.code === code)?.name).join(', ')}`
+        }
+      }
+    }
+
+    // If remote work is allowed and we're in an allowed country, no need to check office location
+    if (this.locationSettings.allowRemoteWork && countryCode && this.locationSettings.allowedCountries.includes(countryCode)) {
+      return {
+        isValid: true,
+        countryValid: true,
+        message: 'Remote work location validated'
+      }
+    }
+
+    // Validate against office locations
+    let nearestLocation: OfficeLocation | undefined
+    let minDistance = Infinity
+
     for (const location of this.officeLocations) {
       const distance = this.calculateDistance(
         latitude,
@@ -59,20 +79,37 @@ export class LocationService {
         location.longitude
       )
 
+      if (distance < minDistance) {
+        minDistance = distance
+        nearestLocation = location
+      }
+
       if (distance <= location.radius) {
         return {
           isValid: true,
           location,
-          distance
+          distance,
+          countryValid: true,
+          message: `Location validated against ${location.name}`
         }
+      }
+    }
+
+    // If we have a nearest location but it's too far
+    if (nearestLocation) {
+      return {
+        isValid: false,
+        location: nearestLocation,
+        distance: minDistance,
+        countryValid: true,
+        message: `Location is ${Math.round(minDistance)}m from nearest office (${nearestLocation.name}). Maximum allowed distance is ${nearestLocation.radius}m.`
       }
     }
 
     return {
       isValid: false,
-      distance: Math.min(...this.officeLocations.map(loc => 
-        this.calculateDistance(latitude, longitude, loc.latitude, loc.longitude)
-      ))
+      countryValid: true,
+      message: 'No office locations found'
     }
   }
 
@@ -129,28 +166,28 @@ export class LocationService {
     // Validate location and handle any issues
     const validation = await this.validateLocation(latitude, longitude)
     if (!validation.isValid) {
-      await this.handleLocationMismatch(validation.distance || 0)
+      await this.handleLocationMismatch(validation.distance || 0, validation.location || { id: '', name: '', latitude: 0, longitude: 0, radius: 0 })
     }
   }
 
-  private async handleLocationMismatch(distance: number): Promise<void> {
+  private async handleLocationMismatch(distance: number, location: OfficeLocation): Promise<void> {
     if (!this.currentRecord) return
 
     const attendanceRef = doc(db, 'attendance', this.currentRecord.id)
     await updateDoc(attendanceRef, {
       flags: arrayUnion({
         type: 'location_mismatch',
-        description: `Location mismatch detected (${Math.round(distance)}m from nearest office)`,
+        description: `Location mismatch detected (${Math.round(distance)}m from ${location.name})`,
         severity: 'high',
         timestamp: Timestamp.now()
       })
     })
 
     // Send notification to manager
-    await this.sendLocationMismatchNotification(distance)
+    await this.sendLocationMismatchNotification(distance, location)
   }
 
-  private async sendLocationMismatchNotification(distance: number): Promise<void> {
+  private async sendLocationMismatchNotification(distance: number, location: OfficeLocation): Promise<void> {
     if (!this.currentRecord) return
 
     const notificationRef = collection(db, 'notifications')
@@ -159,7 +196,7 @@ export class LocationService {
       employeeId: this.currentRecord.employeeId,
       employeeName: this.currentRecord.employeeName,
       managerId: this.currentRecord.managerId,
-      message: `${this.currentRecord.employeeName} is ${Math.round(distance)}m from the nearest office location`,
+      message: `${this.currentRecord.employeeName} is ${Math.round(distance)}m from ${location.name}`,
       timestamp: Timestamp.now(),
       status: 'unread',
       attendanceId: this.currentRecord.id
@@ -190,5 +227,18 @@ export class LocationService {
       this.watchId = null
     }
     this.currentRecord = null
+  }
+
+  public async getCountryFromCoordinates(latitude: number, longitude: number): Promise<string | null> {
+    try {
+      const response = await fetch(
+        `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=en`
+      )
+      const data = await response.json()
+      return data.countryCode || null
+    } catch (error) {
+      console.error('Error getting country from coordinates:', error)
+      return null
+    }
   }
 } 

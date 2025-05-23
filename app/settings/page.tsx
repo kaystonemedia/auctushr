@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { db } from "@/lib/firebase"
 import { doc, getDoc, setDoc } from "firebase/firestore"
 import { toast } from "react-hot-toast"
-import { AttendanceSettings, SystemSettings, PayrollSettings } from "@/types/settings"
+import { AttendanceSettings, SystemSettings, PayrollSettings, LocationSettings } from "@/types/settings"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
@@ -12,6 +12,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { OfficeLocationsManager } from '@/components/office-locations-manager'
+import { countries } from '@/lib/countries'
 
 const DEFAULT_ATTENDANCE_SETTINGS: AttendanceSettings = {
   workingHours: {
@@ -69,6 +71,21 @@ const DEFAULT_PAYROLL_SETTINGS: PayrollSettings = {
   }
 }
 
+const DEFAULT_LOCATION_SETTINGS: LocationSettings = {
+  allowedCountries: ['GH'], // Default to Ghana
+  defaultCountry: 'GH',
+  requireLocationValidation: true,
+  allowRemoteWork: false,
+  officeLocations: [],
+  locationValidationRules: {
+    requireExactLocation: true,
+    allowApproximateLocation: false,
+    minimumAccuracy: 100, // meters
+    validateOnCheckIn: true,
+    validateOnCheckOut: true
+  }
+}
+
 type SettingsValue = string | number | boolean | string[] | { start: string; end: string }
 type SettingsObject = Record<string, SettingsValue>
 
@@ -88,6 +105,7 @@ interface SettingsData {
   attendance?: Partial<AttendanceSettings>;
   system?: Partial<SystemSettings>;
   payroll?: Partial<PayrollSettings>;
+  location?: Partial<LocationSettings>;
 }
 
 export default function SettingsPage() {
@@ -95,6 +113,7 @@ export default function SettingsPage() {
   const [attendanceSettings, setAttendanceSettings] = useState<AttendanceSettings>(DEFAULT_ATTENDANCE_SETTINGS)
   const [systemSettings, setSystemSettings] = useState<SystemSettings>(DEFAULT_SYSTEM_SETTINGS)
   const [payrollSettings, setPayrollSettings] = useState<PayrollSettings>(DEFAULT_PAYROLL_SETTINGS)
+  const [locationSettings, setLocationSettings] = useState<LocationSettings>(DEFAULT_LOCATION_SETTINGS)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
@@ -120,6 +139,10 @@ export default function SettingsPage() {
             ...DEFAULT_PAYROLL_SETTINGS,
             ...data.payroll
           })
+          setLocationSettings({
+            ...DEFAULT_LOCATION_SETTINGS,
+            ...data.location
+          })
         }
       } catch (error) {
         console.error("Error fetching settings:", error)
@@ -139,11 +162,13 @@ export default function SettingsPage() {
       const flattenedAttendance = flattenObject(attendanceSettings as unknown as SettingsObject)
       const flattenedSystem = flattenObject(systemSettings as unknown as SettingsObject)
       const flattenedPayroll = flattenObject(payrollSettings as unknown as SettingsObject)
+      const flattenedLocation = flattenObject(locationSettings as unknown as SettingsObject)
 
       await setDoc(settingsRef, {
         attendance: flattenedAttendance,
         system: flattenedSystem,
-        payroll: flattenedPayroll
+        payroll: flattenedPayroll,
+        location: flattenedLocation
       }, { merge: true })
 
       toast.success("Settings saved successfully")
@@ -172,6 +197,19 @@ export default function SettingsPage() {
     }))
   }
 
+  const handleLocationChange = (key: keyof LocationSettings, value: LocationSettings[keyof LocationSettings]) => {
+    setLocationSettings(prev => ({ ...prev, [key]: value }))
+  }
+
+  const handleAllowedCountriesChange = (countryCode: string, checked: boolean) => {
+    setLocationSettings(prev => ({
+      ...prev,
+      allowedCountries: checked
+        ? [...prev.allowedCountries, countryCode]
+        : prev.allowedCountries.filter(code => code !== countryCode)
+    }))
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[calc(100vh-4rem)]">
@@ -183,8 +221,9 @@ export default function SettingsPage() {
   return (
     <div className="container mx-auto py-6">
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="attendance">Attendance</TabsTrigger>
+          <TabsTrigger value="location">Location</TabsTrigger>
           <TabsTrigger value="system">System</TabsTrigger>
           <TabsTrigger value="payroll">Payroll</TabsTrigger>
         </TabsList>
@@ -299,6 +338,121 @@ export default function SettingsPage() {
               </CardContent>
             </Card>
           </div>
+        </TabsContent>
+
+        <TabsContent value="location">
+          <Card>
+            <CardHeader>
+              <CardTitle>Location Settings</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <Label>Default Country</Label>
+                  <Select
+                    value={locationSettings.defaultCountry}
+                    onValueChange={(value) => handleLocationChange('defaultCountry', value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select default country" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {countries.map((country) => (
+                        <SelectItem key={country.code} value={country.code}>
+                          {country.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Minimum Location Accuracy (meters)</Label>
+                  <Input
+                    type="number"
+                    value={locationSettings.locationValidationRules.minimumAccuracy}
+                    onChange={(e) => handleLocationChange('locationValidationRules', {
+                      ...locationSettings.locationValidationRules,
+                      minimumAccuracy: Number(e.target.value)
+                    })}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div className="flex items-center space-x-2">
+                  <Switch
+                    checked={locationSettings.requireLocationValidation}
+                    onCheckedChange={(checked) => handleLocationChange('requireLocationValidation', checked)}
+                  />
+                  <Label>Require Location Validation</Label>
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  <Switch
+                    checked={locationSettings.allowRemoteWork}
+                    onCheckedChange={(checked) => handleLocationChange('allowRemoteWork', checked)}
+                  />
+                  <Label>Allow Remote Work</Label>
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  <Switch
+                    checked={locationSettings.locationValidationRules.requireExactLocation}
+                    onCheckedChange={(checked) => handleLocationChange('locationValidationRules', {
+                      ...locationSettings.locationValidationRules,
+                      requireExactLocation: checked
+                    })}
+                  />
+                  <Label>Require Exact Location</Label>
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  <Switch
+                    checked={locationSettings.locationValidationRules.validateOnCheckIn}
+                    onCheckedChange={(checked) => handleLocationChange('locationValidationRules', {
+                      ...locationSettings.locationValidationRules,
+                      validateOnCheckIn: checked
+                    })}
+                  />
+                  <Label>Validate Location on Check-in</Label>
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  <Switch
+                    checked={locationSettings.locationValidationRules.validateOnCheckOut}
+                    onCheckedChange={(checked) => handleLocationChange('locationValidationRules', {
+                      ...locationSettings.locationValidationRules,
+                      validateOnCheckOut: checked
+                    })}
+                  />
+                  <Label>Validate Location on Check-out</Label>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <Label>Allowed Countries</Label>
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                  {countries.map((country) => (
+                    <label key={country.code} className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        checked={locationSettings.allowedCountries.includes(country.code)}
+                        onChange={(e) => handleAllowedCountriesChange(country.code, e.target.checked)}
+                        className="rounded border-gray-300 text-blue-500 focus:ring-blue-500"
+                      />
+                      <span className="text-sm text-gray-700">{country.name}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <OfficeLocationsManager
+                settings={locationSettings}
+                onUpdate={setLocationSettings}
+              />
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="system" className="mt-6">

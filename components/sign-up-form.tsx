@@ -7,6 +7,7 @@ import { Logo } from "./logo"
 import { signUp } from "@/lib/firebase"
 import { useRouter } from "next/navigation"
 import { useAuth } from "@/contexts/auth-context"
+import { validateSignUpPassword } from "@/lib/password-validation"
 
 export function SignUpForm() {
   const router = useRouter()
@@ -41,8 +42,9 @@ export function SignUpForm() {
       setError("Please enter a password")
       return false
     }
-    if (password.length < 6) {
-      setError("Password must be at least 6 characters long")
+    const passwordError = validateSignUpPassword(password)
+    if (passwordError) {
+      setError(passwordError)
       return false
     }
     return true

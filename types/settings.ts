@@ -57,8 +57,42 @@ export interface PayrollSettings {
   }
 }
 
+export interface OfficeLocation {
+  id: string;
+  name: string;
+  address: string;
+  city: string;
+  country: string;
+  latitude: number;
+  longitude: number;
+  radius: number; // in meters
+  workingHours: {
+    start: string;
+    end: string;
+  };
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface LocationSettings {
+  allowedCountries: string[]; // ISO country codes
+  defaultCountry: string; // ISO country code
+  requireLocationValidation: boolean;
+  allowRemoteWork: boolean;
+  officeLocations: OfficeLocation[];
+  locationValidationRules: {
+    requireExactLocation: boolean;
+    allowApproximateLocation: boolean;
+    minimumAccuracy: number; // in meters
+    validateOnCheckIn: boolean;
+    validateOnCheckOut: boolean;
+  };
+}
+
 export interface SettingsData {
   attendance: AttendanceSettings
   system: SystemSettings
   payroll: PayrollSettings
+  location: LocationSettings
 } 

@@ -7,52 +7,101 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function isFirstUser() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' &&
+             getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function getUserRole() {
+      let userDoc = get(/databases/$(database)/documents/users/$(request.auth.uid));
+      let employeeDoc = get(/databases/$(database)/documents/employees/$(request.auth.uid));
+      return userDoc != null ? userDoc.data.role : (employeeDoc != null ? employeeDoc.data.role : null);
+    }
+
     function isAdmin() {
-      return isAuthenticated() && 
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      return isAuthenticated() && getUserRole() == 'admin';
     }
 
     function isManager() {
-      return isAuthenticated() && 
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'manager';
+      return isAuthenticated() && getUserRole() == 'manager';
     }
 
     function isEmployee() {
-      return isAuthenticated() && 
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'employee';
+      return isAuthenticated() && getUserRole() == 'employee';
     }
 
     function isOwner(userId) {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
-    function isManagerOf(userId) {
-      return isManager() && 
-        get(/databases/$(database)/documents/users/$(userId)).data.managerId == request.auth.uid;
+    function isManagerOf(employeeId) {
+      return isAuthenticated() && 
+        (get(/databases/$(database)/documents/employees/$(employeeId)).data.managerId == request.auth.uid);
     }
 
-    // Users collection
+    // Users collection rules
     match /users/{userId} {
-      allow read: if isAuthenticated() && (isOwner(userId) || isAdmin() || isManagerOf(userId));
-      allow create: if request.auth != null && request.auth.uid == userId;
-      allow update: if isAdmin() || isOwner(userId);
-      allow delete: if isAdmin();
+      allow read: if isAuthenticated() && (isAdmin() || isOwner(userId));
+      allow create: if isAuthenticated() && (isAdmin() || isFirstUser());
+      allow update: if isAuthenticated() && (isAdmin() || isOwner(userId));
+      allow delete: if isAuthenticated() && isAdmin();
     }
 
-    // Attendance collection
-    match /attendance/{attendanceId} {
+    // Employees collection rules
+    match /employees/{employeeId} {
       allow read: if isAuthenticated() && (
         isAdmin() || 
-        isOwner(resource.data.userId) || 
-        isManagerOf(resource.data.userId)
+        isManager() || 
+        isOwner(employeeId) || 
+        isManagerOf(employeeId)
       );
-      allow create: if isAuthenticated() && isOwner(request.resource.data.userId);
+      allow create: if isAuthenticated() && isAdmin();
       allow update: if isAuthenticated() && (
         isAdmin() || 
-        isOwner(resource.data.userId) || 
-        isManagerOf(resource.data.userId)
+        isOwner(employeeId) || 
+        isManagerOf(employeeId)
       );
-      allow delete: if isAdmin();
+      allow delete: if isAuthenticated() && isAdmin();
+    }
+
+    // Attendance collection rules
+    match /attendance/{recordId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() || 
+        isManager() || 
+        resource.data.employeeId == request.auth.uid
+      );
+      allow create: if isAuthenticated() && (
+        isAdmin() || 
+        isManager() || 
+        request.resource.data.employeeId == request.auth.uid
+      );
+      allow update: if isAuthenticated() && (
+        isAdmin() || 
+        isManager() || 
+        resource.data.employeeId == request.auth.uid
+      );
+      allow delete: if isAuthenticated() && isAdmin();
+    }
+
+    // Leave requests collection rules
+    match /leave_requests/{requestId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() || 
+        isManager() || 
+        resource.data.employeeId == request.auth.uid
+      );
+      allow create: if isAuthenticated() && (
+        isAdmin() || 
+        isManager() || 
+        request.resource.data.employeeId == request.auth.uid
+      );
+      allow update: if isAuthenticated() && (
+        isAdmin() || 
+        isManager() || 
+        resource.data.employeeId == request.auth.uid
+      );
+      allow delete: if isAuthenticated() && isAdmin();
     }
 
     // Activity logs collection
@@ -62,24 +111,20 @@ service cloud.firestore {
         isOwner(resource.data.userId) || 
         isManagerOf(resource.data.userId)
       );
-      allow create: if isAuthenticated() && isOwner(request.resource.data.userId);
+      allow create: if isAuthenticated();
       allow update, delete: if isAdmin();
     }
 
-    // Leave requests collection
-    match /leave_requests/{requestId} {
-      allow read: if isAuthenticated() && (
-        isAdmin() || 
-        isOwner(resource.data.userId) || 
-        isManagerOf(resource.data.userId)
-      );
-      allow create: if isAuthenticated() && isOwner(request.resource.data.userId);
-      allow update: if isAuthenticated() && (
-        isAdmin() || 
-        isOwner(resource.data.userId) || 
-        isManagerOf(resource.data.userId)
-      );
-      allow delete: if isAdmin();
+    // Office locations collection rules
+    match /office_locations/{locationId} {
+      allow read: if isAuthenticated();
+      allow create, update, delete: if isAuthenticated() && isAdmin();
+    }
+
+    // Default deny all other collections
+    match /{document=**} {
+      allow read: if isAuthenticated();
+      allow write: if false;
     }
   }
 } 

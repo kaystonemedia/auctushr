@@ -354,14 +354,14 @@ export function EmployeeForm({ isOpen, onClose, onSubmit, initialData }: Employe
       <div className="fixed inset-0 bg-black/30" aria-hidden="true" />
       
       <div className="fixed inset-0 flex items-center justify-center p-4">
-        <Dialog.Panel className="mx-auto max-w-2xl w-full bg-white rounded-lg shadow-xl flex flex-col max-h-[90vh]">
-          <div className="flex items-center justify-between p-6 border-b">
-            <Dialog.Title className="text-lg font-semibold">
+        <Dialog.Panel className="mx-auto max-w-2xl w-full bg-white rounded-lg shadow-xl border border-gray-200">
+          <div className="flex items-center justify-between p-6 border-b border-gray-200">
+            <Dialog.Title className="text-xl font-semibold text-gray-900">
               {initialData ? 'Edit Employee' : 'Add New Employee'}
             </Dialog.Title>
             <button
               onClick={handleClose}
-              className="text-gray-400 hover:text-gray-500"
+              className="text-gray-400 hover:text-gray-500 transition-colors"
             >
               <X className="h-6 w-6" />
             </button>
@@ -370,14 +370,14 @@ export function EmployeeForm({ isOpen, onClose, onSubmit, initialData }: Employe
           <div className="flex-1 overflow-y-auto">
             <form onSubmit={handleSubmit} className="p-6 space-y-6">
               {error && (
-                <div className="p-3 bg-red-50 text-red-600 rounded-md">
+                <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-600">
                   {error}
                 </div>
               )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
                     First Name
                   </label>
                   <input
@@ -385,8 +385,8 @@ export function EmployeeForm({ isOpen, onClose, onSubmit, initialData }: Employe
                     name="firstName"
                     value={formData.firstName}
                     onChange={handleChange}
-                    className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 ${
-                      errors.firstName ? 'border-red-500' : ''
+                    className={`w-full px-3 py-2 border rounded-lg shadow-sm focus:ring-2 focus:ring-gray-400 focus:border-gray-400 transition-colors ${
+                      errors.firstName ? 'border-red-500' : 'border-gray-300'
                     }`}
                   />
                   {errors.firstName && (
@@ -395,7 +395,7 @@ export function EmployeeForm({ isOpen, onClose, onSubmit, initialData }: Employe
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
                     Last Name
                   </label>
                   <input
@@ -403,8 +403,8 @@ export function EmployeeForm({ isOpen, onClose, onSubmit, initialData }: Employe
                     name="lastName"
                     value={formData.lastName}
                     onChange={handleChange}
-                    className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 ${
-                      errors.lastName ? 'border-red-500' : ''
+                    className={`w-full px-3 py-2 border rounded-lg shadow-sm focus:ring-2 focus:ring-gray-400 focus:border-gray-400 transition-colors ${
+                      errors.lastName ? 'border-red-500' : 'border-gray-300'
                     }`}
                   />
                   {errors.lastName && (
@@ -413,7 +413,7 @@ export function EmployeeForm({ isOpen, onClose, onSubmit, initialData }: Employe
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
                     Email
                   </label>
                   <input
@@ -421,8 +421,8 @@ export function EmployeeForm({ isOpen, onClose, onSubmit, initialData }: Employe
                     name="email"
                     value={formData.email}
                     onChange={handleChange}
-                    className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 ${
-                      errors.email ? 'border-red-500' : ''
+                    className={`w-full px-3 py-2 border rounded-lg shadow-sm focus:ring-2 focus:ring-gray-400 focus:border-gray-400 transition-colors ${
+                      errors.email ? 'border-red-500' : 'border-gray-300'
                     }`}
                   />
                   {errors.email && (
@@ -431,7 +431,7 @@ export function EmployeeForm({ isOpen, onClose, onSubmit, initialData }: Employe
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
                     Phone
                   </label>
                   <div className="relative">
@@ -441,8 +441,8 @@ export function EmployeeForm({ isOpen, onClose, onSubmit, initialData }: Employe
                       value={formData.phone}
                       onChange={handlePhoneChange}
                       placeholder="+1234567890"
-                      className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 ${
-                        errors.phone ? 'border-red-500' : ''
+                      className={`w-full px-3 py-2 border rounded-lg shadow-sm focus:ring-2 focus:ring-gray-400 focus:border-gray-400 transition-colors ${
+                        errors.phone ? 'border-red-500' : 'border-gray-300'
                       }`}
                     />
                   </div>
@@ -456,15 +456,15 @@ export function EmployeeForm({ isOpen, onClose, onSubmit, initialData }: Employe
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
                     Department
                   </label>
                   <select
                     name="department"
                     value={formData.department}
                     onChange={handleDepartmentChange}
-                    className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 ${
-                      errors.department ? 'border-red-500' : ''
+                    className={`w-full px-3 py-2 border rounded-lg shadow-sm focus:ring-2 focus:ring-gray-400 focus:border-gray-400 transition-colors ${
+                      errors.department ? 'border-red-500' : 'border-gray-300'
                     }`}
                   >
                     <option value="">Select Department</option>
@@ -478,15 +478,15 @@ export function EmployeeForm({ isOpen, onClose, onSubmit, initialData }: Employe
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
                     Position
                   </label>
                   <select
                     name="position"
                     value={formData.position}
                     onChange={handleChange}
-                    className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 ${
-                      errors.position ? 'border-red-500' : ''
+                    className={`w-full px-3 py-2 border rounded-lg shadow-sm focus:ring-2 focus:ring-gray-400 focus:border-gray-400 transition-colors ${
+                      errors.position ? 'border-red-500' : 'border-gray-300'
                     }`}
                     disabled={!formData.department}
                   >
@@ -501,15 +501,15 @@ export function EmployeeForm({ isOpen, onClose, onSubmit, initialData }: Employe
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
                     Role
                   </label>
                   <select
                     name="role"
                     value={formData.role}
                     onChange={handleChange}
-                    className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 ${
-                      errors.role ? 'border-red-500' : ''
+                    className={`w-full px-3 py-2 border rounded-lg shadow-sm focus:ring-2 focus:ring-gray-400 focus:border-gray-400 transition-colors ${
+                      errors.role ? 'border-red-500' : 'border-gray-300'
                     }`}
                   >
                     <option value="">Select Role</option>
@@ -523,7 +523,7 @@ export function EmployeeForm({ isOpen, onClose, onSubmit, initialData }: Employe
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
                     Manager
                   </label>
                   <div className="relative">
@@ -531,7 +531,7 @@ export function EmployeeForm({ isOpen, onClose, onSubmit, initialData }: Employe
                       name="managerId"
                       value={formData.managerId || ''}
                       onChange={handleChange}
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-gray-400 focus:border-gray-400 transition-colors"
                       disabled={formData.role === 'admin'}
                     >
                       <option value="">Select Manager</option>
@@ -553,7 +553,7 @@ export function EmployeeForm({ isOpen, onClose, onSubmit, initialData }: Employe
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
                     Salary
                   </label>
                   <div className="relative">
@@ -564,8 +564,8 @@ export function EmployeeForm({ isOpen, onClose, onSubmit, initialData }: Employe
                       value={formData.salary}
                       onChange={handleChange}
                       min={MIN_SALARY}
-                      className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 pl-8 ${
-                        errors.salary ? 'border-red-500' : ''
+                      className={`w-full pl-8 px-3 py-2 border rounded-lg shadow-sm focus:ring-2 focus:ring-gray-400 focus:border-gray-400 transition-colors ${
+                        errors.salary ? 'border-red-500' : 'border-gray-300'
                       }`}
                     />
                   </div>
@@ -575,7 +575,7 @@ export function EmployeeForm({ isOpen, onClose, onSubmit, initialData }: Employe
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
                     Hire Date
                   </label>
                   <input
@@ -584,8 +584,8 @@ export function EmployeeForm({ isOpen, onClose, onSubmit, initialData }: Employe
                     value={formatDateForInput(formData.hireDate)}
                     onChange={handleChange}
                     max={formatDateForInput(new Date())}
-                    className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 ${
-                      errors.hireDate ? 'border-red-500' : ''
+                    className={`w-full px-3 py-2 border rounded-lg shadow-sm focus:ring-2 focus:ring-gray-400 focus:border-gray-400 transition-colors ${
+                      errors.hireDate ? 'border-red-500' : 'border-gray-300'
                     }`}
                   />
                   {errors.hireDate && (
@@ -594,20 +594,27 @@ export function EmployeeForm({ isOpen, onClose, onSubmit, initialData }: Employe
                 </div>
               </div>
 
-              <div className="flex justify-end space-x-3">
+              <div className="flex justify-end gap-3 pt-6 border-t border-gray-200">
                 <button
                   type="button"
                   onClick={handleClose}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
-                  {isSubmitting ? 'Saving...' : 'Save'}
+                  {isSubmitting ? (
+                    <div className="flex items-center">
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      Saving...
+                    </div>
+                  ) : (
+                    'Save'
+                  )}
                 </button>
               </div>
             </form>

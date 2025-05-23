@@ -1,21 +1,29 @@
 "use client"
 
-import { useState, useEffect } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
-import { signIn, checkUserExists } from '@/lib/firebase'
+import { useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { signIn } from '@/lib/firebase'
 import { Logo } from './logo'
 import Cookies from 'js-cookie'
+import { FirstTimePasswordChange } from './first-time-password-change'
+
+interface SignInError extends Error {
+  message: string;
+  code?: string;
+}
 
 export default function SignInForm() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [confirmPassword, setConfirmPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [step, setStep] = useState<'email' | 'password' | 'setup'>('email')
   const router = useRouter()
-  const searchParams = useSearchParams()
-  const callbackUrl = searchParams.get('callbackUrl') || '/'
+
+  const getRoleBasedRedirect = () => {
+    // All roles now use the unified dashboard
+    return '/dashboard'
+  }
 
   const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -23,26 +31,10 @@ export default function SignInForm() {
     setLoading(true)
 
     try {
-      const userExists = await checkUserExists(email)
-      
-      if (!userExists) {
-        setError('No account found with this email. Please contact your administrator.')
-        setLoading(false)
-        return
-      }
-
-      console.log('User exists:', userExists)
-
-      // If user has already set up their password, go directly to password step
-      if (userExists.hasPassword) {
-        setStep('password')
-        return
-      }
-
-      // If user hasn't set up their password yet, go to setup step
-      setStep('setup')
+      // Just move to password step - we'll check everything during actual sign in
+      setStep('password')
     } catch (error) {
-      console.error('Error checking user:', error)
+      console.error('Error:', error)
       setError('An error occurred. Please try again.')
     } finally {
       setLoading(false)
@@ -59,39 +51,35 @@ export default function SignInForm() {
       // Set auth token cookie
       Cookies.set('auth-token', user.uid, { expires: 7 }) // Cookie expires in 7 days
       
-      // Force a hard navigation to ensure the auth state is properly updated
-      window.location.href = callbackUrl
+      // Redirect to dashboard
+      router.push(getRoleBasedRedirect())
     } catch (error) {
       console.error('Error signing in:', error)
-      setError('Invalid password. Please try again.')
+      const signInError = error as SignInError
+      if (signInError.message === "FIRST_TIME_LOGIN") {
+        setStep('setup')
+      } else if (signInError.message === "No account found with this email. Please contact your administrator.") {
+        setError(signInError.message)
+        setStep('email')
+      } else {
+        setError(signInError.message || 'Invalid password. Please try again.')
+      }
     } finally {
       setLoading(false)
     }
   }
 
-  const handleSetupSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError('')
-    setLoading(true)
-
-    if (password !== confirmPassword) {
-      setError('Passwords do not match')
-      setLoading(false)
-      return
-    }
-
+  const handlePasswordSetupSuccess = async (userId: string) => {
     try {
-      const user = await signIn(email, password, true)
       // Set auth token cookie
-      Cookies.set('auth-token', user.uid, { expires: 7 }) // Cookie expires in 7 days
+      Cookies.set('auth-token', userId, { expires: 7 })
       
-      // Force a hard navigation to ensure the auth state is properly updated
-      window.location.href = callbackUrl
+      // Redirect to dashboard
+      router.push(getRoleBasedRedirect())
     } catch (error) {
-      console.error('Error setting up password:', error)
-      setError('Failed to set up password. Please try again.')
-    } finally {
-      setLoading(false)
+      console.error('Error after password setup:', error)
+      setError('An error occurred after setting up your password. Please try signing in again.')
+      setStep('email')
     }
   }
 
@@ -111,79 +99,81 @@ export default function SignInForm() {
             <span className="block sm:inline">{error}</span>
           </div>
         )}
-        <form className="mt-8 space-y-6" onSubmit={step === 'email' ? handleEmailSubmit : step === 'password' ? handlePasswordSubmit : handleSetupSubmit}>
-          <div className="rounded-md shadow-sm -space-y-px">
+        
+        {step === 'email' && (
+          <form onSubmit={handleEmailSubmit} className="mt-8 space-y-6">
             <div>
-              <label htmlFor="email-address" className="sr-only">Email address</label>
+              <label htmlFor="email" className="sr-only">
+                Email address
+              </label>
               <input
-                id="email-address"
+                id="email"
                 name="email"
                 type="email"
                 autoComplete="email"
                 required
-                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
-                placeholder="Email address"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                disabled={step !== 'email'}
+                className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
+                placeholder="Email address"
+                disabled={loading}
               />
             </div>
-            {(step === 'password' || step === 'setup') && (
-              <>
-                <div>
-                  <label htmlFor="password" className="sr-only">Password</label>
-                  <input
-                    id="password"
-                    name="password"
-                    type="password"
-                    autoComplete="current-password"
-                    required
-                    className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
-                    placeholder="Password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                  />
-                </div>
-                {step === 'setup' && (
-                  <div>
-                    <label htmlFor="confirm-password" className="sr-only">Confirm Password</label>
-                    <input
-                      id="confirm-password"
-                      name="confirm-password"
-                      type="password"
-                      autoComplete="new-password"
-                      required
-                      className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
-                      placeholder="Confirm Password"
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                    />
-                  </div>
-                )}
-              </>
-            )}
-          </div>
 
-          <div>
-            <button
-              type="submit"
-              disabled={loading}
-              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
-            >
-              {loading ? (
-                <span className="absolute left-0 inset-y-0 flex items-center pl-3">
-                  <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                </span>
-              ) : null}
-              {step === 'email' && 'Continue'}
-              {step === 'password' && 'Sign in'}
-              {step === 'setup' && 'Set up password'}
-            </button>
-          </div>
-        </form>
+            <div>
+              <button
+                type="submit"
+                disabled={loading}
+                className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loading ? 'Checking...' : 'Continue'}
+              </button>
+            </div>
+          </form>
+        )}
+
+        {step === 'password' && (
+          <form onSubmit={handlePasswordSubmit} className="mt-8 space-y-6">
+            <div>
+              <label htmlFor="password" className="sr-only">
+                Password
+              </label>
+              <input
+                id="password"
+                name="password"
+                type="password"
+                autoComplete="current-password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
+                placeholder="Password"
+                disabled={loading}
+              />
+            </div>
+
+            <div>
+              <button
+                type="submit"
+                disabled={loading}
+                className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loading ? 'Signing in...' : 'Sign in'}
+              </button>
+            </div>
+          </form>
+        )}
+
+        {step === 'setup' && (
+          <FirstTimePasswordChange 
+            email={email}
+            onSuccess={handlePasswordSetupSuccess}
+            onError={(errorMessage) => {
+              setError(errorMessage)
+              // Don't change the step, let the user try again
+            }}
+          />
+        )}
       </div>
     </div>
   )

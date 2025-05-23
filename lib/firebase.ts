@@ -243,81 +243,62 @@ export async function checkUserExists(emailOrUid: string) {
 // Sign in function
 export async function signIn(email: string, password: string, isPasswordSetup: boolean = false) {
   try {
-    // First check if user exists in Firestore
-    const userExists = await checkUserExists(email)
-    if (!userExists) {
-      throw new Error("No user found")
-    }
-
-    // If this is a first-time login and password setup is not being attempted
-    if (userExists.firstLogin && !isPasswordSetup) {
-      throw new Error("First time login - password setup required")
-    }
-
-    if (isPasswordSetup) {
-      // Get the default password from environment variables
-      const defaultPassword = process.env.NEXT_PUBLIC_DEFAULT_PASSWORD
-      if (!defaultPassword) {
-        throw new Error("Default password not configured")
-      }
-
-      try {
-        // First try to sign in with the default password
-        const userCredential = await signInWithEmailAndPassword(auth, email, defaultPassword)
-        const user = userCredential.user
-
-        // Update password
-        await updatePassword(user, password)
-        
-        // Update the collection where the user exists
-        const collectionName = userExists.role === "admin" ? "users" : "employees"
-        await updateDoc(doc(db, collectionName, userExists.id), {
-          hasPassword: true,
-          firstLogin: false, // Mark as no longer first login
-          updatedAt: serverTimestamp(),
-          uid: user.uid
-        })
-
-        return user
-      } catch (signInError: any) {
-        console.error("Error signing in with default password:", signInError)
-        if (signInError.code === 'auth/invalid-credential') {
-          // If the default password is wrong, try to sign in with the new password
-          try {
-            const userCredential = await signInWithEmailAndPassword(auth, email, password)
-            const user = userCredential.user
-            
-            // Update the collection where the user exists
-            const collectionName = userExists.role === "admin" ? "users" : "employees"
-            await updateDoc(doc(db, collectionName, userExists.id), {
-              hasPassword: true,
-              firstLogin: false, // Mark as no longer first login
-              updatedAt: serverTimestamp(),
-              uid: user.uid
-            })
-
-            return user
-          } catch (error) {
-            console.error("Error signing in with new password:", error)
-            throw new Error("Failed to sign in with new password")
-          }
+    // First authenticate with Firebase Auth
+    let userCredential;
+    try {
+      userCredential = await signInWithEmailAndPassword(auth, email, password)
+    } catch (error: any) {
+      // If this is a first-time login attempt, we might need to create the auth user
+      if (error.code === 'auth/user-not-found') {
+        // Check if user exists in Firestore
+        const userExists = await checkUserExists(email)
+        if (!userExists) {
+          throw new Error("No account found with this email. Please contact your administrator.")
         }
-        throw signInError
+
+        // If user exists in Firestore but not in Auth, create the auth user
+        if (!userExists.hasPassword && isPasswordSetup) {
+          userCredential = await createUserWithEmailAndPassword(auth, email, password)
+          
+          // Update the user's document in Firestore
+          const collectionName = userExists.role === "admin" ? "users" : "employees"
+          await updateDoc(doc(db, collectionName, userExists.id), {
+            uid: userCredential.user.uid,
+            hasPassword: true,
+            firstLogin: false,
+            updatedAt: serverTimestamp()
+          })
+        } else {
+          throw new Error("FIRST_TIME_LOGIN")
+        }
+      } else if (error.code === 'auth/invalid-credential') {
+        throw new Error("Invalid email or password")
+      } else {
+        throw error
       }
-    } else {
-      // Normal sign in
-      const userCredential = await signInWithEmailAndPassword(auth, email, password)
-      const user = userCredential.user
-
-      // Update last login in Firestore
-      const collectionName = userExists.role === "admin" ? "users" : "employees"
-      await updateDoc(doc(db, collectionName, userExists.id), {
-        lastLogin: serverTimestamp(),
-        uid: user.uid
-      })
-
-      return user
     }
+
+    const user = userCredential.user
+
+    // Now that we're authenticated, get the user's data from Firestore
+    const userDoc = await getDoc(doc(db, 'users', user.uid))
+    const employeeDoc = await getDoc(doc(db, 'employees', user.uid))
+    
+    const userData = userDoc.exists() ? userDoc.data() : employeeDoc.exists() ? employeeDoc.data() : null
+    
+    if (!userData) {
+      // If no user data found, sign out and throw error
+      await signOut(auth)
+      throw new Error("User account not found in database. Please contact support.")
+    }
+
+    // Update last login timestamp
+    const collectionName = userData.role === "admin" ? "users" : "employees"
+    await updateDoc(doc(db, collectionName, user.uid), {
+      lastLogin: serverTimestamp()
+    })
+
+    return user
   } catch (error) {
     console.error("Sign in error:", error)
     throw error
@@ -360,124 +341,69 @@ export async function createRequiredIndexes() {
   }
 }
 
-export async function createEmployee(employeeData: EmployeeFormData) {
-  const maxRetries = 3;
-  let retryCount = 0;
-  let lastError;
+export async function createEmployee(data: EmployeeFormData) {
+  try {
+    // Create a new document reference with auto-generated ID
+    const employeeRef = doc(collection(db, 'employees'))
+    const employeeId = employeeRef.id
 
-  while (retryCount < maxRetries) {
+    // Create the user in Firebase Auth first
+    let authUser = null
     try {
-      // Validate required fields
-      if (!employeeData.email || !employeeData.firstName || !employeeData.lastName) {
-        throw new Error("Missing required fields: email, firstName, lastName")
-      }
-
-      // Get default password from environment variables
-      const defaultPassword = process.env.NEXT_PUBLIC_DEFAULT_PASSWORD
-      if (!defaultPassword) {
-        throw new Error("Default password not configured")
-      }
-
-      // Check if user already exists
-      const existingUser = await checkUserExists(employeeData.email)
-      if (existingUser) {
-        throw new Error("User with this email already exists")
-      }
-
-      // Create user in Firebase Auth with a default password
-      const userCredential = await createUserWithEmailAndPassword(
-        auth,
-        employeeData.email,
-        defaultPassword
-      )
-
-      const user = userCredential.user
-
-      // Create base user data
-      const userData = {
-        uid: user.uid,
-        email: user.email,
-        firstName: employeeData.firstName,
-        lastName: employeeData.lastName,
-        role: employeeData.role || "employee",
-        department: employeeData.department || "",
-        managerId: employeeData.managerId || null,
-        createdAt: Timestamp.now(),
-        updatedAt: Timestamp.now(),
-        hasPassword: false,
-        firstLogin: true,
-        status: "active",
-        position: employeeData.position || "",
-        address: employeeData.address || null,
-        emergencyContact: employeeData.emergencyContact || null,
-        documents: [],
-        permissions: [],
-        settings: {},
-        metadata: {}
-      }
-
-      // Create the user document in Firestore
-      try {
-        if (employeeData.role === "admin") {
-          await setDoc(doc(db, "users", user.uid), {
-            ...userData,
-            isAdmin: true
-          })
-        } else {
-          const employeeDoc = {
-            ...userData,
-            hireDate: employeeData.hireDate ? Timestamp.fromDate(
-              employeeData.hireDate instanceof Date ? employeeData.hireDate : new Date(employeeData.hireDate)
-            ) : Timestamp.now(),
-            salary: Number(employeeData.salary) || 0,
-            isManager: employeeData.role === "manager",
-            managerId: employeeData.managerId || null,
-            managedEmployees: []
+      // Create a temporary password for initial setup
+      const tempPassword = Math.random().toString(36).slice(-8) + Math.random().toString(36).slice(-8)
+      const userCredential = await createUserWithEmailAndPassword(auth, data.email, tempPassword)
+      authUser = userCredential.user
+    } catch (error: any) {
+      if (error.code === 'auth/email-already-in-use') {
+        // If email already exists, try to sign in to get the user
+        try {
+          const userCredential = await signInWithEmailAndPassword(auth, data.email, 'temporary_password')
+          authUser = userCredential.user
+        } catch (signInError: any) {
+          if (signInError.code === 'auth/invalid-credential') {
+            // If sign in fails, the user exists but with a different password
+            // We'll need to handle this case differently
+            console.error('User exists with different password')
+            throw new Error('User already exists with a different password')
           }
-
-          await setDoc(doc(db, "employees", user.uid), employeeDoc)
-          await setDoc(doc(db, "users", user.uid), {
-            ...userData,
-            isAdmin: false
-          })
+          throw signInError
         }
-
-        // Verify the document was created
-        const collectionName = employeeData.role === "admin" ? "users" : "employees"
-        const docRef = doc(db, collectionName, user.uid)
-        const docSnap = await getDoc(docRef)
-        
-        if (!docSnap.exists()) {
-          throw new Error(`Failed to create ${collectionName} document`)
-        }
-
-        return user
-      } catch (dbError) {
-        console.error("Error creating user document in Firestore:", dbError)
-        // If document creation fails, delete the Auth user
-        await user.delete()
-        throw new Error("Failed to create user profile in database")
+      } else {
+        throw error
       }
-    } catch (error) {
-      lastError = error
-      console.error(`Attempt ${retryCount + 1} failed:`, error)
-      
-      if (error instanceof Error && error.message.includes('Network error')) {
-        retryCount++
-        if (retryCount < maxRetries) {
-          // Wait for 1 second before retrying (exponential backoff)
-          await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, retryCount)))
-          continue
-        }
-      }
-      
-      // If it's not a network error or we've exhausted retries, throw the error
-      throw error
     }
-  }
 
-  // If we've exhausted all retries, throw the last error
-  throw lastError
+    // Create base user data
+    const userData = {
+      uid: authUser?.uid || employeeId,
+      ...data,
+      hireDate: data.hireDate instanceof Date ? data.hireDate : new Date(data.hireDate),
+      salary: Number(data.salary),
+      status: data.status || 'active',
+      hasPassword: false, // Will be set to true after first login
+      firstLogin: true, // Indicates this is a first-time login
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    }
+
+    // Create the employee document
+    await setDoc(employeeRef, userData)
+
+    // Create a corresponding user document
+    await setDoc(doc(db, 'users', authUser?.uid || employeeId), {
+      ...userData,
+      role: data.role || 'employee'
+    })
+
+    return {
+      uid: authUser?.uid || employeeId,
+      ...userData
+    }
+  } catch (error) {
+    console.error('Error creating employee:', error)
+    throw error
+  }
 }
 
 // Export signOutUser

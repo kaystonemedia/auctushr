@@ -2,7 +2,7 @@
 
 import type React from "react"
 import Link from "next/link"
-import { Users, Clock, FileText, BarChart3, Settings, LogOut, Wallet, User, Calendar, LineChart } from "lucide-react"
+import { Users, Clock, FileText, BarChart3, Settings, LogOut, Wallet, User, Calendar, LineChart, LayoutDashboard, Activity, HelpCircle, Bell } from "lucide-react"
 import { Logo } from "./logo"
 import { usePathname, useRouter } from "next/navigation"
 import { useAuth } from "@/contexts/auth-context"
@@ -10,15 +10,121 @@ import { signOut } from "firebase/auth"
 import { auth } from "@/lib/firebase"
 import { motion } from "framer-motion"
 import { useState } from "react"
+import { cn } from '@/lib/utils'
+import { Button } from './ui/button'
 
 interface SidebarProps {
   activePath?: string
 }
 
+interface NavItem {
+  name: string
+  href: string
+  icon: React.ElementType
+  roles?: string[]
+  category?: string
+}
+
+const navItems: NavItem[] = [
+  {
+    name: 'Dashboard',
+    href: '/dashboard',
+    icon: LayoutDashboard,
+    roles: ['admin', 'manager', 'employee'],
+    category: 'main'
+  },
+  {
+    name: 'Profile',
+    href: '/profile',
+    icon: User,
+    roles: ['admin', 'manager', 'employee'],
+    category: 'main'
+  },
+  {
+    name: 'Employees',
+    href: '/employees',
+    icon: Users,
+    roles: ['admin', 'manager'],
+    category: 'management'
+  },
+  {
+    name: 'Attendance',
+    href: '/attendance',
+    icon: Clock,
+    roles: ['admin', 'manager', 'employee'],
+    category: 'management'
+  },
+  {
+    name: 'Attendance Reports',
+    href: '/attendance/reports',
+    icon: BarChart3,
+    roles: ['admin', 'manager'],
+    category: 'reports'
+  },
+  {
+    name: 'Leave Management',
+    href: '/leave',
+    icon: Calendar,
+    roles: ['admin', 'manager', 'employee'],
+    category: 'management'
+  },
+  {
+    name: 'Payroll',
+    href: '/payroll',
+    icon: Wallet,
+    roles: ['admin', 'manager'],
+    category: 'management'
+  },
+  {
+    name: 'Documents',
+    href: '/documents',
+    icon: FileText,
+    roles: ['admin', 'manager', 'employee'],
+    category: 'resources'
+  },
+  {
+    name: 'Productivity',
+    href: '/productivity',
+    icon: Activity,
+    roles: ['admin', 'manager', 'employee'],
+    category: 'performance'
+  },
+  {
+    name: 'Performance',
+    href: '/performance',
+    icon: BarChart3,
+    roles: ['admin', 'manager', 'employee'],
+    category: 'performance'
+  },
+  {
+    name: 'Settings',
+    href: '/settings',
+    icon: Settings,
+    roles: ['admin', 'manager', 'employee'],
+    category: 'system'
+  },
+  {
+    name: 'Help & Support',
+    href: '/help',
+    icon: HelpCircle,
+    roles: ['admin', 'manager', 'employee'],
+    category: 'system'
+  }
+]
+
+const categoryLabels: Record<string, string> = {
+  main: 'Main',
+  management: 'Management',
+  reports: 'Reports',
+  resources: 'Resources',
+  performance: 'Performance',
+  system: 'System'
+}
+
 export function Sidebar({ activePath }: SidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
-  const { user } = useAuth()
+  const { user, logout } = useAuth()
   const [activeButton, setActiveButton] = useState(pathname)
 
   const handleLogout = async () => {
@@ -30,96 +136,86 @@ export function Sidebar({ activePath }: SidebarProps) {
     }
   }
 
-  const handleButtonClick = (href: string) => {
-    setActiveButton(href)
-  }
+  if (!user) return null
 
-  const getNavigationItems = () => {
-    if (!user) return []
+  const filteredNavItems = navItems.filter(item => 
+    item.roles?.includes(user.role)
+  )
 
-    const items = [
-      { name: "Dashboard", href: "/", icon: BarChart3 },
-      { name: "Profile", href: "/profile", icon: User },
-    ]
-
-    // Admin has access to everything
-    if (user.role === 'admin') {
-      items.push(
-        { name: "Employees", href: "/employees", icon: Users },
-        { name: "Attendance", href: "/attendance", icon: Clock },
-        { name: "Attendance Reports", href: "/attendance/reports", icon: BarChart3 },
-        { name: "Leave Management", href: "/leave", icon: Calendar },
-        { name: "Payroll", href: "/payroll", icon: Wallet },
-        { name: "Productivity", href: "/productivity", icon: LineChart },
-        { name: "Documents", href: "/documents", icon: FileText },
-        { name: "Settings", href: "/settings", icon: Settings }
-      )
+  // Group items by category
+  const groupedItems = filteredNavItems.reduce((acc, item) => {
+    const category = item.category || 'other'
+    if (!acc[category]) {
+      acc[category] = []
     }
-    // Manager has access to attendance, employees, documents, and payroll
-    else if (user.role === 'manager') {
-      items.push(
-        { name: "Employees", href: "/employees", icon: Users },
-        { name: "Attendance", href: "/attendance", icon: Clock },
-        { name: "Attendance Reports", href: "/attendance/reports", icon: BarChart3 },
-        { name: "Leave Management", href: "/leave", icon: Calendar },
-        { name: "Payroll", href: "/payroll", icon: Wallet },
-        { name: "Productivity", href: "/productivity", icon: LineChart },
-        { name: "Documents", href: "/documents", icon: FileText }
-      )
-    }
-    // Employee has access to dashboard, attendance check-in/out, and documents
-    else if (user.role === 'employee') {
-      items.push(
-        { name: "Attendance", href: "/attendance", icon: Clock },
-        { name: "Leave Management", href: "/leave", icon: Calendar },
-        { name: "Documents", href: "/documents", icon: FileText }
-      )
-    }
-
-    return items
-  }
+    acc[category].push(item)
+    return acc
+  }, {} as Record<string, NavItem[]>)
 
   return (
-    <div className="w-60 min-h-screen bg-black text-white flex flex-col">
-      <div className="p-4">
-        <Logo />
+    <div className="flex h-screen w-64 flex-col border-r bg-white shadow-lg">
+      <div className="p-4 border-b">
+        <Logo className="h-8 w-auto" />
       </div>
-      <nav className="flex-1 px-2 py-4 space-y-1">
-        {getNavigationItems().map((item) => {
-          const isActive = activeButton === item.href
-          return (
-            <Link
-              key={item.name}
-              href={item.href}
-              onClick={() => handleButtonClick(item.href)}
-              className={`flex items-center px-4 py-2 text-sm font-medium rounded-md relative ${
-                isActive
-                  ? "text-white"
-                  : "text-gray-300 hover:bg-gray-700 hover:text-white"
-              }`}
-            >
-              {isActive && (
-                <motion.div
-                  layoutId="activeNav"
-                  className="absolute inset-0 bg-blue-600 rounded-md"
-                  initial={false}
-                  transition={{ type: "spring", stiffness: 380, damping: 30 }}
-                />
-              )}
-              <item.icon className="mr-3 h-5 w-5 relative z-10" />
-              <span className="relative z-10">{item.name}</span>
-            </Link>
-          )
-        })}
-      </nav>
-      <div className="p-4 border-t border-gray-700">
-        <button
-          onClick={handleLogout}
-          className="flex items-center w-full px-4 py-2 text-sm font-medium text-gray-300 hover:bg-gray-700 hover:text-white rounded-md"
+      <div className="flex-1 overflow-y-auto py-4">
+        <nav className="space-y-6 px-3">
+          {Object.entries(groupedItems).map(([category, items]) => (
+            <div key={category} className="space-y-1">
+              <h3 className="px-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                {categoryLabels[category]}
+              </h3>
+              {items.map((item) => {
+                const isActive = pathname === item.href
+                return (
+                  <Link
+                    key={item.name}
+                    href={item.href}
+                    className={cn(
+                      'group flex items-center rounded-md px-2 py-2 text-sm font-medium transition-colors',
+                      isActive
+                        ? 'bg-primary text-primary-foreground shadow-sm'
+                        : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900'
+                    )}
+                  >
+                    <item.icon
+                      className={cn(
+                        'mr-3 h-5 w-5 flex-shrink-0 transition-colors',
+                        isActive 
+                          ? 'text-primary-foreground' 
+                          : 'text-gray-500 group-hover:text-gray-700'
+                      )}
+                      aria-hidden="true"
+                    />
+                    {item.name}
+                  </Link>
+                )
+              })}
+            </div>
+          ))}
+        </nav>
+      </div>
+      <div className="border-t border-gray-200 p-4 bg-gray-50">
+        <div className="flex items-center space-x-3 px-2 py-2">
+          <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
+            <User className="h-5 w-5 text-primary" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-gray-900 truncate">
+              {user.name}
+            </p>
+            <p className="text-xs text-gray-500 truncate capitalize">
+              {user.role}
+            </p>
+          </div>
+        </div>
+        <Button
+          variant="ghost"
+          className="w-full justify-start text-gray-700 hover:bg-gray-100 hover:text-gray-900 mt-2"
+          onClick={logout}
         >
           <LogOut className="mr-3 h-5 w-5" />
-          Sign out
-        </button>
+          Sign Out
+        </Button>
       </div>
     </div>
   )

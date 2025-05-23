@@ -17,6 +17,56 @@ const publicPaths = [
   "/api/status"
 ]
 
+// Define role-based route access
+const roleBasedRoutes = {
+  admin: [
+    '/dashboard',
+    '/profile',
+    '/employees',
+    '/attendance',
+    '/attendance/reports',
+    '/leave',
+    '/payroll',
+    '/documents',
+    '/productivity',
+    '/performance',
+    '/settings',
+    '/help'
+  ],
+  manager: [
+    '/dashboard',
+    '/profile',
+    '/employees',
+    '/attendance',
+    '/attendance/reports',
+    '/leave',
+    '/payroll',
+    '/documents',
+    '/productivity',
+    '/performance',
+    '/settings',
+    '/help'
+  ],
+  employee: [
+    '/dashboard',
+    '/profile',
+    '/attendance',
+    '/leave',
+    '/documents',
+    '/productivity',
+    '/performance',
+    '/settings',
+    '/help'
+  ]
+}
+
+// Define default routes for each role
+const defaultRoutes = {
+  admin: '/dashboard',
+  manager: '/dashboard',
+  employee: '/dashboard'
+}
+
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
@@ -25,12 +75,12 @@ export function middleware(request: NextRequest) {
     return NextResponse.next()
   }
 
-  // Check for session cookie
-  const session = request.cookies.get('session')
+  // Check for auth token
   const authToken = request.cookies.get('auth-token')
+  const userRole = request.cookies.get('user-role')?.value as 'admin' | 'manager' | 'employee' | undefined
 
   // If user is not authenticated and trying to access protected routes
-  if (!session && !authToken) {
+  if (!authToken) {
     // If trying to access root path, redirect to sign-in
     if (pathname === "/") {
       const signInUrl = new URL("/auth/sign-in", request.url)
@@ -42,12 +92,31 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(signInUrl)
   }
 
-  // If user is authenticated and trying to access auth pages, redirect to dashboard
-  if ((session || authToken) && pathname.startsWith("/auth/")) {
-    return NextResponse.redirect(new URL("/dashboard", request.url))
+  // If user is authenticated but no role cookie is set, let the client handle the role check
+  if (!userRole) {
+    return NextResponse.next()
   }
 
-  // Allow access to all other routes
+  // If user is authenticated and trying to access auth pages, redirect to their role's dashboard
+  if (pathname.startsWith("/auth/")) {
+    return NextResponse.redirect(new URL(defaultRoutes[userRole], request.url))
+  }
+
+  // Check if user is trying to access root path
+  if (pathname === "/") {
+    return NextResponse.redirect(new URL(defaultRoutes[userRole], request.url))
+  }
+
+  // Check role-based access
+  const allowedRoutes = roleBasedRoutes[userRole] || []
+  const hasAccess = allowedRoutes.some(route => pathname.startsWith(route))
+
+  if (!hasAccess) {
+    // If user doesn't have access to the route, redirect to unauthorized page
+    return NextResponse.redirect(new URL("/unauthorized", request.url))
+  }
+
+  // Allow access to the requested route
   return NextResponse.next()
 }
 
