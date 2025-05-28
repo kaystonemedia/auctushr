@@ -16,14 +16,16 @@ export async function GET(request: Request) {
     const decodedToken = await getAdminAuth().verifyIdToken(token)
     console.log('Token verified for user:', decodedToken.uid)
 
-    // Get user data from users collection
+    // Get user data from both users and employees collections
     const userDoc = await getAdminDb().collection('users').doc(decodedToken.uid).get()
-    if (!userDoc.exists) {
-      console.error('User document not found:', decodedToken.uid)
+    const employeeDoc = await getAdminDb().collection('employees').doc(decodedToken.uid).get()
+    
+    if (!userDoc.exists && !employeeDoc.exists) {
+      console.error('User document not found in either collection:', decodedToken.uid)
       return NextResponse.json({ error: "User not found" }, { status: 404 })
     }
 
-    const userData = userDoc.data()
+    const userData = userDoc.exists ? userDoc.data() : employeeDoc.data()
     console.log('User role:', userData?.role)
 
     if (userData?.role !== 'admin' && userData?.role !== 'manager') {

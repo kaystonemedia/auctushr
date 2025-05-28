@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useAuth } from '@/contexts/auth-context'
+import { useNewAuth } from '@/contexts/new-auth-context'
 import { db } from '@/lib/firebase'
 import { collection, query, where, getDocs } from 'firebase/firestore'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -23,19 +23,22 @@ interface MonthlyStats {
 }
 
 export default function EmployeeDashboard() {
-  const { user, loading: authLoading } = useAuth()
+  const { user, isLoading: authLoading } = useNewAuth()
   const [loading, setLoading] = useState(true)
   const [todayAttendance, setTodayAttendance] = useState<AttendanceRecord | null>(null)
   const [monthlyStats, setMonthlyStats] = useState<MonthlyStats | null>(null)
+  const [attendanceData, setAttendanceData] = useState<AttendanceRecord[]>([])
 
   useEffect(() => {
     const fetchAttendanceData = async () => {
       if (!user) {
+        console.log('No user found, skipping fetch')
         setLoading(false)
         return
       }
 
       try {
+        console.log('Fetching attendance data for user:', user.uid)
         // Get today's attendance
         const today = new Date()
         today.setHours(0, 0, 0, 0)
@@ -44,34 +47,45 @@ export default function EmployeeDashboard() {
 
         const attendanceQuery = query(
           collection(db, 'attendance'),
-          where('uid', '==', user.id),
+          where('uid', '==', user.uid),
           where('date', '>=', today),
           where('date', '<=', todayEnd)
         )
 
+        console.log('Fetching today\'s attendance...')
         const attendanceSnapshot = await getDocs(attendanceQuery)
+        console.log('Today\'s attendance snapshot:', attendanceSnapshot.docs.map(doc => doc.data()))
+        
         if (!attendanceSnapshot.empty) {
-          setTodayAttendance(attendanceSnapshot.docs[0].data() as AttendanceRecord)
+          const attendanceData = attendanceSnapshot.docs[0].data() as AttendanceRecord
+          console.log('Setting today\'s attendance:', attendanceData)
+          setTodayAttendance(attendanceData)
+        } else {
+          console.log('No attendance record found for today')
         }
 
         // Get monthly stats
         const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1)
         const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0)
 
+        console.log('Fetching monthly stats...')
         const monthlyQuery = query(
           collection(db, 'attendance'),
-          where('uid', '==', user.id),
+          where('uid', '==', user.uid),
           where('date', '>=', startOfMonth),
           where('date', '<=', endOfMonth)
         )
 
         const monthlySnapshot = await getDocs(monthlyQuery)
+        console.log('Monthly attendance records:', monthlySnapshot.docs.map(doc => doc.data()))
+        
         const stats = {
           totalDays: monthlySnapshot.size,
           presentDays: monthlySnapshot.docs.filter(doc => doc.data().status === 'present').length,
           absentDays: monthlySnapshot.docs.filter(doc => doc.data().status === 'absent').length,
           lateDays: monthlySnapshot.docs.filter(doc => doc.data().status === 'late').length,
         } as MonthlyStats
+        console.log('Setting monthly stats:', stats)
         setMonthlyStats(stats)
       } catch (error) {
         console.error('Error fetching attendance data:', error)
@@ -80,7 +94,12 @@ export default function EmployeeDashboard() {
       }
     }
 
-    fetchAttendanceData()
+    if (!authLoading && user) {
+      console.log('Auth loading complete, user available, fetching data...')
+      fetchAttendanceData()
+    } else {
+      console.log('Auth still loading or no user:', { authLoading, user })
+    }
   }, [user, authLoading])
 
   if (authLoading || loading) {
@@ -187,7 +206,7 @@ export default function EmployeeDashboard() {
           <CardContent>
             <div className="grid grid-cols-2 gap-4">
               <Button variant="outline" className="h-auto py-4" asChild>
-                <Link href="/leave-management">
+                <Link href="/leave">
                   <Calendar className="h-4 w-4 mr-2" />
                   Request Leave
                 </Link>

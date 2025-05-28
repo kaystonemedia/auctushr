@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { sendPasswordResetEmail } from 'firebase/auth'
 import { auth } from '@/lib/firebase'
 import { Logo } from '@/components/logo'
+import Link from 'next/link'
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('')
@@ -47,9 +48,9 @@ export default function ForgotPasswordPage() {
           <div className="text-right mb-8">
             <p className="text-gray-600">
               Remember your password?{" "}
-              <a href="/auth/sign-in" className="font-semibold text-gray-900">
+              <Link href="/auth/sign-in" className="font-semibold text-gray-900">
                 Sign in
-              </a>
+              </Link>
               .
             </p>
           </div>

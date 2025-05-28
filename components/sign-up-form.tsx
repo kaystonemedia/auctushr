@@ -8,6 +8,7 @@ import { signUp } from "@/lib/firebase"
 import { useRouter } from "next/navigation"
 import { useAuth } from "@/contexts/auth-context"
 import { validateSignUpPassword } from "@/lib/password-validation"
+import Link from 'next/link'
 
 export function SignUpForm() {
   const router = useRouter()
@@ -83,9 +84,20 @@ export function SignUpForm() {
       } else if (err.code === "auth/invalid-email") {
         setError("Please enter a valid email address")
       } else if (err.code === "auth/weak-password") {
-        setError("Password is too weak. Please use a stronger password.")
+        // Check specific password requirements and provide a detailed error message
+        const passwordError = validateSignUpPassword(password)
+        if (passwordError) {
+          setError(passwordError)
+        } else {
+          setError("Password is too weak. Please ensure your password meets all requirements.")
+        }
       } else if (err.message) {
-        setError(err.message)
+        // If the error message is from our validation, use it directly
+        if (err.message.includes("Password must")) {
+          setError(err.message)
+        } else {
+          setError(err.message)
+        }
       } else {
         setError("Failed to sign up. Please try again.")
       }
@@ -115,9 +127,9 @@ export function SignUpForm() {
           <div className="text-right mb-8">
             <p className="text-gray-600">
               Already have an account?{" "}
-              <a href="/auth/sign-in" className="font-semibold text-gray-900">
+              <Link href="/auth/sign-in" className="font-semibold text-gray-900">
                 Sign in
-              </a>
+              </Link>
               .
             </p>
           </div>
@@ -178,9 +190,18 @@ export function SignUpForm() {
                 className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                 required
                 disabled={loading || success || !isOnline}
-                minLength={6}
-                placeholder="At least 6 characters"
+                minLength={8}
+                placeholder="Enter your password"
               />
+              <div className="mt-2 text-xs text-gray-500">
+                Password must be at least 8 characters long and contain:
+                <ul className="list-disc list-inside mt-1">
+                  <li>At least one uppercase letter</li>
+                  <li>At least one lowercase letter</li>
+                  <li>At least one number</li>
+                  <li>At least one special character (!@#$%^&*)</li>
+                </ul>
+              </div>
             </div>
 
             <div>

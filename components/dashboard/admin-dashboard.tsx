@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useAuth } from '@/contexts/auth-context'
+import { useNewAuth } from '@/contexts/new-auth-context'
 import { db } from '@/lib/firebase'
 import { 
   collection, 
@@ -45,19 +45,11 @@ interface Department {
   color: string
 }
 
-// Add this helper function at the top level
-const calculateTrend = (current: number, previous: number) => {
-  if (previous === 0) return current > 0 ? '+100%' : '0%'
-  const change = ((current - previous) / previous) * 100
-  return `${change >= 0 ? '+' : ''}${Math.round(change)}%`
-}
-
 export default function AdminDashboard() {
-  const { user, loading: authLoading } = useAuth()
+  const { user, isLoading: authLoading } = useNewAuth()
   const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [userRole, setUserRole] = useState<string | null>(null)
   const [stats, setStats] = useState({
     totalEmployees: 0,
     departments: 0,
@@ -96,47 +88,19 @@ export default function AdminDashboard() {
         // If no user, redirect to login
         if (!user) {
           console.log('No user found, redirecting to login...')
-          router.push('/login')
+          router.push('/auth/sign-in')
           return
         }
 
-        // Check if we already have the user's role
-        if (userRole) {
-          if (userRole === 'admin') {
-            console.log('Admin role verified, setting up dashboard...')
-            setupRealtimeListeners()
-          } else {
-            console.log('User is not an admin, redirecting...')
-            router.push('/dashboard')
-          }
-          return
-        }
-
-        // Get user's role from Firestore
-        console.log('Fetching user role...', { uid: user.uid })
-        const userDocRef = doc(db, 'users', user.uid)
-        const userDoc = await getDoc(userDocRef)
-
-        if (!userDoc.exists()) {
-          console.log('No user document found, redirecting to login...')
-          setError('User account not found. Please contact support.')
-          router.push('/login')
-          return
-        }
-
-        const userData = userDoc.data()
-        const role = userData.role
-
-        console.log('User role fetched:', { role, email: user.email })
-        setUserRole(role)
-
-        if (role === 'admin') {
-          console.log('Admin access granted, setting up dashboard...')
-          setupRealtimeListeners()
-        } else {
-          console.log('Insufficient permissions, redirecting...')
+        // Check if user is admin
+        if (user.role !== 'admin') {
+          console.log('User is not an admin, redirecting...')
           router.push('/dashboard')
+          return
         }
+
+        console.log('Admin access granted, setting up dashboard...')
+        setupRealtimeListeners()
 
       } catch (error) {
         console.error('Error initializing dashboard:', error)
@@ -147,31 +111,37 @@ export default function AdminDashboard() {
     }
 
     initializeDashboard()
-  }, [user, authLoading, userRole, router])
+
+    // Cleanup function
+    return () => {
+      console.log('Cleaning up dashboard listeners...')
+      unsubscribers.forEach(unsubscribe => unsubscribe())
+    }
+  }, [user, authLoading, router])
 
   const setupRealtimeListeners = () => {
-    if (!user || userRole !== 'admin') {
-      console.warn("Cannot setup listeners: Invalid user or role (user or role is missing or not 'admin'). Skipping setup.")
+    if (!user || user.role !== 'admin') {
+      console.warn("Cannot setup listeners: Invalid user or role")
       return
     }
 
     console.log('Setting up admin dashboard listeners...', {
-      userId: user.uid,
+      userId: user.id,
       email: user.email,
-      role: userRole
+      role: user.role
     })
 
-    // Listen to users collection (admins)
+    // Listen to users collection
     const usersUnsubscribe = onSnapshot(
-      query(collection(db, 'users'), where('role', '==', 'admin')),
+      query(collection(db, 'users')),
       (usersSnapshot) => {
-        const adminUsers = usersSnapshot.docs.map(doc => ({
+        const users = usersSnapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data()
         }))
-        console.log('Admin users fetched:', {
+        console.log('Users fetched:', {
           count: usersSnapshot.size,
-          users: adminUsers
+          users: users
         })
         updateStats()
       },
@@ -180,81 +150,58 @@ export default function AdminDashboard() {
       }
     )
 
-    // Listen to employees collection
-    const employeesUnsubscribe = onSnapshot(
-      collection(db, 'employees'),
-      (employeesSnapshot) => {
-        const employees = employeesSnapshot.docs.map(doc => ({
+    // Listen to attendance collection for today
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const todayEnd = new Date(today)
+    todayEnd.setHours(23, 59, 59, 999)
+
+    const attendanceUnsubscribe = onSnapshot(
+      query(
+        collection(db, 'attendance'),
+        where('date', '>=', Timestamp.fromDate(today)),
+        where('date', '<=', Timestamp.fromDate(todayEnd))
+      ),
+      (attendanceSnapshot) => {
+        const attendance = attendanceSnapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data()
         }))
-        console.log('Employees fetched:', {
-          count: employeesSnapshot.size,
-          employees: employees
+        console.log('Today\'s attendance fetched:', {
+          count: attendanceSnapshot.size,
+          attendance: attendance
         })
         updateStats()
       },
       (error) => {
-        console.error('Error in employees listener:', error)
+        console.error('Error in attendance listener:', error)
       }
     )
 
-    // Listen to today's attendance
-    const attendanceUnsubscribe = onSnapshot(
-      (() => {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const todayEnd = new Date(today);
-        todayEnd.setHours(23, 59, 59, 999);
-        return query(
-          collection(db, 'attendance'),
-          where('date', '>=', Timestamp.fromDate(today)),
-          where('date', '<=', Timestamp.fromDate(todayEnd))
-        );
-      })(),
-      (attendanceSnapshot) => {
-        console.log('Attendance update received:', attendanceSnapshot.size)
-        updateStats()
-      }
-    )
-
-    // Listen to pending approvals
-    const approvalsUnsubscribe = onSnapshot(
+    // Listen to leave requests
+    const leaveUnsubscribe = onSnapshot(
       query(
         collection(db, 'leave_requests'),
         where('status', '==', 'pending')
       ),
-      (approvalsSnapshot) => {
-        console.log('Approvals update received:', approvalsSnapshot.size)
-        updateStats()
-      }
-    )
-
-    // Listen to recent activity
-    const activityUnsubscribe = onSnapshot(
-      query(
-        collection(db, 'activity_logs'),
-        orderBy('timestamp', 'desc'),
-        limit(5)
-      ),
-      (activitySnapshot) => {
-        console.log('Activity update received:', activitySnapshot.size)
-        const activityData = activitySnapshot.docs.map(doc => ({
-          ...doc.data(),
-          timestamp: doc.data().timestamp?.toDate() || new Date()
+      (leaveSnapshot) => {
+        const leaveRequests = leaveSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
         }))
-        setRecentActivity(activityData)
+        console.log('Leave requests fetched:', {
+          count: leaveSnapshot.size,
+          requests: leaveRequests
+        })
+        updateStats()
+      },
+      (error) => {
+        console.error('Error in leave requests listener:', error)
       }
     )
 
-    // Store all unsubscribe functions
-    setUnsubscribers([
-      usersUnsubscribe,
-      employeesUnsubscribe,
-      attendanceUnsubscribe,
-      approvalsUnsubscribe,
-      activityUnsubscribe
-    ])
+    // Store unsubscribe functions
+    setUnsubscribers([usersUnsubscribe, attendanceUnsubscribe, leaveUnsubscribe])
   }
 
   const updateStats = async () => {
@@ -267,142 +214,80 @@ export default function AdminDashboard() {
       console.log('Starting stats update...')
 
       // Get latest data from all collections
-      const [usersSnapshot, employeesSnapshot, attendanceSnapshot, approvalsSnapshot] = await Promise.all([
-        // Get admins
-        getDocs(query(collection(db, 'users'), where('role', '==', 'admin'))),
-        // Get employees
-        getDocs(collection(db, 'employees')),
-        // Get today's attendance
+      const [usersSnapshot, attendanceSnapshot, leaveSnapshot] = await Promise.all([
+        getDocs(collection(db, 'users')),
         (() => {
-          const today = new Date();
-          today.setHours(0, 0, 0, 0);
-          const todayEnd = new Date(today);
-          todayEnd.setHours(23, 59, 59, 999);
+          const today = new Date()
+          today.setHours(0, 0, 0, 0)
+          const todayEnd = new Date(today)
+          todayEnd.setHours(23, 59, 59, 999)
           return getDocs(query(
             collection(db, 'attendance'),
             where('date', '>=', Timestamp.fromDate(today)),
             where('date', '<=', Timestamp.fromDate(todayEnd))
-          ));
+          ))
         })(),
-        // Get pending approvals
         getDocs(query(
           collection(db, 'leave_requests'),
           where('status', '==', 'pending')
         ))
       ])
 
-      // Log raw data for debugging
-      console.log('Raw data from collections:', {
-        users: {
-          count: usersSnapshot.size,
-          docs: usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
-        },
-        employees: {
-          count: employeesSnapshot.size,
-          docs: employeesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
-        },
-        attendance: {
-          count: attendanceSnapshot.size,
-          docs: attendanceSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
-        },
-        approvals: {
-          count: approvalsSnapshot.size,
-          docs: approvalsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
-        }
-      })
+      // Calculate statistics
+      const totalEmployees = usersSnapshot.size
+      const departments = new Set(usersSnapshot.docs.map(doc => doc.data().department)).size
+      const attendance = attendanceSnapshot.docs.map(doc => doc.data())
+      const presentToday = attendance.filter(a => a.status === 'present').length
+      const lateToday = attendance.filter(a => a.status === 'late').length
+      const absentToday = attendance.filter(a => a.status === 'absent').length
+      const onLeaveToday = attendance.filter(a => a.status === 'leave').length
+      const pendingApprovals = leaveSnapshot.size
 
-      // Calculate total employees (only count employees, not admins)
-      const totalEmployees = employeesSnapshot.size;
-      console.log("Total employees (from employees collection):", totalEmployees);
+      // Update department data
+      const deptData = Array.from(new Set(usersSnapshot.docs.map(doc => doc.data().department)))
+        .map((dept, index) => ({
+          department: dept,
+          value: usersSnapshot.docs.filter(doc => doc.data().department === dept).length,
+          color: DEPARTMENT_COLORS[index % DEPARTMENT_COLORS.length]
+        }))
 
-      // Process departments (using real backend data from "employeesSnapshot" only)
-      const employeesByDepartment = new Map<string, number>();
-      const departmentColors = new Map<string, string>();
-      let colorIndex = 0;
-      employeesSnapshot.docs.forEach(doc => {
-         const data = doc.data();
-         const dept = data.department || "Unassigned";
-         employeesByDepartment.set(dept, (employeesByDepartment.get(dept) || 0) + 1);
-         if (!departmentColors.has(dept)) {
-            departmentColors.set(dept, DEPARTMENT_COLORS[colorIndex % DEPARTMENT_COLORS.length]);
-            colorIndex++;
-         }
-      });
-      const departmentStats = Array.from(employeesByDepartment.entries()).map(([dept, count]) => ({ department: dept, value: count, color: departmentColors.get(dept) || "bg-gray-500" })).sort((a, b) => b.value - a.value);
-      setDepartmentData(departmentStats);
-
-      // Process attendance (for "onLeaveToday")
-      const onLeaveEmployeeIds = new Set()
-      attendanceSnapshot.docs.forEach(doc => {
-        const data = doc.data()
-        if (data.status === "early_leave" || data.status === "half_day") {
-          onLeaveEmployeeIds.add(data.userId)
-        }
-      })
-      const onLeaveToday = onLeaveEmployeeIds.size
-
-      // (Assume "activeProjects" and "pendingApprovals" are computed from "projects" and "leave_requests" collections, respectively.)
-      const activeProjects = (await getDocs(query(collection(db, "projects"), where("status", "==", "active")))).size
-      const pendingApprovals = (await getDocs(query(collection(db, "leave_requests"), where("status", "==", "pending")))).size
-
-      // Process attendance
-      const presentEmployeeIds = new Set()
-      const lateEmployeeIds = new Set()
-
-      attendanceSnapshot.docs.forEach(doc => {
-        const data = doc.data()
-        const employeeId = data.userId
-        const checkInTime = data.checkIn?.time?.toDate()
-        
-        if (!checkInTime) return
-
-        const isLate = checkInTime.getHours() > 9 || 
-                      (checkInTime.getHours() === 9 && checkInTime.getMinutes() > 30)
-
-        if (isLate) {
-          lateEmployeeIds.add(employeeId)
-        } else {
-          presentEmployeeIds.add(employeeId)
-        }
-      })
-
-      // Calculate attendance stats
-      const attendanceStats = {
-        presentToday: presentEmployeeIds.size,
-        lateToday: lateEmployeeIds.size,
-        onLeaveToday: onLeaveToday,
-        absentToday: totalEmployees - 
-          (presentEmployeeIds.size + lateEmployeeIds.size + onLeaveEmployeeIds.size)
-      }
-
-      // Update final stats (with "onLeaveToday", "activeProjects", and "pendingApprovals" from backend)
-      const finalStats = {
+      // Update state
+      setStats({
         totalEmployees,
-        departments: employeesByDepartment.size,
-        activeProjects: activeProjects,
-        pendingApprovals: pendingApprovals,
-        onLeaveToday: onLeaveToday,
-        presentToday: presentEmployeeIds.size,
-        lateToday: lateEmployeeIds.size,
-        absentToday: totalEmployees - 
-          (presentEmployeeIds.size + lateEmployeeIds.size + onLeaveEmployeeIds.size)
-      }
-      console.log('Final stats (using real backend data):', finalStats)
-      setStats(finalStats)
+        departments,
+        activeProjects: 0, // TODO: Implement project tracking
+        pendingApprovals,
+        presentToday,
+        lateToday,
+        absentToday,
+        onLeaveToday
+      })
+      setDepartmentData(deptData)
+
+      // Update recent activity
+      const activity = attendanceSnapshot.docs
+        .map(doc => ({
+          type: 'attendance',
+          description: `${doc.data().userName} marked as ${doc.data().status}`,
+          timestamp: doc.data().date.toDate(),
+          user: doc.data().userName
+        }))
+        .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
+        .slice(0, 5)
+
+      setRecentActivity(activity)
 
     } catch (error) {
       console.error('Error updating stats:', error)
-      // Log the full error details
-      if (error instanceof Error) {
-        console.error('Error details:', {
-          message: error.message,
-          stack: error.stack,
-          name: error.name
-        })
-      }
+      setError('Failed to update dashboard statistics')
     } finally {
       setLoading(false)
     }
+  }
+
+  const calculateTrend = (current: number, previous: number) => {
+    if (previous === 0) return 0
+    return ((current - previous) / previous) * 100
   }
 
   // Show loading state while auth is initializing
@@ -420,7 +305,7 @@ export default function AdminDashboard() {
     return (
       <div className="flex h-full items-center justify-center">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
-        <span className="ml-3">Checking permissions...</span>
+        <span className="ml-3">Loading dashboard...</span>
       </div>
     )
   }
@@ -433,7 +318,7 @@ export default function AdminDashboard() {
           <h2 className="text-red-800 font-semibold">Error</h2>
           <p className="text-red-600">{error}</p>
           <button 
-            onClick={() => router.push('/login')}
+            onClick={() => router.push('/auth/sign-in')}
             className="mt-4 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
           >
             Return to Login
@@ -444,7 +329,7 @@ export default function AdminDashboard() {
   }
 
   // Show unauthorized state
-  if (!user || userRole !== 'admin') {
+  if (!user || user.role !== 'admin') {
     return (
       <div className="flex h-full items-center justify-center">
         <div className="bg-yellow-50 p-4 rounded-lg">
@@ -494,34 +379,13 @@ export default function AdminDashboard() {
           subtitle={`${Math.round((stats.lateToday / stats.totalEmployees) * 100) || 0}% of total`}
         />
         <StatsCard 
-          title="Absent Today" 
-          value={stats.absentToday} 
-          valueColor="text-red-600"
-          icon={<UserX className="h-6 w-6 text-red-500" />}
-          trend={calculateTrend(stats.absentToday, previousStats.absentToday)}
-          trendColor={stats.absentToday <= previousStats.absentToday ? "text-green-500" : "text-red-500"}
-          subtitle={`${Math.round((stats.absentToday / stats.totalEmployees) * 100) || 0}% of total`}
-        />
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-        <StatsCard 
-          title="On Leave Today" 
-          value={stats.onLeaveToday} 
-          valueColor="text-purple-600"
-          icon={<Calendar className="h-6 w-6 text-purple-500" />}
-          trend={calculateTrend(stats.onLeaveToday, previousStats.onLeaveToday)}
-          trendColor={stats.onLeaveToday <= previousStats.onLeaveToday ? "text-green-500" : "text-red-500"}
-          subtitle={`${Math.round((stats.onLeaveToday / stats.totalEmployees) * 100) || 0}% of total`}
-        />
-        <StatsCard 
           title="Pending Approvals" 
           value={stats.pendingApprovals} 
           valueColor="text-orange-600"
           icon={<AlertCircle className="h-6 w-6 text-orange-500" />}
           trend={calculateTrend(stats.pendingApprovals, previousStats.pendingApprovals)}
           trendColor={stats.pendingApprovals <= previousStats.pendingApprovals ? "text-green-500" : "text-red-500"}
-          subtitle="Leave requests awaiting action"
+          subtitle="Leave requests awaiting approval"
         />
       </div>
 
@@ -529,27 +393,7 @@ export default function AdminDashboard() {
         <div className="lg:col-span-2">
           <Card className="p-6">
             <h2 className="text-xl font-semibold mb-4">Department Distribution</h2>
-            <div className="h-[300px]">
-              {/* <ResponsiveContainer>
-                <PieChart>
-                  <Pie
-                    data={departmentData}
-                    dataKey="value"
-                    nameKey="department"
-                    cx="50%"
-                    cy="50%"
-                    outerRadius={100}
-                    label
-                  >
-                    {departmentData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                  <Legend />
-                </PieChart>
-              </ResponsiveContainer> */}
-            </div>
+            <DepartmentChart data={departmentData} />
           </Card>
         </div>
 
@@ -570,6 +414,9 @@ export default function AdminDashboard() {
                   </div>
                 </div>
               ))}
+              {recentActivity.length === 0 && (
+                <p className="text-sm text-gray-500">No recent activity</p>
+              )}
             </div>
           </Card>
 
@@ -597,9 +444,66 @@ export default function AdminDashboard() {
                 color="bg-orange-500"
                 href="/approvals"
               />
+              <QuickActionCard
+                title="Department Management"
+                subtitle="Manage departments and teams"
+                icon={<Building2 size={24} className="text-white" />}
+                color="bg-indigo-500"
+                href="/departments"
+              />
             </div>
           </Card>
         </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <Card className="p-6">
+          <h2 className="text-xl font-semibold mb-4">System Health</h2>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600">Database Status</p>
+                <p className="text-2xl font-bold text-green-500">Healthy</p>
+              </div>
+              <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center">
+                <div className="w-8 h-8 rounded-full bg-green-500"></div>
+              </div>
+            </div>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600">API Status</p>
+                <p className="text-2xl font-bold text-green-500">Operational</p>
+              </div>
+              <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center">
+                <div className="w-8 h-8 rounded-full bg-green-500"></div>
+              </div>
+            </div>
+          </div>
+        </Card>
+
+        <Card className="p-6">
+          <h2 className="text-xl font-semibold mb-4">Storage Usage</h2>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600">Database Storage</p>
+                <p className="text-2xl font-bold text-blue-500">45%</p>
+              </div>
+              <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center">
+                <div className="w-8 h-8 rounded-full bg-blue-500"></div>
+              </div>
+            </div>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600">File Storage</p>
+                <p className="text-2xl font-bold text-blue-500">32%</p>
+              </div>
+              <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center">
+                <div className="w-8 h-8 rounded-full bg-blue-500"></div>
+              </div>
+            </div>
+          </div>
+        </Card>
       </div>
     </>
   )

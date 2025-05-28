@@ -1,10 +1,11 @@
 // Password strength requirements
 export const PASSWORD_REQUIREMENTS = {
   minLength: 8,
-  hasUpperCase: /[A-Z]/,
-  hasLowerCase: /[a-z]/,
-  hasNumber: /[0-9]/,
-  hasSpecialChar: /[!@#$%^&*]/
+  requireUppercase: true,
+  requireLowercase: true,
+  requireNumber: true,
+  requireSpecial: true,
+  specialChars: '!@#$%^&*'
 }
 
 // Password strength hints
@@ -91,8 +92,26 @@ export function checkPasswordStrength(password: string): PasswordStrength {
 
 // For sign-up form which has simpler requirements
 export function validateSignUpPassword(password: string): string | null {
-  if (password.length < 6) {
-    return "Password must be at least 6 characters long"
+  if (password.length < PASSWORD_REQUIREMENTS.minLength) {
+    return `Password must be at least ${PASSWORD_REQUIREMENTS.minLength} characters long`
   }
+
+  if (PASSWORD_REQUIREMENTS.requireUppercase && !/[A-Z]/.test(password)) {
+    return 'Password must contain at least one uppercase letter'
+  }
+
+  if (PASSWORD_REQUIREMENTS.requireLowercase && !/[a-z]/.test(password)) {
+    return 'Password must contain at least one lowercase letter'
+  }
+
+  if (PASSWORD_REQUIREMENTS.requireNumber && !/\d/.test(password)) {
+    return 'Password must contain at least one number'
+  }
+
+  if (PASSWORD_REQUIREMENTS.requireSpecial && 
+      !new RegExp(`[${PASSWORD_REQUIREMENTS.specialChars}]`).test(password)) {
+    return `Password must contain at least one special character (${PASSWORD_REQUIREMENTS.specialChars})`
+  }
+
   return null
 } 

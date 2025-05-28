@@ -127,7 +127,7 @@ export default function ManagerDashboard() {
           <CardContent>
             <div className="grid grid-cols-2 gap-4">
               <Button variant="outline" className="h-auto py-4" asChild>
-                <Link href="/leave-management/new">
+                <Link href="/leave">
                   <Plus className="h-4 w-4 mr-2" />
                   Approve Leave
                 </Link>

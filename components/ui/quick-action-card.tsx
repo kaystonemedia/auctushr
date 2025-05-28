@@ -1,4 +1,5 @@
-import Link from "next/link"
+import { Card, CardContent } from '@/components/ui/card'
+import Link from 'next/link'
 
 interface QuickActionCardProps {
   title: string
@@ -17,17 +18,19 @@ export function QuickActionCard({
 }: QuickActionCardProps) {
   return (
     <Link href={href}>
-      <div className={`${color} p-6 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 transform hover:-translate-y-1`}>
-        <div className="flex items-center space-x-4">
-          <div className="p-3 bg-white/10 rounded-lg">
-            {icon}
+      <Card className="hover:shadow-md transition-shadow">
+        <CardContent className="p-6">
+          <div className="flex items-center space-x-4">
+            <div className={`p-3 rounded-lg ${color}`}>
+              {icon}
+            </div>
+            <div>
+              <h3 className="font-medium">{title}</h3>
+              <p className="text-sm text-gray-500">{subtitle}</p>
+            </div>
           </div>
-          <div>
-            <h3 className="text-lg font-semibold text-white">{title}</h3>
-            <p className="text-sm text-white/80">{subtitle}</p>
-          </div>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
     </Link>
   )
 } 

@@ -1,13 +1,13 @@
 'use client'
 
-import { AuthProvider } from "@/contexts/auth-context"
+import { NewAuthProvider } from '@/contexts/new-auth-context'
 import { Toaster } from "react-hot-toast"
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
-    <AuthProvider>
+    <NewAuthProvider>
       {children}
       <Toaster position="top-right" />
-    </AuthProvider>
+    </NewAuthProvider>
   )
 } 

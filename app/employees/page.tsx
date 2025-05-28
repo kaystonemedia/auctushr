@@ -9,10 +9,10 @@ import { db } from "@/lib/firebase"
 import { collection, getDocs, updateDoc, deleteDoc, doc, query, orderBy, Timestamp } from "firebase/firestore"
 import { toast } from "react-hot-toast"
 import { createEmployee, deleteEmployee, updateEmployee } from "@/lib/firebase"
-import { useAuth } from "@/contexts/auth-context"
+import { useNewAuth } from '@/contexts/new-auth-context'
 
 export default function EmployeesPage() {
-  const { user, firebaseUser, loading: authLoading } = useAuth()
+  const { user, firebaseUser, isLoading: authLoading } = useNewAuth()
   const [employees, setEmployees] = useState<Employee[]>([])
   const [loading, setLoading] = useState(true)
   const [isFormOpen, setIsFormOpen] = useState(false)

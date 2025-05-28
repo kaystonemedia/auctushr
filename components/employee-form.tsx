@@ -115,6 +115,9 @@ interface FormErrors {
   password?: string;
   managerId?: string;
   role?: string;
+  'emergencyContact.name'?: string;
+  'emergencyContact.relationship'?: string;
+  'emergencyContact.phone'?: string;
 }
 
 export function EmployeeForm({ isOpen, onClose, onSubmit, initialData }: EmployeeFormProps) {
@@ -215,6 +218,21 @@ export function EmployeeForm({ isOpen, onClose, onSubmit, initialData }: Employe
       newErrors.hireDate = 'Hire date cannot be in the future'
     }
 
+    // Validate emergency contact
+    if (formData.emergencyContact) {
+      if (!formData.emergencyContact.name.trim()) {
+        newErrors['emergencyContact.name'] = 'Emergency contact name is required'
+      }
+      if (!formData.emergencyContact.relationship.trim()) {
+        newErrors['emergencyContact.relationship'] = 'Relationship is required'
+      }
+      if (!formData.emergencyContact.phone.trim()) {
+        newErrors['emergencyContact.phone'] = 'Emergency contact phone is required'
+      } else if (!isValidPhoneNumber(formData.emergencyContact.phone)) {
+        newErrors['emergencyContact.phone'] = 'Invalid phone number format. Include country code (e.g., +234, +44)'
+      }
+    }
+
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
   }
@@ -236,7 +254,8 @@ export function EmployeeForm({ isOpen, onClose, onSubmit, initialData }: Employe
         hireDate: formData.hireDate instanceof Date ? formData.hireDate : new Date(formData.hireDate),
         salary: Number(formData.salary),
         status: formData.status || 'active',
-        hasPassword: formData.hasPassword || false,
+        hasPassword: false, // Always false for new employees
+        uid: null, // Will be set after first login
         managerId: formData.managerId || null,
         role: formData.role || 'employee',
         // Include address and emergency contact
@@ -368,6 +387,14 @@ export function EmployeeForm({ isOpen, onClose, onSubmit, initialData }: Employe
           </div>
 
           <div className="flex-1 overflow-y-auto">
+            {!initialData && (
+              <div className="p-4 bg-blue-50 border-b border-blue-100">
+                <p className="text-sm text-blue-700">
+                  <strong>Note:</strong> The employee will receive an email with instructions to set up their password on their first login.
+                </p>
+              </div>
+            )}
+
             <form onSubmit={handleSubmit} className="p-6 space-y-6">
               {error && (
                 <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-600">
@@ -591,6 +618,112 @@ export function EmployeeForm({ isOpen, onClose, onSubmit, initialData }: Employe
                   {errors.hireDate && (
                     <p className="mt-1 text-sm text-red-600">{errors.hireDate}</p>
                   )}
+                </div>
+              </div>
+
+              {/* Emergency Contact Section */}
+              <div className="border-t border-gray-200 pt-6">
+                <h3 className="text-lg font-medium text-gray-900 mb-4">Emergency Contact</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Contact Name
+                    </label>
+                    <input
+                      type="text"
+                      name="emergencyContact.name"
+                      value={formData.emergencyContact.name}
+                      onChange={(e) => {
+                        setFormData(prev => ({
+                          ...prev,
+                          emergencyContact: {
+                            ...prev.emergencyContact,
+                            name: e.target.value
+                          }
+                        }))
+                        setErrors(prev => ({ ...prev, 'emergencyContact.name': undefined }))
+                        setHasUnsavedChanges(true)
+                      }}
+                      className={`w-full px-3 py-2 border rounded-lg shadow-sm focus:ring-2 focus:ring-gray-400 focus:border-gray-400 transition-colors ${
+                        errors['emergencyContact.name'] ? 'border-red-500' : 'border-gray-300'
+                      }`}
+                    />
+                    {errors['emergencyContact.name'] && (
+                      <p className="mt-1 text-sm text-red-600">{errors['emergencyContact.name']}</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Relationship
+                    </label>
+                    <select
+                      name="emergencyContact.relationship"
+                      value={formData.emergencyContact.relationship}
+                      onChange={(e) => {
+                        setFormData(prev => ({
+                          ...prev,
+                          emergencyContact: {
+                            ...prev.emergencyContact,
+                            relationship: e.target.value
+                          }
+                        }))
+                        setErrors(prev => ({ ...prev, 'emergencyContact.relationship': undefined }))
+                        setHasUnsavedChanges(true)
+                      }}
+                      className={`w-full px-3 py-2 border rounded-lg shadow-sm focus:ring-2 focus:ring-gray-400 focus:border-gray-400 transition-colors ${
+                        errors['emergencyContact.relationship'] ? 'border-red-500' : 'border-gray-300'
+                      }`}
+                    >
+                      <option value="">Select Relationship</option>
+                      <option value="spouse">Spouse</option>
+                      <option value="parent">Parent</option>
+                      <option value="sibling">Sibling</option>
+                      <option value="child">Child</option>
+                      <option value="relative">Other Relative</option>
+                      <option value="friend">Friend</option>
+                      <option value="other">Other</option>
+                    </select>
+                    {errors['emergencyContact.relationship'] && (
+                      <p className="mt-1 text-sm text-red-600">{errors['emergencyContact.relationship']}</p>
+                    )}
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Contact Phone
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="tel"
+                        name="emergencyContact.phone"
+                        value={formData.emergencyContact.phone}
+                        onChange={(e) => {
+                          const formatted = formatPhoneNumber(e.target.value)
+                          setFormData(prev => ({
+                            ...prev,
+                            emergencyContact: {
+                              ...prev.emergencyContact,
+                              phone: formatted
+                            }
+                          }))
+                          setErrors(prev => ({ ...prev, 'emergencyContact.phone': undefined }))
+                          setHasUnsavedChanges(true)
+                        }}
+                        placeholder="+1234567890"
+                        className={`w-full px-3 py-2 border rounded-lg shadow-sm focus:ring-2 focus:ring-gray-400 focus:border-gray-400 transition-colors ${
+                          errors['emergencyContact.phone'] ? 'border-red-500' : 'border-gray-300'
+                        }`}
+                      />
+                    </div>
+                    {errors['emergencyContact.phone'] ? (
+                      <p className="mt-1 text-sm text-red-600">{errors['emergencyContact.phone']}</p>
+                    ) : (
+                      <p className="mt-1 text-sm text-gray-500">
+                        Include country code (e.g., +234 for Nigeria, +44 for UK)
+                      </p>
+                    )}
+                  </div>
                 </div>
               </div>
 

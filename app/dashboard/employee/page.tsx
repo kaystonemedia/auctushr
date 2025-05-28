@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useAuth } from '@/contexts/auth-context'
+import { useNewAuth } from '@/contexts/new-auth-context'
 import { db } from '@/lib/firebase'
 import { collection, query, where, getDocs } from 'firebase/firestore'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -23,7 +23,7 @@ interface MonthlyStats {
 }
 
 export default function EmployeeDashboard() {
-  const { user, loading: authLoading } = useAuth()
+  const { user, isLoading: authLoading } = useNewAuth()
   const [loading, setLoading] = useState(true)
   const [todayAttendance, setTodayAttendance] = useState<AttendanceRecord | null>(null)
   const [monthlyStats, setMonthlyStats] = useState<MonthlyStats | null>(null)
@@ -187,7 +187,7 @@ export default function EmployeeDashboard() {
           <CardContent>
             <div className="grid grid-cols-2 gap-4">
               <Button variant="outline" className="h-auto py-4" asChild>
-                <Link href="/leave-management">
+                <Link href="/leave">
                   <Calendar className="h-4 w-4 mr-2" />
                   Request Leave
                 </Link>

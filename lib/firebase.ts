@@ -10,6 +10,7 @@ import {
   updatePassword,
   setPersistence,
   browserLocalPersistence,
+  onAuthStateChanged
 } from "firebase/auth"
 import { 
   getFirestore, 
@@ -25,7 +26,8 @@ import {
   serverTimestamp,
   initializeFirestore,
   persistentLocalCache,
-  persistentSingleTabManager
+  persistentSingleTabManager,
+  deleteDoc
 } from "firebase/firestore"
 import { EmployeeFormData } from '@/types/employee'
 import { FirebaseApp } from 'firebase/app'
@@ -98,70 +100,157 @@ export async function signUp(
   managerId?: string | null
 ) {
   try {
+    // Check if this is a first-time setup attempt
+    const isFirstUserAttempt = role === "admin";
+    
+    if (isFirstUserAttempt) {
+      // For first admin user setup
+      console.log("Attempting first admin user setup");
+      
+      // Check if any users exist
+      const usersRef = collection(db, "users");
+      const usersSnapshot = await getDocs(usersRef);
+      
+      if (!usersSnapshot.empty) {
+        throw new Error("Direct sign-up is not allowed. Please contact your administrator to create your account.");
+      }
+      
+      // Continue with first user setup...
+    } else {
+      // For all other attempts, prevent direct sign-up
+      throw new Error("Direct sign-up is not allowed. Please contact your administrator to create your account.");
+    }
+
     // Validate email format
     if (!email || !email.includes('@') || !email.includes('.')) {
       throw new Error('Invalid email format')
     }
 
+    console.log("Starting first admin user setup for:", email)
+
     // Create user in Firebase Auth
     const userCredential = await createUserWithEmailAndPassword(auth, email, password)
     const user = userCredential.user
 
-    console.log("User created in Auth:", user.uid)
+    console.log("First admin user created in Auth:", {
+      uid: user.uid,
+      email: user.email,
+      emailVerified: user.emailVerified
+    })
 
-    // Create base user data
+    // Wait for auth state and token to be ready
+    await new Promise((resolve, reject) => {
+      let attempts = 0
+      const maxAttempts = 5
+      const checkInterval = 1000 // 1 second
+
+      const checkAuthState = async () => {
+        const currentUser = auth.currentUser
+        if (currentUser && currentUser.uid === user.uid) {
+          try {
+            // Force token refresh to ensure it's available
+            const token = await currentUser.getIdToken(true)
+            console.log("Auth state ready with token:", {
+              uid: currentUser.uid,
+              email: currentUser.email,
+              tokenAvailable: !!token
+            })
+            resolve(true)
+          } catch (tokenError) {
+            console.error("Error getting token:", tokenError)
+            if (attempts >= maxAttempts) {
+              reject(new Error("Failed to get auth token"))
+            } else {
+              attempts++
+              setTimeout(checkAuthState, checkInterval)
+            }
+          }
+        } else {
+          if (attempts >= maxAttempts) {
+            reject(new Error("Auth state not ready after maximum attempts"))
+          } else {
+            attempts++
+            setTimeout(checkAuthState, checkInterval)
+          }
+        }
+      }
+
+      // Start checking auth state
+      const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+        if (currentUser && currentUser.uid === user.uid) {
+          checkAuthState()
+        }
+      })
+
+      // Set a timeout to prevent infinite waiting
+      setTimeout(() => {
+        unsubscribe()
+        if (attempts < maxAttempts) {
+          reject(new Error("Auth state timeout"))
+        }
+      }, maxAttempts * checkInterval)
+    })
+
+    // Create base user data for first admin
     const userData = {
       uid: user.uid,
       email: user.email,
       firstName: name.split(' ')[0],
       lastName: name.split(' ').slice(1).join(' '),
-      role,
-      department: "", // Default empty values
-      managerId: managerId || null,
+      role: "admin",
+      department: "Management",
+      position: "Administrator",
+      managerId: null,
       createdAt: Timestamp.now(),
       updatedAt: Timestamp.now(),
       hasPassword: true,
       status: "active",
-      position: "",
       address: null,
       emergencyContact: null,
       documents: [],
-      permissions: [],
+      permissions: ["admin"],
       settings: {},
-      metadata: {}
+      metadata: {
+        isFirstUser: true
+      }
     }
 
-    // Create the user document in Firestore
-    try {
-      if (role === "admin") {
-        // Admin users only go in the users collection
-        await setDoc(doc(db, "users", user.uid), {
-          ...userData,
-          isAdmin: true
-        })
-        console.log("Admin document created in users collection")
-      } else {
-        // Non-admin users go in the employees collection
-        const employeeData = {
-          ...userData,
-          hireDate: Timestamp.fromDate(new Date()),
-          salary: 0,
-          managerId: managerId || null,
-          isManager: role === "manager",
-          managedEmployees: role === "manager" ? [] : undefined
-        }
+    console.log("Creating first admin document in users collection")
 
-        await setDoc(doc(db, "employees", user.uid), employeeData)
-        console.log(`${role} document created in employees collection`)
+    // Create the first admin user document
+    try {
+      await setDoc(doc(db, "users", user.uid), {
+        ...userData,
+        isAdmin: true
+      })
+      console.log("First admin document created successfully")
+    } catch (dbError: any) {
+      console.error("Error creating first admin document:", {
+        error: dbError,
+        code: dbError.code,
+        message: dbError.message,
+        details: dbError.details
+      })
+      
+      // If we fail to create the document, delete the auth account
+      try {
+        await user.delete()
+        console.log("Auth account deleted after Firestore failure")
+      } catch (deleteError) {
+        console.error("Error deleting auth account:", deleteError)
       }
-    } catch (dbError) {
-      console.error("Error creating user document in Firestore:", dbError)
-      throw new Error("Failed to create user profile in database")
+      
+      throw new Error(`Failed to create first admin profile: ${dbError.message}`)
     }
 
     return user
-  } catch (error) {
-    console.error("Sign up error:", error)
+  } catch (error: any) {
+    console.error("Sign up error:", {
+      error,
+      code: error.code,
+      message: error.message,
+      details: error.details
+    })
     throw error
   }
 }
@@ -169,70 +258,85 @@ export async function signUp(
 // Check if user exists and has password set
 export async function checkUserExists(emailOrUid: string) {
   try {
+    console.log('Checking user exists for:', emailOrUid);
+    
     // If the input looks like a UID (no @ symbol), try to find by UID first
     if (!emailOrUid.includes('@')) {
+      console.log('Checking by UID...');
       // First check users collection
       const userDoc = await getDoc(doc(db, 'users', emailOrUid))
       if (userDoc.exists()) {
+        console.log('Found in users collection');
         const userData = userDoc.data()
         return {
           id: userDoc.id,
           hasPassword: userData.hasPassword || false,
-          firstLogin: userData.firstLogin || false,
           role: userData.role,
-          uid: userData.uid
+          uid: userData.uid,
+          email: userData.email
         }
       }
 
       // Then check employees collection
       const employeeDoc = await getDoc(doc(db, 'employees', emailOrUid))
       if (employeeDoc.exists()) {
+        console.log('Found in employees collection');
         const userData = employeeDoc.data()
         return {
           id: employeeDoc.id,
           hasPassword: userData.hasPassword || false,
-          firstLogin: userData.firstLogin || false,
           role: userData.role,
-          uid: userData.uid
+          uid: userData.uid,
+          email: userData.email
         }
       }
     }
 
+    console.log('Checking by email...');
     // If not found by UID or if input is an email, search by email
+    // First check employees collection with just email
+    const employeesRef = collection(db, 'employees')
+    const employeesQuery = query(
+      employeesRef, 
+      where('email', '==', emailOrUid)
+    )
+    console.log('Executing employees query...');
+    const employeesSnapshot = await getDocs(employeesQuery)
+    console.log('Query results:', employeesSnapshot.empty ? 'No results' : 'Found results');
+    
+    if (!employeesSnapshot.empty) {
+      const employeeDoc = employeesSnapshot.docs[0]
+      const userData = employeeDoc.data()
+      console.log('Found employee:', userData);
+      return {
+        id: employeeDoc.id,
+        hasPassword: userData.hasPassword || false,
+        role: userData.role,
+        uid: userData.uid,
+        email: userData.email
+      }
+    }
+
+    // If not found in employees, check users collection
+    console.log('Checking users collection...');
     const usersRef = collection(db, 'users')
     const usersQuery = query(usersRef, where('email', '==', emailOrUid))
     const usersSnapshot = await getDocs(usersQuery)
     
-    const employeesRef = collection(db, 'employees')
-    const employeesQuery = query(employeesRef, where('email', '==', emailOrUid))
-    const employeesSnapshot = await getDocs(employeesQuery)
-    
-    // If user exists in either collection by email
-    if (!usersSnapshot.empty || !employeesSnapshot.empty) {
-      const userDoc = usersSnapshot.docs[0] || employeesSnapshot.docs[0]
+    if (!usersSnapshot.empty) {
+      const userDoc = usersSnapshot.docs[0]
       const userData = userDoc.data()
-      
-      // If user has already set up their password, return that info
-      if (userData.hasPassword) {
-        return {
-          id: userDoc.id,
-          hasPassword: true,
-          firstLogin: false,
-          role: userData.role,
-          uid: userData.uid
-        }
-      }
-      
-      // Otherwise, return the current state
+      console.log('Found user:', userData);
       return {
         id: userDoc.id,
         hasPassword: userData.hasPassword || false,
-        firstLogin: userData.firstLogin || false,
         role: userData.role,
-        uid: userData.uid
+        uid: userData.uid,
+        email: userData.email
       }
     }
     
+    console.log('No user found');
     return null
   } catch (error) {
     console.error('Error checking user:', error)
@@ -240,68 +344,156 @@ export async function checkUserExists(emailOrUid: string) {
   }
 }
 
-// Sign in function
+// Sign in function with first-time login handling
 export async function signIn(email: string, password: string, isPasswordSetup: boolean = false) {
   try {
-    // First authenticate with Firebase Auth
+    // First attempt Firebase Auth sign in
     let userCredential;
     try {
-      userCredential = await signInWithEmailAndPassword(auth, email, password)
-    } catch (error: any) {
-      // If this is a first-time login attempt, we might need to create the auth user
-      if (error.code === 'auth/user-not-found') {
-        // Check if user exists in Firestore
-        const userExists = await checkUserExists(email)
+      userCredential = await signInWithEmailAndPassword(auth, email, password);
+    } catch (authError: any) {
+      if (authError.code === 'auth/user-not-found') {
+        // If user not found in Auth, check if they exist in Firestore for first-time login
+        const userExists = await checkUserExists(email);
         if (!userExists) {
-          throw new Error("No account found with this email. Please contact your administrator.")
+          throw new Error("No account found with this email. Please contact your administrator.");
         }
-
-        // If user exists in Firestore but not in Auth, create the auth user
         if (!userExists.hasPassword && isPasswordSetup) {
-          userCredential = await createUserWithEmailAndPassword(auth, email, password)
-          
-          // Update the user's document in Firestore
-          const collectionName = userExists.role === "admin" ? "users" : "employees"
-          await updateDoc(doc(db, collectionName, userExists.id), {
-            uid: userCredential.user.uid,
-            hasPassword: true,
-            firstLogin: false,
-            updatedAt: serverTimestamp()
-          })
-        } else {
-          throw new Error("FIRST_TIME_LOGIN")
+          // Handle first-time login setup
+          return handleFirstTimeLogin(email, password, userExists);
         }
-      } else if (error.code === 'auth/invalid-credential') {
-        throw new Error("Invalid email or password")
-      } else {
-        throw error
+        throw new Error("FIRST_TIME_LOGIN");
       }
+      if (authError.code === 'auth/wrong-password') {
+        throw new Error("Invalid email or password");
+      }
+      throw authError;
     }
 
-    const user = userCredential.user
+    const user = userCredential.user;
 
-    // Now that we're authenticated, get the user's data from Firestore
-    const userDoc = await getDoc(doc(db, 'users', user.uid))
-    const employeeDoc = await getDoc(doc(db, 'employees', user.uid))
-    
-    const userData = userDoc.exists() ? userDoc.data() : employeeDoc.exists() ? employeeDoc.data() : null
-    
-    if (!userData) {
-      // If no user data found, sign out and throw error
-      await signOut(auth)
-      throw new Error("User account not found in database. Please contact support.")
+    // Now that we're authenticated, check Firestore for user data
+    const userExists = await checkUserExists(email);
+    if (!userExists) {
+      // If no Firestore document found, sign out and throw error
+      await signOutUser(auth);
+      throw new Error("User profile not found");
+    }
+
+    // Verify the user's UID matches the document
+    if (userExists.uid && userExists.uid !== user.uid) {
+      await signOutUser(auth);
+      throw new Error("Account mismatch. Please contact your administrator.");
     }
 
     // Update last login timestamp
-    const collectionName = userData.role === "admin" ? "users" : "employees"
-    await updateDoc(doc(db, collectionName, user.uid), {
+    const collectionName = userExists.role === "admin" ? "users" : "employees";
+    await updateDoc(doc(db, collectionName, userExists.id), {
       lastLogin: serverTimestamp()
-    })
+    });
 
-    return user
-  } catch (error) {
-    console.error("Sign in error:", error)
-    throw error
+    return user;
+  } catch (error: any) {
+    if (error.code === 'auth/invalid-credential') {
+      throw new Error("Invalid email or password");
+    }
+    throw error;
+  }
+}
+
+// Helper function to handle first-time login setup
+async function handleFirstTimeLogin(email: string, password: string, userExists: any) {
+  try {
+    // Create new auth account
+    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+    const user = userCredential.user;
+
+    // Wait for auth state to be ready
+    await new Promise((resolve, reject) => {
+      let attempts = 0;
+      const maxAttempts = 5;
+      const checkInterval = 1000; // 1 second
+
+      const checkAuthState = async () => {
+        const currentUser = auth.currentUser;
+        if (currentUser && currentUser.uid === user.uid) {
+          try {
+            await currentUser.getIdToken(true);
+            resolve(true);
+          } catch (tokenError) {
+            if (attempts >= maxAttempts) {
+              reject(new Error("Failed to get auth token"));
+            } else {
+              attempts++;
+              setTimeout(checkAuthState, checkInterval);
+            }
+          }
+        } else {
+          if (attempts >= maxAttempts) {
+            reject(new Error("Auth state not ready after maximum attempts"));
+          } else {
+            attempts++;
+            setTimeout(checkAuthState, checkInterval);
+          }
+        }
+      };
+
+      const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+        if (currentUser && currentUser.uid === user.uid) {
+          checkAuthState();
+        }
+      });
+
+      setTimeout(() => {
+        unsubscribe();
+        if (attempts < maxAttempts) {
+          reject(new Error("Auth state timeout"));
+        }
+      }, maxAttempts * checkInterval);
+    });
+
+    // Update Firestore document
+    const collectionName = userExists.role === "admin" ? "users" : "employees";
+    const docRef = doc(db, collectionName, userExists.id);
+    
+    // Verify document still exists and hasn't been modified
+    const docSnap = await getDoc(docRef);
+    if (!docSnap.exists()) {
+      await user.delete();
+      throw new Error("User document no longer exists");
+    }
+    
+    const currentData = docSnap.data();
+    if (currentData.hasPassword) {
+      await user.delete();
+      throw new Error("Password has already been set for this account");
+    }
+
+    // Update document
+    await updateDoc(docRef, {
+      uid: user.uid,
+      hasPassword: true,
+      updatedAt: serverTimestamp()
+    });
+
+    return user;
+  } catch (error: any) {
+    if (error.code === 'auth/email-already-in-use') {
+      // Try to sign in instead
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
+
+      // Update Firestore document
+      const collectionName = userExists.role === "admin" ? "users" : "employees";
+      await updateDoc(doc(db, collectionName, userExists.id), {
+        uid: user.uid,
+        hasPassword: true,
+        updatedAt: serverTimestamp()
+      });
+
+      return user;
+    }
+    throw error;
   }
 }
 
@@ -341,63 +533,41 @@ export async function createRequiredIndexes() {
   }
 }
 
+// Create employee function updated for delayed auth
 export async function createEmployee(data: EmployeeFormData) {
   try {
     // Create a new document reference with auto-generated ID
     const employeeRef = doc(collection(db, 'employees'))
     const employeeId = employeeRef.id
 
-    // Create the user in Firebase Auth first
-    let authUser = null
-    try {
-      // Create a temporary password for initial setup
-      const tempPassword = Math.random().toString(36).slice(-8) + Math.random().toString(36).slice(-8)
-      const userCredential = await createUserWithEmailAndPassword(auth, data.email, tempPassword)
-      authUser = userCredential.user
-    } catch (error: any) {
-      if (error.code === 'auth/email-already-in-use') {
-        // If email already exists, try to sign in to get the user
-        try {
-          const userCredential = await signInWithEmailAndPassword(auth, data.email, 'temporary_password')
-          authUser = userCredential.user
-        } catch (signInError: any) {
-          if (signInError.code === 'auth/invalid-credential') {
-            // If sign in fails, the user exists but with a different password
-            // We'll need to handle this case differently
-            console.error('User exists with different password')
-            throw new Error('User already exists with a different password')
-          }
-          throw signInError
-        }
-      } else {
-        throw error
-      }
-    }
-
-    // Create base user data
+    // Create base user data without Firebase Auth user
     const userData = {
-      uid: authUser?.uid || employeeId,
-      ...data,
+      id: employeeId,
+      email: data.email,
+      firstName: data.firstName,
+      lastName: data.lastName,
+      phone: data.phone,
+      department: data.department,
+      position: data.position,
+      role: data.role || 'employee',
+      managerId: data.managerId || null,
       hireDate: data.hireDate instanceof Date ? data.hireDate : new Date(data.hireDate),
       salary: Number(data.salary),
       status: data.status || 'active',
       hasPassword: false, // Will be set to true after first login
-      firstLogin: true, // Indicates this is a first-time login
+      uid: null, // Will be set after first login
       createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
+      updatedAt: serverTimestamp(),
+      address: data.address || null,
+      emergencyContact: data.emergencyContact || null,
+      documents: data.documents || []
     }
 
     // Create the employee document
     await setDoc(employeeRef, userData)
 
-    // Create a corresponding user document
-    await setDoc(doc(db, 'users', authUser?.uid || employeeId), {
-      ...userData,
-      role: data.role || 'employee'
-    })
-
     return {
-      uid: authUser?.uid || employeeId,
+      id: employeeId,
       ...userData
     }
   } catch (error) {
@@ -429,5 +599,18 @@ export async function createTestUser() {
     console.error('Error creating test user:', error)
     throw error
   }
+}
+
+export async function updateEmployee(id: string, data: EmployeeFormData) {
+  // Update the employee document in Firestore
+  await updateDoc(doc(db, 'employees', id), {
+    ...data,
+    updatedAt: new Date()
+  })
+}
+
+export async function deleteEmployee(id: string) {
+  // Delete the employee document from Firestore
+  await deleteDoc(doc(db, 'employees', id))
 }
 

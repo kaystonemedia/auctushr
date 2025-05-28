@@ -5,7 +5,7 @@ import { LeaveRequestForm } from "@/components/leave-request-form"
 import { LeaveRequestsList } from "@/components/leave-requests-list"
 import { LeaveBalanceDisplay } from "@/components/leave-balance"
 import { useAuth } from "@/contexts/auth-context"
-import { Plus, Calendar, Clock, CheckCircle } from "lucide-react"
+import { Plus, Calendar, Clock, CheckCircle, CalendarDays } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
 export default function LeavePage() {
@@ -14,30 +14,36 @@ export default function LeavePage() {
   const [view, setView] = useState<'all' | 'pending' | 'my'>('all')
 
   return (
-    <div className="py-8 space-y-8">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold">Leave Management</h1>
-          <p className="text-sm text-gray-500 mt-1">Manage leave requests and approvals</p>
+    <div className="py-10 px-4 max-w-4xl mx-auto space-y-8">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-2">
+        <div className="flex items-center gap-3">
+          <div className="bg-blue-100 text-blue-600 rounded-full p-2">
+            <CalendarDays className="h-7 w-7" />
+          </div>
+          <div>
+            <h1 className="text-3xl font-bold leading-tight">Leave Management</h1>
+            <p className="text-sm text-gray-500 mt-1">Manage leave requests and approvals</p>
+          </div>
         </div>
-
-        <Button onClick={() => setShowForm(true)}>
+        <Button className="shadow-lg" size="lg" onClick={() => setShowForm(true)}>
           <Plus className="h-4 w-4 mr-2" />
           Request Leave
         </Button>
       </div>
 
       {/* Leave Balance */}
-      <div>
+      <div className="mb-6">
         <LeaveBalanceDisplay />
       </div>
 
       {/* View Tabs */}
-      <div className="flex space-x-4">
-        {user?.role === 'admin' || user?.role === 'manager' ? (
+      <div className="flex gap-2 mb-4">
+        {(user?.role === 'admin' || user?.role === 'manager') && (
           <>
             <Button
               variant={view === 'all' ? 'default' : 'outline'}
+              className={`rounded-full px-5 py-2 text-sm font-medium transition-colors ${view === 'all' ? 'shadow' : ''}`}
               onClick={() => setView('all')}
             >
               <Calendar className="h-4 w-4 mr-2" />
@@ -45,15 +51,17 @@ export default function LeavePage() {
             </Button>
             <Button
               variant={view === 'pending' ? 'default' : 'outline'}
+              className={`rounded-full px-5 py-2 text-sm font-medium transition-colors ${view === 'pending' ? 'shadow' : ''}`}
               onClick={() => setView('pending')}
             >
               <Clock className="h-4 w-4 mr-2" />
               Pending
             </Button>
           </>
-        ) : null}
+        )}
         <Button
           variant={view === 'my' ? 'default' : 'outline'}
+          className={`rounded-full px-5 py-2 text-sm font-medium transition-colors ${view === 'my' ? 'shadow' : ''}`}
           onClick={() => setView('my')}
         >
           <CheckCircle className="h-4 w-4 mr-2" />
@@ -62,12 +70,14 @@ export default function LeavePage() {
       </div>
 
       {/* Leave Requests List */}
-      <LeaveRequestsList view={view} />
+      <div>
+        <LeaveRequestsList view={view} />
+      </div>
 
       {/* Leave Request Form Modal */}
       {showForm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full">
+          <div className="bg-white rounded-xl p-8 max-w-md w-full shadow-2xl">
             <h2 className="text-lg font-semibold mb-4">Submit Leave Request</h2>
             <LeaveRequestForm
               onClose={() => setShowForm(false)}

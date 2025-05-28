@@ -14,6 +14,7 @@ import { db, auth } from '@/lib/firebase'
 import { Loader2, CheckCircle2, AlertCircle } from 'lucide-react'
 import { onAuthStateChanged } from 'firebase/auth'
 import { format } from 'date-fns'
+import { useRouter } from 'next/navigation'
 
 interface User {
   uid: string
@@ -68,6 +69,7 @@ export function PayrollDashboard() {
   const [processingPayroll, setProcessingPayroll] = useState<string | null>(null)
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null)
   const [currentReport, setCurrentReport] = useState(defaultReport)
+  const router = useRouter()
 
   const calculateReport = (periods: PayrollEntry[]) => {
     const currentDate = new Date().toISOString()
@@ -146,7 +148,7 @@ export function PayrollDashboard() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (!user) {
-        window.location.href = '/auth/sign-in'
+        router.push('/auth/sign-in')
         return
       }
 
@@ -198,7 +200,7 @@ export function PayrollDashboard() {
     })
 
     return () => unsubscribe()
-  }, [])
+  }, [router])
 
   const handleProcessPayroll = async (employeeId: string) => {
     if (!selectedPeriod) {
@@ -247,7 +249,7 @@ export function PayrollDashboard() {
       })
 
       // Refresh data
-      window.location.reload()
+      router.refresh()
     } catch (err) {
       console.error('Error processing payroll:', err)
       setError(err instanceof Error ? err.message : 'Failed to process payroll. Please try again.')
@@ -277,7 +279,7 @@ export function PayrollDashboard() {
           <CardContent>
             <p>{error}</p>
             <Button 
-              onClick={() => window.location.reload()} 
+              onClick={() => router.refresh()} 
               className="mt-4"
             >
               Retry
@@ -337,7 +339,7 @@ export function PayrollDashboard() {
                 }}
                 onSuccess={() => {
                   setShowPayrollForm(false)
-                  window.location.reload()
+                  router.refresh()
                 }}
                 onCancel={() => setShowPayrollForm(false)}
               />
@@ -523,7 +525,7 @@ export function PayrollDashboard() {
               }}
               onSuccess={() => {
                 setShowPayrollForm(false)
-                window.location.reload()
+                router.refresh()
               }}
               onCancel={() => setShowPayrollForm(false)}
             />

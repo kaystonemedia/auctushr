@@ -2,25 +2,26 @@
 
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { useAuth } from '@/contexts/auth-context'
+import { useNewAuth } from '@/contexts/new-auth-context'
+import { Loader2 } from 'lucide-react'
 
 export default function Home() {
-  const { user, loading } = useAuth()
+  const { user, isLoading } = useNewAuth()
   const router = useRouter()
 
   useEffect(() => {
-    if (!loading) {
+    if (!isLoading) {
       if (user) {
         router.push('/dashboard')
       } else {
         router.push('/auth/sign-in')
       }
     }
-  }, [user, loading, router])
+  }, [user, isLoading, router])
 
   return (
     <div className="flex h-screen items-center justify-center">
-      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+      <Loader2 className="h-8 w-8 animate-spin text-primary" />
     </div>
   )
 }

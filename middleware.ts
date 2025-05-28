@@ -67,56 +67,34 @@ const defaultRoutes = {
   employee: '/dashboard'
 }
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
-  // Allow access to public paths regardless of authentication status
+  // Allow access to public paths
   if (publicPaths.some(path => pathname.startsWith(path))) {
+    // If user has a session cookie and tries to access auth pages, redirect to dashboard
+    const token = request.cookies.get('session')?.value
+    if (token && pathname.startsWith('/auth/')) {
+      // Instead of verifying the token here, we'll let the client handle it
+      // The client will redirect to dashboard if the token is valid
+      return NextResponse.next()
+    }
     return NextResponse.next()
   }
 
-  // Check for auth token
-  const authToken = request.cookies.get('auth-token')
-  const userRole = request.cookies.get('user-role')?.value as 'admin' | 'manager' | 'employee' | undefined
+  // Check for session cookie
+  const token = request.cookies.get('session')?.value
 
-  // If user is not authenticated and trying to access protected routes
-  if (!authToken) {
-    // If trying to access root path, redirect to sign-in
-    if (pathname === "/") {
-      const signInUrl = new URL("/auth/sign-in", request.url)
-      return NextResponse.redirect(signInUrl)
-    }
-    // For all other protected routes, redirect to sign-in
-    const signInUrl = new URL("/auth/sign-in", request.url)
-    signInUrl.searchParams.set("callbackUrl", pathname)
+  // If no session cookie, redirect to sign-in
+  if (!token) {
+    console.log('No session cookie found, redirecting to sign-in')
+    const signInUrl = new URL('/auth/sign-in', request.url)
+    signInUrl.searchParams.set('callbackUrl', pathname)
     return NextResponse.redirect(signInUrl)
   }
 
-  // If user is authenticated but no role cookie is set, let the client handle the role check
-  if (!userRole) {
-    return NextResponse.next()
-  }
-
-  // If user is authenticated and trying to access auth pages, redirect to their role's dashboard
-  if (pathname.startsWith("/auth/")) {
-    return NextResponse.redirect(new URL(defaultRoutes[userRole], request.url))
-  }
-
-  // Check if user is trying to access root path
-  if (pathname === "/") {
-    return NextResponse.redirect(new URL(defaultRoutes[userRole], request.url))
-  }
-
-  // Check role-based access
-  const allowedRoutes = roleBasedRoutes[userRole] || []
-  const hasAccess = allowedRoutes.some(route => pathname.startsWith(route))
-
-  if (!hasAccess) {
-    // If user doesn't have access to the route, redirect to unauthorized page
-    return NextResponse.redirect(new URL("/unauthorized", request.url))
-  }
-
-  // Allow access to the requested route
+  // Let the client handle role-based access
+  // The client will redirect to unauthorized if needed
   return NextResponse.next()
 }
 

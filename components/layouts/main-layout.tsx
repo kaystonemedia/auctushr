@@ -1,19 +1,21 @@
 "use client"
 
-import { Header } from '@/components/header'
+import { useNewAuth } from '@/contexts/new-auth-context'
 import { Sidebar } from '@/components/sidebar'
-import { useAuth } from '@/contexts/auth-context'
+import { Header } from '@/components/header'
 import { usePathname } from 'next/navigation'
+import { Loader2 } from 'lucide-react'
+import { NotificationsDropdown } from '@/components/notifications-dropdown'
 
 export function MainLayout({ children }: { children: React.ReactNode }) {
-  const { loading } = useAuth()
+  const { user, isLoading } = useNewAuth()
   const pathname = usePathname()
   const isAuthPage = pathname.startsWith('/auth')
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="flex h-screen items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     )
   }
@@ -22,12 +24,17 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
     return children
   }
 
+  // If no user, don't render the layout
+  if (!user) {
+    return null
+  }
+
   return (
-    <div className="flex min-h-screen">
-      <Sidebar />
+    <div className="flex h-screen bg-gray-50">
+      <Sidebar activePath={pathname} />
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header />
-        <main className="flex-1 overflow-y-auto bg-gray-50 p-4">
+        <main className="flex-1 overflow-y-auto p-6">
           <div className="max-w-7xl mx-auto">
             {children}
           </div>

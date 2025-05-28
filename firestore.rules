@@ -31,7 +31,10 @@ service cloud.firestore {
     }
 
     function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
+      return isAuthenticated() && (
+        request.auth.uid == userId || 
+        resource.data.uid == request.auth.uid
+      );
     }
 
     function isManagerOf(employeeId) {
@@ -39,28 +42,104 @@ service cloud.firestore {
         (get(/databases/$(database)/documents/employees/$(employeeId)).data.managerId == request.auth.uid);
     }
 
+    // Helper for first-time login checks
+    function isFirstTimeLogin(email) {
+      return !isAuthenticated() && 
+             request.resource.data.email == email &&
+             request.resource.data.hasPassword == false;
+    }
+
+    // Helper for role-based access during first-time login
+    function hasRoleAccess(role) {
+      return role == 'employee' || role == 'manager' || role == 'admin';
+    }
+
+    // Helper for first-time login update
+    function isValidFirstTimeLoginUpdate() {
+      return resource.data.hasPassword == false &&
+             request.resource.data.hasPassword == true &&
+             request.resource.data.uid != null &&
+             request.resource.data.email == resource.data.email &&
+             request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['hasPassword', 'uid', 'updatedAt']);
+    }
+
+    // Allow unauthenticated email query for login
+    function isValidEmailQuery() {
+      // Check each condition separately to make it easier to debug
+      let hasOneFilter = request.query.filters.size() == 1;
+      let hasEmailFilter = hasOneFilter && 
+                          request.query.filters[0].op == '==' &&
+                          request.query.filters[0].field == 'email';
+      let hasValidEmail = hasOneFilter && 
+                         request.query.filters[0].value is string &&
+                         request.query.filters[0].value.matches('^[^@]+@[^@]+\\.[^@]+$');
+      
+      // For list queries, we need to check the query options
+      let hasValidLimit = request.query.limit == null || request.query.limit <= 1;
+      
+      // Return true only if all conditions are met
+      return hasValidLimit && hasOneFilter && hasEmailFilter && hasValidEmail;
+    }
+
+    // Helper for checking if document is for first-time login
+    function isFirstTimeLoginDoc() {
+      return resource.data.hasPassword == false;
+    }
+
+    // Helper for checking if document is for email lookup
+    function isValidEmailLookup() {
+      return !isAuthenticated() && 
+             resource.data.email is string &&
+             resource.data.email.matches('^[^@]+@[^@]+\\.[^@]+$');
+    }
+
+    // Helper for checking if request is for new user sign-up
+    function isNewUserSignUp() {
+      return request.auth != null && 
+             request.auth.uid == request.resource.id &&
+             request.resource.data.uid == request.auth.uid &&
+             request.resource.data.email == request.auth.token.email;
+    }
+
     // Users collection rules
     match /users/{userId} {
       allow read: if isAuthenticated() && (isAdmin() || isOwner(userId));
-      allow create: if isAuthenticated() && (isAdmin() || isFirstUser());
+      allow create: if isAuthenticated() && (isAdmin() || isFirstUser() || isNewUserSignUp());
       allow update: if isAuthenticated() && (isAdmin() || isOwner(userId));
       allow delete: if isAuthenticated() && isAdmin();
     }
 
     // Employees collection rules
     match /employees/{employeeId} {
+      // Allow unauthenticated users to get document by email for login
+      allow get: if !isAuthenticated() && (
+        isValidEmailLookup() || 
+        isFirstTimeLoginDoc()
+      );
+
+      // Allow unauthenticated users to update their own document during first-time login
+      allow update: if isValidFirstTimeLoginUpdate();
+
+      // Allow new user sign-up to create their document
+      allow create: if isAuthenticated() && (isAdmin() || isNewUserSignUp());
+
+      // Allow authenticated users to read based on role
       allow read: if isAuthenticated() && (
         isAdmin() || 
         isManager() || 
-        isOwner(employeeId) || 
+        resource.data.uid == request.auth.uid || 
         isManagerOf(employeeId)
       );
-      allow create: if isAuthenticated() && isAdmin();
+
+      // Allow authenticated users to update based on role
       allow update: if isAuthenticated() && (
         isAdmin() || 
-        isOwner(employeeId) || 
+        resource.data.uid == request.auth.uid || 
         isManagerOf(employeeId)
       );
+
+      // Only admins can delete employees
       allow delete: if isAuthenticated() && isAdmin();
     }
 

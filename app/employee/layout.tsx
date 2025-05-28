@@ -1,6 +1,6 @@
 'use client'
 
-import { useAuth } from '@/contexts/auth-context'
+import { useNewAuth } from '@/contexts/new-auth-context'
 import { Sidebar } from '@/components/sidebar'
 import { Header } from '@/components/header'
 import { usePathname } from 'next/navigation'
@@ -11,10 +11,10 @@ export default function EmployeeLayout({
 }: {
   children: React.ReactNode
 }) {
-  const { user, loading } = useAuth()
+  const { user, isLoading } = useNewAuth()
   const pathname = usePathname()
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="flex h-screen w-screen items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />

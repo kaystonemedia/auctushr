@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { useAuth } from '@/contexts/auth-context'
+import { useNewAuth } from '@/contexts/new-auth-context'
 import { Card } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { AnalyticsDashboard } from '@/components/attendance/analytics-dashboard'
@@ -10,7 +10,7 @@ import { BreakTimer } from '@/components/attendance/break-timer'
 import { User, Clock, BarChart3 } from 'lucide-react'
 
 export function EmployeeDashboard() {
-  const { user } = useAuth()
+  const { user } = useNewAuth()
 
   if (!user) {
     return null
