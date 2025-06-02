@@ -8,6 +8,7 @@ import { AnalyticsDashboard } from '@/components/attendance/analytics-dashboard'
 import { ShiftScheduler } from '@/components/attendance/shift-schedule'
 import { BreakTimer } from '@/components/attendance/break-timer'
 import { User, Clock, BarChart3 } from 'lucide-react'
+import { EmployeeAttendanceHistory } from '@/components/attendance/employee-attendance-history'
 
 export function EmployeeDashboard() {
   const { user } = useNewAuth()
@@ -53,7 +54,7 @@ export function EmployeeDashboard() {
         <TabsContent value="attendance">
           <Card className="p-6">
             <h2 className="text-xl font-semibold mb-4">Attendance History</h2>
-            {/* Add attendance history component here */}
+            <EmployeeAttendanceHistory employeeId={user.uid} />
           </Card>
         </TabsContent>
 

@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Loader2 } from 'lucide-react'
+import { checkUserExists } from '@/lib/firebase'
 
 type SignInStep = 'email' | 'password' | 'setup'
 
@@ -32,9 +33,23 @@ export function SignInForm() {
         throw new Error('Please enter a valid email address')
       }
 
-      // Just move to password step - we'll verify the account exists during actual login
-      console.log('Email validated, moving to password step')
-      setStep('password')
+      // Check if user exists in Firestore
+      console.log('Checking if user exists:', email)
+      const userExists = await checkUserExists(email)
+      console.log('User exists check result:', userExists)
+
+      if (!userExists) {
+        throw new Error('No account found with this email. Please contact your administrator.')
+      }
+
+      // If user exists but hasn't set up password, go to setup step
+      if (!userExists.hasPassword) {
+        console.log('First time login detected, moving to setup step')
+        setStep('setup')
+      } else {
+        console.log('User exists, moving to password step')
+        setStep('password')
+      }
     } catch (error) {
       console.error('Email validation error:', error)
       if (error instanceof Error) {
@@ -83,23 +98,6 @@ export function SignInForm() {
       }
     } finally {
       setLoading(false)
-    }
-  }
-
-  const handlePasswordSetupSuccess = async () => {
-    try {
-      console.log('Password setup successful, attempting login...')
-      await login(email, password, true)
-      console.log('Login after password setup successful, auth context will handle navigation')
-    } catch (error) {
-      console.error('Error after password setup:', error)
-      if (error instanceof Error && error.message === 'Password has already been set for this account') {
-        setError('This account has already been set up. Please use the regular login.')
-        setStep('password')
-      } else {
-        setError('An error occurred after setting up your password. Please try signing in again.')
-        setStep('email')
-      }
     }
   }
 
@@ -202,9 +200,14 @@ export function SignInForm() {
       {step === 'setup' && (
         <FirstTimePasswordChange
           email={email}
-          onSuccess={handlePasswordSetupSuccess}
+          onSuccess={() => {
+            // After successful password setup, redirect to dashboard
+            window.location.href = '/dashboard'
+          }}
           onCancel={() => {
             setStep('email')
+            setEmail('')
+            setPassword('')
             setError('')
           }}
         />

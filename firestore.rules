@@ -54,9 +54,17 @@ service cloud.firestore {
       return role == 'employee' || role == 'manager' || role == 'admin';
     }
 
-    // Helper for first-time login update
+    // Updated helper for first-time login checks
+    function isFirstTimeLoginDoc() {
+      return resource.data.hasPassword == false && 
+             resource.data.uid == null;
+    }
+
+    // Updated helper for first-time login update
     function isValidFirstTimeLoginUpdate() {
-      return resource.data.hasPassword == false &&
+      return !isAuthenticated() && 
+             resource.data.hasPassword == false &&
+             resource.data.uid == null &&
              request.resource.data.hasPassword == true &&
              request.resource.data.uid != null &&
              request.resource.data.email == resource.data.email &&
@@ -64,33 +72,17 @@ service cloud.firestore {
                .hasOnly(['hasPassword', 'uid', 'updatedAt']);
     }
 
-    // Allow unauthenticated email query for login
+    // Updated helper for email query validation
     function isValidEmailQuery() {
-      // Check each condition separately to make it easier to debug
-      let hasOneFilter = request.query.filters.size() == 1;
-      let hasEmailFilter = hasOneFilter && 
-                          request.query.filters[0].op == '==' &&
-                          request.query.filters[0].field == 'email';
-      let hasValidEmail = hasOneFilter && 
-                         request.query.filters[0].value is string &&
-                         request.query.filters[0].value.matches('^[^@]+@[^@]+\\.[^@]+$');
-      
-      // For list queries, we need to check the query options
-      let hasValidLimit = request.query.limit == null || request.query.limit <= 1;
-      
-      // Return true only if all conditions are met
-      return hasValidLimit && hasOneFilter && hasEmailFilter && hasValidEmail;
+      return request.query.filters.size() == 1 &&
+             request.query.filters[0].op == '==' &&
+             request.query.filters[0].field == 'email' &&
+             request.query.filters[0].value is string;
     }
 
-    // Helper for checking if document is for first-time login
-    function isFirstTimeLoginDoc() {
-      return resource.data.hasPassword == false;
-    }
-
-    // Helper for checking if document is for email lookup
+    // Updated helper for email lookup
     function isValidEmailLookup() {
-      return !isAuthenticated() && 
-             resource.data.email is string &&
+      return resource.data.email is string &&
              resource.data.email.matches('^[^@]+@[^@]+\\.[^@]+$');
     }
 
@@ -104,26 +96,58 @@ service cloud.firestore {
 
     // Users collection rules
     match /users/{userId} {
-      allow read: if isAuthenticated() && (isAdmin() || isOwner(userId));
-      allow create: if isAuthenticated() && (isAdmin() || isFirstUser() || isNewUserSignUp());
-      allow update: if isAuthenticated() && (isAdmin() || isOwner(userId));
+      // Allow unauthenticated users to query by email for login
+      allow list: if !isAuthenticated();
+      
+      // Allow unauthenticated users to get document for login
+      allow get: if !isAuthenticated();
+      
+      // Allow unauthenticated users to update during first-time login
+      allow update: if !isAuthenticated() && 
+                   resource.data.hasPassword == false &&
+                   resource.data.uid == null &&
+                   request.resource.data.hasPassword == true &&
+                   request.resource.data.uid != null &&
+                   request.resource.data.email == resource.data.email;
+      
+      // Allow admins to create user documents
+      allow create: if isAuthenticated() && (isAdmin() || isFirstUser());
+      
+      // Allow authenticated users to read based on role
+      allow read: if isAuthenticated() && (
+        isAdmin() || 
+        resource.data.uid == request.auth.uid
+      );
+      
+      // Allow authenticated users to update their own document
+      allow update: if isAuthenticated() && (
+        isAdmin() || 
+        resource.data.uid == request.auth.uid
+      );
+      
+      // Only admins can delete users
       allow delete: if isAuthenticated() && isAdmin();
     }
 
     // Employees collection rules
     match /employees/{employeeId} {
-      // Allow unauthenticated users to get document by email for login
-      allow get: if !isAuthenticated() && (
-        isValidEmailLookup() || 
-        isFirstTimeLoginDoc()
-      );
-
-      // Allow unauthenticated users to update their own document during first-time login
-      allow update: if isValidFirstTimeLoginUpdate();
-
-      // Allow new user sign-up to create their document
-      allow create: if isAuthenticated() && (isAdmin() || isNewUserSignUp());
-
+      // Allow unauthenticated users to query by email for login
+      allow list: if !isAuthenticated();
+      
+      // Allow unauthenticated users to get document for login
+      allow get: if !isAuthenticated();
+      
+      // Allow unauthenticated users to update during first-time login
+      allow update: if !isAuthenticated() && 
+                   resource.data.hasPassword == false &&
+                   resource.data.uid == null &&
+                   request.resource.data.hasPassword == true &&
+                   request.resource.data.uid != null &&
+                   request.resource.data.email == resource.data.email;
+      
+      // Allow admins to create employee documents
+      allow create: if isAuthenticated() && isAdmin();
+      
       // Allow authenticated users to read based on role
       allow read: if isAuthenticated() && (
         isAdmin() || 
@@ -131,14 +155,14 @@ service cloud.firestore {
         resource.data.uid == request.auth.uid || 
         isManagerOf(employeeId)
       );
-
+      
       // Allow authenticated users to update based on role
       allow update: if isAuthenticated() && (
         isAdmin() || 
         resource.data.uid == request.auth.uid || 
         isManagerOf(employeeId)
       );
-
+      
       // Only admins can delete employees
       allow delete: if isAuthenticated() && isAdmin();
     }
@@ -198,6 +222,53 @@ service cloud.firestore {
     match /office_locations/{locationId} {
       allow read: if isAuthenticated();
       allow create, update, delete: if isAuthenticated() && isAdmin();
+    }
+
+    // Managers collection rules
+    match /managers/{managerId} {
+      // Allow unauthenticated users to query by email for login
+      allow list: if !isAuthenticated();
+      
+      // Allow unauthenticated users to get document for login
+      allow get: if !isAuthenticated();
+      
+      // Allow first-time login updates (both before and after auth)
+      allow update: if (
+        // Case 1: Unauthenticated first-time login
+        (!isAuthenticated() && 
+         resource.data.hasPassword == false &&
+         resource.data.uid == null &&
+         request.resource.data.hasPassword == true &&
+         request.resource.data.uid != null &&
+         request.resource.data.email == resource.data.email) ||
+        // Case 2: Authenticated first-time login (after auth)
+        (isAuthenticated() &&
+         resource.data.hasPassword == false &&
+         resource.data.uid == null &&
+         request.resource.data.hasPassword == true &&
+         request.resource.data.uid == request.auth.uid &&
+         request.resource.data.email == resource.data.email &&
+         request.resource.data.diff(resource.data).affectedKeys()
+           .hasOnly(['hasPassword', 'uid', 'updatedAt']))
+      );
+      
+      // Allow admins to create manager documents
+      allow create: if isAuthenticated() && isAdmin();
+      
+      // Allow authenticated users to read their own document
+      allow read: if isAuthenticated() && (
+        isAdmin() || 
+        resource.data.uid == request.auth.uid
+      );
+      
+      // Allow authenticated users to update their own document
+      allow update: if isAuthenticated() && (
+        isAdmin() || 
+        resource.data.uid == request.auth.uid
+      );
+      
+      // Only admins can delete managers
+      allow delete: if isAuthenticated() && isAdmin();
     }
 
     // Default deny all other collections

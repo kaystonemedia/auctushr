@@ -47,4 +47,12 @@ export async function revokeSessionCookie(sessionCookie: string) {
     console.error('Error revoking session cookie:', error)
     throw error
   }
+}
+
+export function getAdminAuth() {
+  return adminAuth;
+}
+
+export function getAdminDb() {
+  return adminDb;
 } 

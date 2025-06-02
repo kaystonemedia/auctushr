@@ -77,24 +77,39 @@ export default function ManagerDashboard() {
     // Verify user role
     const checkUserRole = async () => {
       try {
-        const userDoc = await getDocs(query(
-          collection(db, 'users'),
-          where('uid', '==', user.uid),
-          where('role', 'in', ['manager', 'admin'])
-        ))
+        // Check both users and managers collections
+        const [usersSnapshot, managersSnapshot] = await Promise.all([
+          getDocs(query(
+            collection(db, 'users'),
+            where('uid', '==', user.uid),
+            where('role', 'in', ['manager', 'admin'])
+          )),
+          getDocs(query(
+            collection(db, 'managers'),
+            where('uid', '==', user.uid)
+          ))
+        ]);
 
-        if (userDoc.empty) {
-          console.log('User is not a manager, redirecting...')
-          router.push('/dashboard') // Redirect to regular dashboard
-          return
+        if (usersSnapshot.empty && managersSnapshot.empty) {
+          console.log('User is not a manager, redirecting...');
+          router.push('/dashboard'); // Redirect to regular dashboard
+          return;
         }
 
-        console.log('Manager user verified, setting up listeners...')
-        setupRealtimeListeners()
+        // Get the user data from whichever collection has it
+        const userData = usersSnapshot.docs[0]?.data() || managersSnapshot.docs[0]?.data();
+        if (!userData) {
+          console.log('No user data found, redirecting...');
+          router.push('/dashboard');
+          return;
+        }
+
+        console.log('Manager user verified, setting up listeners...');
+        setupRealtimeListeners();
       } catch (error) {
-        console.error('Error checking user role:', error)
-        setError('Failed to verify manager access. Please try logging in again.')
-        router.push('/login')
+        console.error('Error checking user role:', error);
+        setError('Failed to verify manager access. Please try logging in again.');
+        router.push('/login');
       }
     }
 

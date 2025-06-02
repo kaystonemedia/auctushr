@@ -2,13 +2,13 @@
 
 import { useState, useEffect } from 'react'
 import { LeaveBalance as LeaveBalanceType } from '@/types/leave'
-import { useAuth } from '@/contexts/auth-context'
+import { useNewAuth } from '@/contexts/new-auth-context'
 import { db } from '@/lib/firebase'
 import { doc, getDoc } from 'firebase/firestore'
 import { Calendar, Activity, Heart, Baby, Users, Umbrella, Clock } from 'lucide-react'
 
 export function LeaveBalanceDisplay() {
-  const { user } = useAuth()
+  const { user } = useNewAuth()
   const [balance, setBalance] = useState<LeaveBalanceType | null>(null)
   const [loading, setLoading] = useState(true)
 

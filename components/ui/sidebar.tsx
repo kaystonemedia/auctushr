@@ -1,6 +1,6 @@
 'use client'
 
-import { useAuth } from '@/contexts/auth-context'
+import { useNewAuth } from '@/contexts/new-auth-context'
 import { LayoutDashboard, User2, Users, Clock, FileText, FileSpreadsheet, BarChart2, Settings, LogOut } from 'lucide-react'
 import { ViewType } from '@/types/navigation'
 
@@ -10,7 +10,7 @@ interface SidebarProps {
 }
 
 export function Sidebar({ currentView, onViewChange }: SidebarProps) {
-  const { user, logout } = useAuth()
+  const { user, logout } = useNewAuth()
 
   const getNavItems = () => {
     const commonItems = [

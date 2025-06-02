@@ -1,10 +1,10 @@
 'use client'
 
-import { useAuth } from '@/contexts/auth-context'
+import { useNewAuth } from '@/contexts/new-auth-context'
 import { ProductivityDashboard } from '@/components/productivity/productivity-dashboard'
 
 export default function ProductivityPage() {
-  const { user } = useAuth()
+  const { user } = useNewAuth()
 
   // Only allow admin and manager roles to access this page
   if (!user || (user.role !== 'admin' && user.role !== 'manager')) {

@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "react-hot-toast"
 import { collection, query, where, getDocs, addDoc, updateDoc, doc } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
-import { useAuth } from '@/contexts/auth-context'
+import { useNewAuth } from '@/contexts/new-auth-context'
 import { Badge } from "@/components/ui/badge"
 import {
   Table,
@@ -50,7 +50,7 @@ export function ProductivityDashboard() {
     dueDate: ''
   })
   const [isDialogOpen, setIsDialogOpen] = useState(false)
-  const { user } = useAuth()
+  const { user } = useNewAuth()
 
   useEffect(() => {
     fetchEmployees()

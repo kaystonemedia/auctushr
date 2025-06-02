@@ -1,7 +1,16 @@
 import "./globals.css"
 import { Providers } from "@/components/providers"
-import { Toaster } from 'react-hot-toast'
-import { ClientLayout } from '@/components/layouts/client-layout'
+import { Toaster } from '@/components/ui/toaster'
+import { MainLayout } from '@/components/layouts/main-layout'
+import type { Metadata } from 'next'
+import { Inter } from 'next/font/google'
+
+const inter = Inter({ subsets: ['latin'] })
+
+export const metadata: Metadata = {
+  title: 'StyleTry',
+  description: 'StyleTry - Your Fashion Management Platform',
+}
 
 export default function RootLayout({
   children,
@@ -10,11 +19,11 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className="min-h-screen bg-slate-50">
+      <body className={inter.className}>
         <Providers>
-          <ClientLayout>
+          <MainLayout>
             {children}
-          </ClientLayout>
+          </MainLayout>
           <Toaster />
         </Providers>
       </body>

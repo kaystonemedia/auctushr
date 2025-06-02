@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { useAuth } from '@/contexts/auth-context'
+import { useNewAuth } from '@/contexts/new-auth-context'
 import { User, Mail, Building, Calendar, Shield, Camera, Lock, Check, X } from 'lucide-react'
 import { doc, updateDoc } from 'firebase/firestore'
 import { updatePassword } from 'firebase/auth'
@@ -13,6 +13,8 @@ import { checkPasswordStrength, validatePassword, PASSWORD_REQUIREMENTS, PASSWOR
 
 export default function ProfilePage() {
   // ... existing state ...
+
+  const { user } = useNewAuth()
 
   const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault()

@@ -1,11 +1,11 @@
 'use client'
 
-import { useAuth } from '@/contexts/auth-context'
+import { useNewAuth } from '@/contexts/new-auth-context'
 import { Bell, User } from 'lucide-react'
 import Link from 'next/link'
 
 export function Header() {
-  const { user } = useAuth()
+  const { user } = useNewAuth()
 
   return (
     <header className="flex h-16 items-center justify-between border-b border-gray-200 bg-white px-6">

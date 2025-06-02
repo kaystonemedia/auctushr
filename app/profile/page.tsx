@@ -1,12 +1,14 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { useAuth } from '@/contexts/auth-context'
+import { useNewAuth } from '@/contexts/new-auth-context'
+import { useOnlineStatus } from '@/hooks/use-online-status'
 import { User, Mail, Building, Calendar, Shield, Camera, Lock, Check, X } from 'lucide-react'
 import { doc, updateDoc } from 'firebase/firestore'
 import { updatePassword } from 'firebase/auth'
 import { db, auth } from '@/lib/firebase'
 import { uploadFile } from '@/lib/storage'
+import { checkPasswordStrength, validatePassword, PASSWORD_REQUIREMENTS, PASSWORD_HINTS, type PasswordStrength } from '@/lib/password-validation'
 
 // Password strength requirements
 const PASSWORD_REQUIREMENTS = {
@@ -74,7 +76,8 @@ interface PasswordStrength {
 }
 
 export default function ProfilePage() {
-  const { user, isOnline } = useAuth()
+  const { user, isLoading } = useNewAuth()
+  const isOnline = useOnlineStatus()
   const [isEditing, setIsEditing] = useState(false)
   const [isChangingPassword, setIsChangingPassword] = useState(false)
   const [name, setName] = useState('')
@@ -100,7 +103,7 @@ export default function ProfilePage() {
   useEffect(() => {
     if (user) {
       setName(user.name)
-      setProfileImage(user.photoURL || null)
+      setProfileImage(user.avatar || null)
     }
   }, [user])
 
@@ -131,7 +134,7 @@ export default function ProfilePage() {
 
       // Update user document with new image URL
       await updateDoc(doc(db, 'users', user.id), {
-        photoURL: downloadURL,
+        avatar: downloadURL,
         updatedAt: new Date()
       })
 
@@ -249,6 +252,16 @@ export default function ProfilePage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold text-gray-900">Loading...</h2>
+        </div>
+      </div>
+    )
   }
 
   if (!user) {

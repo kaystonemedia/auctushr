@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useAuth } from '@/contexts/auth-context'
+import { useNewAuth } from '@/contexts/new-auth-context'
 import { db } from '@/lib/firebase'
 import { collection, query, where, getDocs, onSnapshot, Timestamp } from 'firebase/firestore'
 import { AttendanceRecord } from '@/types/attendance'
@@ -17,7 +17,7 @@ interface TeamMember {
 }
 
 export function TeamAttendanceOverview() {
-  const { user } = useAuth()
+  const { user } = useNewAuth()
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)

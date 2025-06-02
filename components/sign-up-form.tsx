@@ -6,13 +6,13 @@ import { useState } from "react"
 import { Logo } from "./logo"
 import { signUp } from "@/lib/firebase"
 import { useRouter } from "next/navigation"
-import { useAuth } from "@/contexts/auth-context"
+import { useNewAuth } from '@/contexts/new-auth-context'
 import { validateSignUpPassword } from "@/lib/password-validation"
 import Link from 'next/link'
 
 export function SignUpForm() {
   const router = useRouter()
-  const { isOnline } = useAuth()
+  const { isLoading } = useNewAuth()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [name, setName] = useState("")
@@ -60,7 +60,7 @@ export function SignUpForm() {
       return
     }
 
-    if (!isOnline) {
+    if (isLoading) {
       setError("You are currently offline. Please check your internet connection and try again.")
       return
     }
@@ -118,7 +118,7 @@ export function SignUpForm() {
       {/* Right content */}
       <div className="w-2/3 p-8 flex items-center justify-center">
         <div className="w-full max-w-md">
-          {!isOnline && (
+          {isLoading && (
             <div className="mb-4 p-3 text-sm text-yellow-800 bg-yellow-50 rounded-md">
               You are currently offline. Please check your internet connection.
             </div>
@@ -158,7 +158,7 @@ export function SignUpForm() {
                 onChange={(e) => setName(e.target.value)}
                 className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                 required
-                disabled={loading || success || !isOnline}
+                disabled={loading || success || isLoading}
               />
             </div>
 
@@ -173,7 +173,7 @@ export function SignUpForm() {
                 onChange={(e) => setEmail(e.target.value)}
                 className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                 required
-                disabled={loading || success || !isOnline}
+                disabled={loading || success || isLoading}
                 placeholder="example@domain.com"
               />
             </div>
@@ -189,7 +189,7 @@ export function SignUpForm() {
                 onChange={(e) => setPassword(e.target.value)}
                 className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                 required
-                disabled={loading || success || !isOnline}
+                disabled={loading || success || isLoading}
                 minLength={8}
                 placeholder="Enter your password"
               />
@@ -213,7 +213,7 @@ export function SignUpForm() {
                 value={role}
                 onChange={(e) => setRole(e.target.value as "admin" | "manager" | "employee")}
                 className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                disabled={loading || success || !isOnline}
+                disabled={loading || success || isLoading}
               >
                 <option value="employee">Employee</option>
                 <option value="manager">Manager</option>
@@ -223,7 +223,7 @@ export function SignUpForm() {
 
             <button
               type="submit"
-              disabled={loading || success || !isOnline}
+              disabled={loading || success || isLoading}
               className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
             >
               {loading ? "Creating account..." : success ? "Account created!" : "Create account"}

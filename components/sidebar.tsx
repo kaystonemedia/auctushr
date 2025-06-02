@@ -25,6 +25,7 @@ import {
   UserX,
   AlertCircle,
   FileBarChart2,
+  Building2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from './ui/button'
@@ -38,24 +39,20 @@ const sections = [
     ],
   },
   {
-    heading: 'MANAGEMENT',
+    heading: 'PEOPLE MANAGEMENT',
     items: [
+      { title: 'Managers', href: '/managers', icon: <UserCheck className="w-5 h-5" />, roles: ['admin'] },
+      { title: 'Administrators', href: '/administrators', icon: <UserCheck className="w-5 h-5" />, roles: ['admin'] },
       { title: 'Employees', href: '/employees', icon: <Users className="w-5 h-5" />, roles: ['admin', 'manager'] },
+      { title: 'Departments', href: '/departments', icon: <Building2 className="w-5 h-5" />, roles: ['admin'] },
+    ],
+  },
+  {
+    heading: 'ATTENDANCE & LEAVE',
+    items: [
       { title: 'Attendance', href: '/attendance', icon: <Calendar className="w-5 h-5" />, roles: ['admin', 'manager'] },
       { title: 'Leave Management', href: '/leave', icon: <ClipboardList className="w-5 h-5" />, roles: ['admin', 'manager'] },
-      { title: 'Payroll', href: '/payroll', icon: <Wallet className="w-5 h-5" />, roles: ['admin', 'manager'] },
-    ],
-  },
-  {
-    heading: 'REPORTS',
-    items: [
       { title: 'Attendance Reports', href: '/attendance/reports', icon: <FileBarChart2 className="w-5 h-5" />, roles: ['admin', 'manager'] },
-    ],
-  },
-  {
-    heading: 'RESOURCES',
-    items: [
-      { title: 'Documents', href: '/documents', icon: <FileText className="w-5 h-5" />, roles: ['admin', 'manager', 'employee'] },
     ],
   },
   {
@@ -63,6 +60,13 @@ const sections = [
     items: [
       { title: 'Productivity', href: '/productivity', icon: <Activity className="w-5 h-5" />, roles: ['admin', 'manager', 'employee'] },
       { title: 'Performance', href: '/performance', icon: <LineChart className="w-5 h-5" />, roles: ['admin', 'manager', 'employee'] },
+    ],
+  },
+  {
+    heading: 'RESOURCES',
+    items: [
+      { title: 'Documents', href: '/documents', icon: <FileText className="w-5 h-5" />, roles: ['admin', 'manager', 'employee'] },
+      { title: 'Payroll', href: '/payroll', icon: <Wallet className="w-5 h-5" />, roles: ['admin', 'manager'] },
     ],
   },
   {

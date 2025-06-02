@@ -18,6 +18,12 @@ interface User {
   avatar?: string
   createdAt: Date
   updatedAt: Date
+  requiresPasswordChange: boolean
+}
+
+interface AuthError extends Error {
+  code?: string;
+  message: string;
 }
 
 interface AuthContextType {
@@ -28,9 +34,19 @@ interface AuthContextType {
   login: (email: string, password: string, isPasswordSetup?: boolean) => Promise<void>
   logout: () => Promise<void>
   updateUser: (data: Partial<User>) => Promise<void>
+  requiresPasswordChange: boolean
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined)
+export const NewAuthContext = createContext<AuthContextType>({
+  user: null,
+  firebaseUser: null,
+  isLoading: true,
+  error: null,
+  login: async () => {},
+  logout: async () => {},
+  updateUser: async () => {},
+  requiresPasswordChange: false
+})
 
 // Define role-based route access
 const roleBasedRoutes = {
@@ -46,7 +62,9 @@ const roleBasedRoutes = {
     '/productivity',
     '/performance',
     '/settings',
-    '/help'
+    '/help',
+    '/managers',
+    '/administrators'
   ],
   manager: [
     '/dashboard',
@@ -82,6 +100,7 @@ export function NewAuthProvider({ children }: { children: React.ReactNode }) {
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [requiresPasswordChange, setRequiresPasswordChange] = useState(false)
 
   // Handle navigation based on auth state and role
   useEffect(() => {
@@ -149,32 +168,60 @@ export function NewAuthProvider({ children }: { children: React.ReactNode }) {
 
           // Get user data from Firestore
           console.log('Fetching user data for:', firebaseUser.uid)
-          const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid))
-          
-          if (userDoc.exists()) {
-            const userData = userDoc.data()
-            console.log('User data found:', { 
-              id: userDoc.id,
-              role: userData.role,
-              email: userData.email 
-            })
+          let userDoc = await getDoc(doc(db, 'users', firebaseUser.uid))
+          let userData: Record<string, unknown> | null = userDoc.exists() ? (userDoc.data() as Record<string, unknown>) : null;
 
-            const newUser = {
-              id: userDoc.id,
-              email: userData.email,
-              name: userData.name,
-              role: userData.role,
-              department: userData.department,
-              position: userData.position,
-              avatar: userData.avatar,
-              createdAt: userData.createdAt?.toDate(),
-              updatedAt: userData.updatedAt?.toDate()
+          if (!userData) {
+            // Try managers collection by uid
+            const managerQuery = query(
+              collection(db, 'managers'),
+              where('uid', '==', firebaseUser.uid),
+              limit(1)
+            );
+            const managerSnap = await getDocs(managerQuery);
+            if (!managerSnap.empty) {
+              userDoc = managerSnap.docs[0];
+              userData = userDoc.data() as Record<string, unknown>;
+              if (userData) {
+                userData.name = `${userData.firstName || ''} ${userData.lastName || ''}`.trim();
+                userData.role = 'manager';
+              }
             }
-            setUser(newUser)
-          } else {
-            console.log('No user document found for:', firebaseUser.uid)
-            setUser(null)
           }
+
+          if (!userData) {
+            // Try employees collection by uid
+            const employeeQuery = query(
+              collection(db, 'employees'),
+              where('uid', '==', firebaseUser.uid),
+              limit(1)
+            );
+            const employeeSnap = await getDocs(employeeQuery);
+            if (!employeeSnap.empty) {
+              userDoc = employeeSnap.docs[0];
+              userData = userDoc.data() as Record<string, unknown>;
+              if (userData) {
+                userData.name = `${userData.firstName || ''} ${userData.lastName || ''}`.trim();
+                userData.role = 'employee';
+              }
+            }
+          }
+
+          if (!userData) {
+            console.log("No user document (employee, user, or manager) found for:", firebaseUser.uid);
+            setUser({ id: firebaseUser.uid, email: (auth.currentUser?.email || ""), name: "Unknown", role: "unknown", createdAt: new Date(), updatedAt: new Date(), requiresPasswordChange: false });
+            console.warn("User authenticated (Firebase Auth) but no Firestore document found. (Access denied or restricted page.)");
+            return;
+          }
+          setUser({
+            id: userDoc.id,
+            email: typeof userData.email === 'string' ? userData.email : '',
+            name: typeof userData.name === 'string' ? userData.name : '',
+            role: typeof userData.role === 'string' ? userData.role : 'unknown',
+            createdAt: (userData.createdAt && typeof userData.createdAt === 'object' && 'toDate' in userData.createdAt) ? (userData.createdAt as { toDate: () => Date }).toDate() : new Date(),
+            updatedAt: (userData.updatedAt && typeof userData.updatedAt === 'object' && 'toDate' in userData.updatedAt) ? (userData.updatedAt as { toDate: () => Date }).toDate() : new Date(),
+            requiresPasswordChange: typeof userData.requiresPasswordChange === 'boolean' ? userData.requiresPasswordChange : false
+          });
         } catch (error) {
           console.error('Error setting up session:', error)
           setUser(null)
@@ -239,7 +286,8 @@ export function NewAuthProvider({ children }: { children: React.ReactNode }) {
       console.log('User data retrieved:', { 
         id: userDoc.id,
         role: userData.role,
-        email: userData.email 
+        email: userData.email,
+        requiresPasswordChange: userData.requiresPasswordChange
       })
 
       if (!userData.role) {
@@ -257,38 +305,31 @@ export function NewAuthProvider({ children }: { children: React.ReactNode }) {
         position: userData.position,
         avatar: userData.avatar,
         createdAt: userData.createdAt?.toDate(),
-        updatedAt: userData.updatedAt?.toDate()
+        updatedAt: userData.updatedAt?.toDate(),
+        requiresPasswordChange: userData.requiresPasswordChange || false
       }
-      console.log('Setting user state')
-      setUser(newUser)
-      
-      toast.success('Successfully signed in')
-      console.log('Login process completed successfully')
 
-      // Navigation will be handled by the useEffect
+      setUser(newUser)
+      setFirebaseUser(user)
+      setRequiresPasswordChange(userData.requiresPasswordChange || false)
+
+      // Redirect based on password change requirement only
+      if (userData.requiresPasswordChange && !isPasswordSetup) {
+        router.push('/auth/change-password')
+      } else {
+        // Always redirect to dashboard, let the dashboard handle role-based access
+        router.push('/dashboard')
+      }
     } catch (error: unknown) {
       console.error('Login error:', error)
-      let errorMessage = 'Failed to sign in'
-      
-      if (error instanceof Error) {
-        if (error.message === 'First time login - please set up your profile') {
-          errorMessage = error.message
-        } else if (error.message === 'FIRST_TIME_LOGIN') {
-          throw error // Let the sign-in form handle this
-        } else if (error.message.includes('auth/user-not-found') || error.message.includes('auth/wrong-password')) {
-          errorMessage = 'Invalid email or password'
-        } else if (error.message.includes('auth/too-many-requests')) {
-          errorMessage = 'Too many failed attempts. Please try again later'
-        } else if (error.message.includes('auth/network-request-failed')) {
-          errorMessage = 'Network error. Please check your connection and try again.'
-        } else if (error.message.includes('auth/missing-password')) {
-          errorMessage = 'Password is required'
-        }
+      const authError = error as AuthError
+      if (authError.message === 'PASSWORD_CHANGE_REQUIRED') {
+        setRequiresPasswordChange(true)
+        router.push('/auth/change-password')
+      } else {
+        setError(authError.message || 'Failed to sign in')
       }
-      
-      setError(errorMessage)
-      toast.error(errorMessage)
-      throw error
+      throw authError
     } finally {
       setIsLoading(false)
     }
@@ -329,22 +370,23 @@ export function NewAuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{
+    <NewAuthContext.Provider value={{
       user,
       firebaseUser,
       isLoading,
       error,
       login,
       logout,
-      updateUser
+      updateUser,
+      requiresPasswordChange
     }}>
       {children}
-    </AuthContext.Provider>
+    </NewAuthContext.Provider>
   )
 }
 
 export function useNewAuth() {
-  const context = useContext(AuthContext)
+  const context = useContext(NewAuthContext)
   if (context === undefined) {
     throw new Error('useNewAuth must be used within a NewAuthProvider')
   }

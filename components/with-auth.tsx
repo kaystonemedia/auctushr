@@ -1,5 +1,5 @@
 import { useRouter } from 'next/router';
-import { useAuth } from '@/contexts/auth-context';
+import { useNewAuth } from '@/contexts/new-auth-context';
 import { UserRole } from '@/types/user';
 
 interface WithAuthProps {
@@ -8,10 +8,10 @@ interface WithAuthProps {
 }
 
 export function WithAuth({ children, allowedRoles }: WithAuthProps) {
-  const { user, loading } = useAuth();
+  const { user, isLoading } = useNewAuth();
   const router = useRouter();
 
-  if (loading) {
+  if (isLoading) {
     return <div>Loading...</div>;
   }
 
