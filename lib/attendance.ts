@@ -55,30 +55,98 @@ export function startIdleTimeTracking(
 }
 
 export function detectIdleTime(record: AttendanceRecord, settings: AttendanceSettings): AttendanceRecord {
-  if (!record.checkIn || !record.checkOut) return record
+  if (!record.checkIn) return record
 
+  const flags = record.flags || []
   const checkInTime = new Date(record.checkIn.time)
-  const checkOutTime = new Date(record.checkOut.time)
-  const workDuration = checkOutTime.getTime() - checkInTime.getTime()
-  const workHours = workDuration / (1000 * 60 * 60)
+  const checkOutTime = record.checkOut ? new Date(record.checkOut.time) : null
+  
+  // Parse working hours
+  const [startHour, startMinute] = settings.workingHours.start.split(':').map(Number)
+  const [endHour, endMinute] = settings.workingHours.end.split(':').map(Number)
+  const workStartTime = new Date(checkInTime)
+  workStartTime.setHours(startHour, startMinute, 0, 0)
+  const workEndTime = new Date(checkInTime)
+  workEndTime.setHours(endHour, endMinute, 0, 0)
 
-  // Calculate idle time periods
+  // Check for late check-in
+  if (checkInTime > workStartTime) {
+    const lateMinutes = Math.floor((checkInTime.getTime() - workStartTime.getTime()) / (1000 * 60))
+    if (lateMinutes > settings.allowedLateMinutes) {
+      flags.push({
+        type: 'irregular_hours',
+        description: `Late check-in by ${lateMinutes} minutes`,
+        severity: lateMinutes > 30 ? 'high' : 'medium',
+        timestamp: new Date()
+      })
+    }
+  }
+
+  // Check for early check-out
+  if (checkOutTime && checkOutTime < workEndTime) {
+    const earlyMinutes = Math.floor((workEndTime.getTime() - checkOutTime.getTime()) / (1000 * 60))
+    if (earlyMinutes > settings.allowedLateMinutes) {
+      flags.push({
+        type: 'irregular_hours',
+        description: `Early check-out by ${earlyMinutes} minutes`,
+        severity: earlyMinutes > 30 ? 'high' : 'medium',
+        timestamp: new Date()
+      })
+    }
+  }
+
+  // Calculate work duration and idle time
+  const workDuration = checkOutTime ? checkOutTime.getTime() - checkInTime.getTime() : 0
+  const workHours = workDuration / (1000 * 60 * 60)
   const idlePeriods = record.idleTime || []
   const totalIdleMinutes = idlePeriods.reduce((total, period) => total + period.duration, 0)
 
-  // Generate flags based on idle time
-  const flags = record.flags || []
-  
+  // Flag for excessive idle time
   if (totalIdleMinutes > settings.idleThreshold * settings.maxIdlePeriods) {
     flags.push({
       type: 'multiple_idle_periods',
-      description: `Multiple idle periods detected (${idlePeriods.length} periods)`,
-      severity: 'high',
+      description: `Multiple idle periods detected (${idlePeriods.length} periods, total ${Math.round(totalIdleMinutes)} minutes)`,
+      severity: totalIdleMinutes > 120 ? 'high' : 'medium',
       timestamp: new Date()
     })
   }
 
-  // Update record with idle time information
+  // Flag for irregular work hours
+  if (workHours > 0) {
+    if (workHours < 4) {
+      flags.push({
+        type: 'irregular_hours',
+        description: 'Work duration less than 4 hours',
+        severity: 'high',
+        timestamp: new Date()
+      })
+    } else if (workHours > 12) {
+      flags.push({
+        type: 'irregular_hours',
+        description: 'Work duration exceeds 12 hours',
+        severity: 'medium',
+        timestamp: new Date()
+      })
+    }
+  }
+
+  // Flag for device changes if device info is available
+  if (record.checkIn.deviceInfo && record.checkOut?.deviceInfo) {
+    const checkInDevice = record.checkIn.deviceInfo
+    const checkOutDevice = record.checkOut.deviceInfo
+    
+    if (checkInDevice.browser !== checkOutDevice.browser || 
+        checkInDevice.os !== checkOutDevice.os) {
+      flags.push({
+        type: 'device_change',
+        description: 'Device changed between check-in and check-out',
+        severity: 'medium',
+        timestamp: new Date()
+      })
+    }
+  }
+
+  // Update record with flags and status
   return {
     ...record,
     idleTime: idlePeriods,

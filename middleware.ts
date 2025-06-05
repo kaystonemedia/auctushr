@@ -31,7 +31,9 @@ const roleBasedRoutes = {
     '/productivity',
     '/performance',
     '/settings',
-    '/help'
+    '/help',
+    '/managers',
+    '/administrators'
   ],
   manager: [
     '/dashboard',
@@ -56,7 +58,8 @@ const roleBasedRoutes = {
     '/productivity',
     '/performance',
     '/settings',
-    '/help'
+    '/help',
+    '/attendance/reports'  // Allow employees to view their own reports
   ]
 }
 

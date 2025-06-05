@@ -1,11 +1,12 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useAuth } from '@/contexts/auth-context'
+import { useNewAuth } from '@/contexts/new-auth-context'
 import { db } from '@/lib/firebase'
 import { collection, addDoc, query, where, getDocs } from 'firebase/firestore'
 import { toast } from 'react-hot-toast'
 import { Clock, MapPin, Smartphone, CheckCircle, XCircle } from 'lucide-react'
+import { LocationService } from '@/lib/location-service'
 
 interface Location {
   latitude: number
@@ -13,13 +14,31 @@ interface Location {
   accuracy: number
 }
 
+interface OfficeLocation {
+  id: string;
+  name: string;
+  coordinates: {
+    lat: number;
+    lng: number;
+  };
+  radius: number;
+}
+
 interface AttendanceCheckInProps {
   location: { latitude: number; longitude: number } | null
   onSuccess: () => void
 }
 
+// Add Ghana bounds for validation
+const GHANA_BOUNDS = {
+  north: 11.17, // Northernmost point
+  south: 4.74,  // Southernmost point
+  east: 1.19,   // Easternmost point
+  west: -3.25   // Westernmost point
+}
+
 export function AttendanceCheckIn({ location: initialLocation, onSuccess }: AttendanceCheckInProps) {
-  const { user } = useAuth()
+  const { user } = useNewAuth()
   const [loading, setLoading] = useState(false)
   const [location, setLocation] = useState<Location | null>(initialLocation ? {
     ...initialLocation,
@@ -27,61 +46,153 @@ export function AttendanceCheckIn({ location: initialLocation, onSuccess }: Atte
   } : null)
   const [error, setError] = useState<string | null>(null)
   const [deviceInfo, setDeviceInfo] = useState({
-    userAgent: '',
-    platform: '',
-    language: '',
-    screenResolution: ''
+    userAgent: navigator.userAgent,
+    platform: navigator.platform,
+    language: navigator.language,
+    screenResolution: `${window.screen.width}x${window.screen.height}`
   })
+  const [officeLocations, setOfficeLocations] = useState<OfficeLocation[]>([])
+  const [nearestOffice, setNearestOffice] = useState<OfficeLocation | null>(null)
+  const [locationPermission, setLocationPermission] = useState<PermissionState>('prompt')
+  const [locationService] = useState(() => new LocationService())
+  const [isTracking, setIsTracking] = useState(false)
 
-  useEffect(() => {
-    // Get device information
-    setDeviceInfo({
-      userAgent: navigator.userAgent,
-      platform: navigator.platform,
-      language: navigator.language,
-      screenResolution: `${window.screen.width}x${window.screen.height}`
-    })
+  // Get current location
+  const getCurrentLocation = (): Promise<Location> => {
+    return new Promise((resolve, reject) => {
+      if (!navigator.geolocation) {
+        reject(new Error('Geolocation is not supported by your browser'))
+        return
+      }
 
-    // Get current location
-    if ('geolocation' in navigator) {
       navigator.geolocation.getCurrentPosition(
         (position) => {
-          setLocation({
+          const location = {
             latitude: position.coords.latitude,
             longitude: position.coords.longitude,
             accuracy: position.coords.accuracy
-          })
+          }
+          setLocation(location)
+          resolve(location)
         },
         (error) => {
-          setError('Unable to get your location. Please enable location services.')
-          console.error('Geolocation error:', error)
+          let errorMessage = 'Failed to get location'
+          switch (error.code) {
+            case error.PERMISSION_DENIED:
+              errorMessage = 'Location permission denied'
+              setLocationPermission('denied')
+              break
+            case error.POSITION_UNAVAILABLE:
+              errorMessage = 'Location information is unavailable'
+              break
+            case error.TIMEOUT:
+              errorMessage = 'Location request timed out'
+              break
+          }
+          reject(new Error(errorMessage))
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 0
         }
       )
-    } else {
-      setError('Geolocation is not supported by your browser.')
+    })
+  }
+
+  // Check location permission status
+  useEffect(() => {
+    if ('permissions' in navigator) {
+      navigator.permissions.query({ name: 'geolocation' })
+        .then(permissionStatus => {
+          setLocationPermission(permissionStatus.state)
+          permissionStatus.onchange = () => {
+            setLocationPermission(permissionStatus.state)
+          }
+        })
     }
   }, [])
+
+  useEffect(() => {
+    // Fetch office locations
+    const fetchOfficeLocations = async () => {
+      try {
+        const q = query(collection(db, "officeLocations"))
+        const snapshot = await getDocs(q)
+        const locations = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        })) as OfficeLocation[]
+        setOfficeLocations(locations)
+      } catch (error) {
+        console.error("Error fetching office locations:", error)
+      }
+    }
+    fetchOfficeLocations()
+  }, [])
+
+  const isWithinGhana = (lat: number, lng: number): boolean => {
+    return lat >= GHANA_BOUNDS.south && 
+           lat <= GHANA_BOUNDS.north && 
+           lng >= GHANA_BOUNDS.west && 
+           lng <= GHANA_BOUNDS.east
+  }
+
+  const findNearestOffice = (lat: number, lng: number): OfficeLocation | null => {
+    if (officeLocations.length === 0) return null
+
+    let nearest: OfficeLocation | null = null
+    let minDistance = Infinity
+
+    officeLocations.forEach(office => {
+      const distance = calculateDistance(
+        lat,
+        lng,
+        office.coordinates.lat,
+        office.coordinates.lng
+      )
+      if (distance < minDistance) {
+        minDistance = distance
+        nearest = office
+      }
+    })
+
+    return nearest
+  }
 
   const validateLocation = async () => {
     if (!location) return false
 
     try {
-      // Get office location from settings (you'll need to implement this)
-      const officeLocation = {
-        latitude: 0, // Replace with actual office coordinates
-        longitude: 0,
-        radius: 100 // Maximum allowed distance in meters
+      // First check if location is within Ghana
+      if (!isWithinGhana(location.latitude, location.longitude)) {
+        setError('Location must be within Ghana.')
+        return false
       }
 
-      // Calculate distance between current location and office
-      const distance = calculateDistance(
-        location.latitude,
-        location.longitude,
-        officeLocation.latitude,
-        officeLocation.longitude
-      )
+      // Find nearest office for reference
+      const nearest = findNearestOffice(location.latitude, location.longitude)
+      setNearestOffice(nearest)
 
-      return distance <= officeLocation.radius
+      // If there are office locations, check if user is near any of them
+      if (officeLocations.length > 0) {
+        const isNearOffice = officeLocations.some(office => {
+          const distance = calculateDistance(
+            location.latitude,
+            location.longitude,
+            office.coordinates.lat,
+            office.coordinates.lng
+          )
+          return distance <= office.radius
+        })
+
+        if (!isNearOffice) {
+          setError('You are not near any registered office location. Please check in from a valid location.')
+          return false
+        }
+      }
+
+      return true
     } catch (error) {
       console.error('Error validating location:', error)
       return false
@@ -104,16 +215,21 @@ export function AttendanceCheckIn({ location: initialLocation, onSuccess }: Atte
   }
 
   const handleCheckIn = async () => {
-    if (!user || !location) return
+    if (!user) {
+      setError('You must be logged in to check in')
+      return
+    }
 
     try {
       setLoading(true)
       setError(null)
 
+      // Get current location
+      const currentLocation = await getCurrentLocation()
+
       // Validate location
       const isValidLocation = await validateLocation()
       if (!isValidLocation) {
-        setError('You must be at the office location to check in.')
         return
       }
 
@@ -122,7 +238,7 @@ export function AttendanceCheckIn({ location: initialLocation, onSuccess }: Atte
       today.setHours(0, 0, 0, 0)
       const checkInQuery = query(
         collection(db, 'attendance'),
-        where('employeeId', '==', user.id),
+        where('employeeId', '==', user.uid),
         where('date', '>=', today)
       )
       const existingCheckIn = await getDocs(checkInQuery)
@@ -134,33 +250,54 @@ export function AttendanceCheckIn({ location: initialLocation, onSuccess }: Atte
 
       // Create attendance record
       const attendanceData = {
-        employeeId: user.id,
-        employeeName: user.name,
-        department: user.department,
+        employeeId: user.uid,
+        employeeName: user.displayName || user.email,
+        department: user.department || 'Unknown',
         date: new Date(),
         checkIn: {
           time: new Date(),
           location: {
-            latitude: location.latitude,
-            longitude: location.longitude,
-            accuracy: location.accuracy
+            latitude: currentLocation.latitude,
+            longitude: currentLocation.longitude,
+            accuracy: currentLocation.accuracy
           },
           deviceInfo
         },
         status: 'present',
-        approvalStatus: 'pending'
+        approvalStatus: 'pending',
+        createdAt: new Date(),
+        updatedAt: new Date()
       }
 
-      await addDoc(collection(db, 'attendance'), attendanceData)
+      const docRef = await addDoc(collection(db, 'attendance'), attendanceData)
+      
+      // Start location tracking
+      const record = {
+        id: docRef.id,
+        ...attendanceData
+      } as AttendanceRecord
+      
+      await locationService.startTracking(record)
+      setIsTracking(true)
+
       toast.success('Check-in successful!')
       onSuccess()
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error checking in:', error)
-      setError('Failed to check in. Please try again.')
+      setError(error.message || 'Failed to check in. Please try again.')
     } finally {
       setLoading(false)
     }
   }
+
+  // Cleanup location tracking on unmount
+  useEffect(() => {
+    return () => {
+      if (isTracking) {
+        locationService.stopTracking()
+      }
+    }
+  }, [isTracking, locationService])
 
   return (
     <div className="bg-white rounded-lg border border-gray-200 p-6">
@@ -171,13 +308,26 @@ export function AttendanceCheckIn({ location: initialLocation, onSuccess }: Atte
         <div className="flex items-center space-x-2">
           <MapPin className="h-5 w-5 text-gray-400" />
           <span className="text-sm text-gray-600">
-            {location ? 'Location detected' : 'Getting location...'}
+            {location ? 'Location detected' : locationPermission === 'denied' ? 
+              'Location permission denied' : 'Click check-in to get location'}
           </span>
         </div>
         {location && (
-          <p className="text-xs text-gray-500 mt-1">
-            Accuracy: {Math.round(location.accuracy)} meters
-          </p>
+          <>
+            <p className="text-xs text-gray-500 mt-1">
+              Accuracy: {Math.round(location.accuracy)} meters
+            </p>
+            {nearestOffice && (
+              <p className="text-xs text-gray-500 mt-1">
+                Nearest office: {nearestOffice.name} ({Math.round(calculateDistance(
+                  location.latitude,
+                  location.longitude,
+                  nearestOffice.coordinates.lat,
+                  nearestOffice.coordinates.lng
+                ))}m away)
+              </p>
+            )}
+          </>
         )}
       </div>
 
@@ -199,9 +349,9 @@ export function AttendanceCheckIn({ location: initialLocation, onSuccess }: Atte
       {/* Check-in Button */}
       <button
         onClick={handleCheckIn}
-        disabled={loading || !location}
+        disabled={loading || locationPermission === 'denied'}
         className={`w-full flex items-center justify-center px-4 py-2 rounded-md ${
-          loading || !location
+          loading || locationPermission === 'denied'
             ? 'bg-gray-100 text-gray-400'
             : 'bg-black text-white hover:bg-gray-800'
         }`}
@@ -211,10 +361,10 @@ export function AttendanceCheckIn({ location: initialLocation, onSuccess }: Atte
             <Clock className="h-5 w-5 mr-2 animate-spin" />
             Checking in...
           </>
-        ) : !location ? (
+        ) : locationPermission === 'denied' ? (
           <>
-            <Clock className="h-5 w-5 mr-2" />
-            Waiting for location...
+            <XCircle className="h-5 w-5 mr-2" />
+            Location Permission Required
           </>
         ) : (
           <>

@@ -1,8 +1,16 @@
-import { db } from './firebase'
+import { db } from '@/lib/firebase'
 import { collection, doc, updateDoc, arrayUnion, Timestamp, getDocs, addDoc, query, where } from 'firebase/firestore'
-import { AttendanceRecord, AttendanceSettings } from '@/types/attendance'
-import { OfficeLocation, LocationSettings } from '@/types/settings'
+import { AttendanceRecord, AttendanceSettings, OfficeLocation } from '@/types/attendance'
+import { LocationSettings } from '@/types/settings'
 import { countries } from './countries'
+
+interface LocationData {
+  latitude: number
+  longitude: number
+  accuracy: number
+  timestamp: Date
+  address?: string
+}
 
 export class LocationService {
   private static instance: LocationService
@@ -11,6 +19,9 @@ export class LocationService {
   private settings: AttendanceSettings
   private locationSettings: LocationSettings
   private officeLocations: OfficeLocation[] = []
+  private locationHistory: LocationData[] = []
+  private lastAddressUpdate: Date | null = null
+  private readonly ADDRESS_UPDATE_INTERVAL = 5 * 60 * 1000 // 5 minutes
 
   private constructor(settings: AttendanceSettings, locationSettings: LocationSettings) {
     this.settings = settings
@@ -75,8 +86,8 @@ export class LocationService {
       const distance = this.calculateDistance(
         latitude,
         longitude,
-        location.latitude,
-        location.longitude
+        location.coordinates.lat,
+        location.coordinates.lng
       )
 
       if (distance < minDistance) {
@@ -128,34 +139,69 @@ export class LocationService {
     return R * c // Distance in meters
   }
 
-  public startLocationTracking(record: AttendanceRecord): void {
-    if (!navigator.geolocation) {
-      console.error('Geolocation is not supported by this browser.')
-      return
-    }
-
+  public async startTracking(record: AttendanceRecord): Promise<void> {
     this.currentRecord = record
-    this.watchId = navigator.geolocation.watchPosition(
-      (position) => this.handleLocationUpdate(position),
-      (error) => this.handleLocationError(error),
-      {
-        enableHighAccuracy: true,
-        timeout: 5000,
-        maximumAge: 0
-      }
-    )
+    this.locationHistory = []
+
+    if ('geolocation' in navigator) {
+      // Start continuous tracking
+      this.watchId = navigator.geolocation.watchPosition(
+        this.handleLocationUpdate.bind(this),
+        this.handleLocationError.bind(this),
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 0
+        }
+      )
+
+      // Initial location check
+      navigator.geolocation.getCurrentPosition(
+        this.handleLocationUpdate.bind(this),
+        this.handleLocationError.bind(this),
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 0
+        }
+      )
+    }
+  }
+
+  public stopTracking(): void {
+    if (this.watchId !== null) {
+      navigator.geolocation.clearWatch(this.watchId)
+      this.watchId = null
+    }
+    this.currentRecord = null
+    this.locationHistory = []
   }
 
   private async handleLocationUpdate(position: GeolocationPosition): Promise<void> {
     if (!this.currentRecord) return
 
     const { latitude, longitude, accuracy } = position.coords
-    const locationData = {
+    const locationData: LocationData = {
       latitude,
       longitude,
       accuracy,
       timestamp: new Date()
     }
+
+    // Update address periodically
+    if (!this.lastAddressUpdate || 
+        Date.now() - this.lastAddressUpdate.getTime() > this.ADDRESS_UPDATE_INTERVAL) {
+      try {
+        const address = await this.getAddressFromCoordinates(latitude, longitude)
+        locationData.address = address
+        this.lastAddressUpdate = new Date()
+      } catch (error) {
+        console.error('Error getting address:', error)
+      }
+    }
+
+    // Add to location history
+    this.locationHistory.push(locationData)
 
     // Update attendance record with location history
     const attendanceRef = doc(db, 'attendance', this.currentRecord.id)
@@ -166,7 +212,111 @@ export class LocationService {
     // Validate location and handle any issues
     const validation = await this.validateLocation(latitude, longitude)
     if (!validation.isValid) {
-      await this.handleLocationMismatch(validation.distance || 0, validation.location || { id: '', name: '', latitude: 0, longitude: 0, radius: 0 })
+      await this.handleLocationMismatch(validation.distance || 0, validation.location || { 
+        id: '', 
+        name: '', 
+        coordinates: { lat: 0, lng: 0 }, 
+        radius: 0 
+      })
+    }
+
+    // Check for suspicious movement patterns
+    await this.detectSuspiciousMovement()
+  }
+
+  private async getAddressFromCoordinates(lat: number, lng: number): Promise<string> {
+    try {
+      const response = await fetch(
+        `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}`
+      )
+      const data = await response.json()
+      if (data.results && data.results[0]) {
+        return data.results[0].formatted_address
+      }
+      return 'Address not found'
+    } catch (error) {
+      console.error('Error getting address:', error)
+      return 'Address lookup failed'
+    }
+  }
+
+  private async detectSuspiciousMovement() {
+    if (this.locationHistory.length < 2) return
+
+    const recentLocations = this.locationHistory.slice(-5)
+    let totalDistance = 0
+    let suspiciousMovements = 0
+
+    for (let i = 1; i < recentLocations.length; i++) {
+      const prev = recentLocations[i - 1]
+      const curr = recentLocations[i]
+      const distance = this.calculateDistance(
+        prev.latitude,
+        prev.longitude,
+        curr.latitude,
+        curr.longitude
+      )
+      const timeDiff = (curr.timestamp.getTime() - prev.timestamp.getTime()) / 1000 // in seconds
+      
+      // Calculate speed in km/h
+      const speed = (distance / 1000) / (timeDiff / 3600)
+
+      // If speed is suspiciously high (e.g., > 30 km/h in office)
+      if (speed > 30) {
+        suspiciousMovements++
+      }
+
+      totalDistance += distance
+    }
+
+    // If multiple suspicious movements detected
+    if (suspiciousMovements >= 2) {
+      await this.handleSuspiciousMovement(totalDistance)
+    }
+  }
+
+  private async handleSuspiciousMovement(totalDistance: number) {
+    if (!this.currentRecord) return
+
+    const attendanceRef = doc(db, 'attendance', this.currentRecord.id)
+    await updateDoc(attendanceRef, {
+      flags: arrayUnion({
+        type: 'location_mismatch',
+        description: `Suspicious movement detected (${Math.round(totalDistance)}m in short time)`,
+        severity: 'high',
+        timestamp: Timestamp.now()
+      })
+    })
+  }
+
+  private handleLocationError(error: GeolocationPositionError): void {
+    console.error('Geolocation error:', error)
+    // Handle different types of geolocation errors
+    switch (error.code) {
+      case error.PERMISSION_DENIED:
+        console.error('Location permission denied')
+        break
+      case error.POSITION_UNAVAILABLE:
+        console.error('Location information unavailable')
+        break
+      case error.TIMEOUT:
+        console.error('Location request timed out')
+        break
+      default:
+        console.error('Unknown geolocation error')
+    }
+  }
+
+  public async getCountryFromCoordinates(latitude: number, longitude: number): Promise<string | null> {
+    try {
+      const response = await fetch(
+        `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=en`
+      )
+      const data = await response.json()
+      return data.countryCode || null
+    } catch (error) {
+      console.error('Error getting country from coordinates:', error)
+      return null
     }
   }
 
@@ -201,44 +351,5 @@ export class LocationService {
       status: 'unread',
       attendanceId: this.currentRecord.id
     })
-  }
-
-  private handleLocationError(error: GeolocationPositionError): void {
-    console.error('Geolocation error:', error)
-    // Handle different types of geolocation errors
-    switch (error.code) {
-      case error.PERMISSION_DENIED:
-        console.error('Location permission denied')
-        break
-      case error.POSITION_UNAVAILABLE:
-        console.error('Location information unavailable')
-        break
-      case error.TIMEOUT:
-        console.error('Location request timed out')
-        break
-      default:
-        console.error('Unknown geolocation error')
-    }
-  }
-
-  public stopLocationTracking(): void {
-    if (this.watchId !== null) {
-      navigator.geolocation.clearWatch(this.watchId)
-      this.watchId = null
-    }
-    this.currentRecord = null
-  }
-
-  public async getCountryFromCoordinates(latitude: number, longitude: number): Promise<string | null> {
-    try {
-      const response = await fetch(
-        `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=en`
-      )
-      const data = await response.json()
-      return data.countryCode || null
-    } catch (error) {
-      console.error('Error getting country from coordinates:', error)
-      return null
-    }
   }
 } 

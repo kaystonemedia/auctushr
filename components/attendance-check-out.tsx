@@ -13,9 +13,27 @@ interface Location {
   accuracy: number
 }
 
+interface OfficeLocation {
+  id: string;
+  name: string;
+  coordinates: {
+    lat: number;
+    lng: number;
+  };
+  radius: number;
+}
+
 interface AttendanceCheckOutProps {
   record: any // TODO: Add proper type for record
   onSuccess: () => void
+}
+
+// Add Ghana bounds for validation
+const GHANA_BOUNDS = {
+  north: 11.17, // Northernmost point
+  south: 4.74,  // Southernmost point
+  east: 1.19,   // Easternmost point
+  west: -3.25   // Westernmost point
 }
 
 export function AttendanceCheckOut({ record, onSuccess }: AttendanceCheckOutProps) {
@@ -29,6 +47,8 @@ export function AttendanceCheckOut({ record, onSuccess }: AttendanceCheckOutProp
     language: '',
     screenResolution: ''
   })
+  const [officeLocations, setOfficeLocations] = useState<OfficeLocation[]>([])
+  const [nearestOffice, setNearestOffice] = useState<OfficeLocation | null>(null)
 
   useEffect(() => {
     // Get device information
@@ -57,28 +77,86 @@ export function AttendanceCheckOut({ record, onSuccess }: AttendanceCheckOutProp
     } else {
       setError('Geolocation is not supported by your browser.')
     }
+
+    // Fetch office locations
+    const fetchOfficeLocations = async () => {
+      try {
+        const q = query(collection(db, "officeLocations"))
+        const snapshot = await getDocs(q)
+        const locations = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        })) as OfficeLocation[]
+        setOfficeLocations(locations)
+      } catch (error) {
+        console.error("Error fetching office locations:", error)
+      }
+    }
+    fetchOfficeLocations()
   }, [])
+
+  const isWithinGhana = (lat: number, lng: number): boolean => {
+    return lat >= GHANA_BOUNDS.south && 
+           lat <= GHANA_BOUNDS.north && 
+           lng >= GHANA_BOUNDS.west && 
+           lng <= GHANA_BOUNDS.east
+  }
+
+  const findNearestOffice = (lat: number, lng: number): OfficeLocation | null => {
+    if (officeLocations.length === 0) return null
+
+    let nearest: OfficeLocation | null = null
+    let minDistance = Infinity
+
+    officeLocations.forEach(office => {
+      const distance = calculateDistance(
+        lat,
+        lng,
+        office.coordinates.lat,
+        office.coordinates.lng
+      )
+      if (distance < minDistance) {
+        minDistance = distance
+        nearest = office
+      }
+    })
+
+    return nearest
+  }
 
   const validateLocation = async () => {
     if (!location) return false
 
     try {
-      // Get office location from settings (you'll need to implement this)
-      const officeLocation = {
-        latitude: 0, // Replace with actual office coordinates
-        longitude: 0,
-        radius: 100 // Maximum allowed distance in meters
+      // First check if location is within Ghana
+      if (!isWithinGhana(location.latitude, location.longitude)) {
+        setError('Location must be within Ghana.')
+        return false
       }
 
-      // Calculate distance between current location and office
-      const distance = calculateDistance(
-        location.latitude,
-        location.longitude,
-        officeLocation.latitude,
-        officeLocation.longitude
-      )
+      // Find nearest office for reference
+      const nearest = findNearestOffice(location.latitude, location.longitude)
+      setNearestOffice(nearest)
 
-      return distance <= officeLocation.radius
+      // If there are office locations, check if user is near any of them
+      if (officeLocations.length > 0) {
+        const isNearOffice = officeLocations.some(office => {
+          const distance = calculateDistance(
+            location.latitude,
+            location.longitude,
+            office.coordinates.lat,
+            office.coordinates.lng
+          )
+          return distance <= office.radius
+        })
+
+        if (!isNearOffice) {
+          setError('You are not near any registered office location. Please check out from a valid location.')
+          return false
+        }
+      }
+
+      return true
     } catch (error) {
       console.error('Error validating location:', error)
       return false
@@ -192,9 +270,21 @@ export function AttendanceCheckOut({ record, onSuccess }: AttendanceCheckOutProp
           </span>
         </div>
         {location && (
-          <p className="text-xs text-gray-500 mt-1">
-            Accuracy: {Math.round(location.accuracy)} meters
-          </p>
+          <>
+            <p className="text-xs text-gray-500 mt-1">
+              Accuracy: {Math.round(location.accuracy)} meters
+            </p>
+            {nearestOffice && (
+              <p className="text-xs text-gray-500 mt-1">
+                Nearest office: {nearestOffice.name} ({Math.round(calculateDistance(
+                  location.latitude,
+                  location.longitude,
+                  nearestOffice.coordinates.lat,
+                  nearestOffice.coordinates.lng
+                ))}m away)
+              </p>
+            )}
+          </>
         )}
       </div>
 

@@ -1,9 +1,9 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Filter } from "lucide-react"
+import { Filter, Clock, MapPin, User, AlertCircle } from "lucide-react"
 import { AttendanceRecord, AttendanceStats, AttendanceFilters, AttendanceSettings, AttendanceNotification } from "@/types/attendance"
-import { useAuth } from "@/contexts/auth-context"
+import { useNewAuth } from "@/contexts/new-auth-context"
 import { db } from "@/lib/firebase"
 import { collection, query, where, getDocs, addDoc, updateDoc, doc, Timestamp, orderBy, onSnapshot } from "firebase/firestore"
 import { toast } from "react-hot-toast"
@@ -17,7 +17,6 @@ import { AttendanceFilterPanel } from "@/components/attendance-filter-panel"
 import { AttendanceTable } from '@/components/attendance-table'
 import { Calendar } from "@/components/ui/calendar"
 import { AttendanceCheckOut } from '@/components/attendance-check-out'
-import { Clock, MapPin, User } from 'lucide-react'
 import { TeamAttendanceOverview } from '@/components/team-attendance-overview'
 
 const DEFAULT_SETTINGS: AttendanceSettings = {
@@ -35,7 +34,7 @@ const DEFAULT_SETTINGS: AttendanceSettings = {
 }
 
 export default function AttendancePage() {
-  const { user } = useAuth()
+  const { user } = useNewAuth()
   const [todayRecord, setTodayRecord] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [selectedDate, setSelectedDate] = useState<Date>(new Date())
@@ -73,11 +72,20 @@ export default function AttendancePage() {
   const [departments, setDepartments] = useState<string[]>([])
   const [isIdle, setIsIdle] = useState(false)
   const [idlePeriods, setIdlePeriods] = useState<{ startTime: Date; endTime: Date }[]>([])
+  const [locationPermission, setLocationPermission] = useState<'prompt' | 'granted' | 'denied'>('prompt')
+  const [extensionStatus, setExtensionStatus] = useState<{
+    installed: boolean;
+    active: boolean;
+    tracking: boolean;
+  }>({
+    installed: false,
+    active: false,
+    tracking: false
+  })
 
   useEffect(() => {
     fetchTodayRecord()
     fetchAttendanceRecords()
-    getCurrentLocation()
     fetchDepartments()
   }, [filters])
 
@@ -181,23 +189,6 @@ export default function AttendancePage() {
 
     updateRecord()
   }, [todayRecord, idlePeriods])
-
-  const getCurrentLocation = () => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setLocation({
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude
-          })
-        },
-        (error) => {
-          console.error('Error getting location:', error)
-          toast.error('Failed to get location')
-        }
-      )
-    }
-  }
 
   const getDeviceInfo = () => {
     return {
@@ -335,6 +326,94 @@ export default function AttendancePage() {
     fetchAttendanceRecords()
   }
 
+  // Check extension status
+  useEffect(() => {
+    const checkExtension = async () => {
+      try {
+        // Check if extension is installed
+        const response = await chrome.runtime.sendMessage({ type: 'GET_STATUS' })
+        setExtensionStatus({
+          installed: true,
+          active: true,
+          tracking: response?.isCheckedIn || false
+        })
+      } catch (error) {
+        // Extension not installed or not responding
+        setExtensionStatus({
+          installed: false,
+          active: false,
+          tracking: false
+        })
+      }
+    }
+
+    checkExtension()
+  }, [])
+
+  // Check location permission status only
+  useEffect(() => {
+    if ('permissions' in navigator) {
+      navigator.permissions.query({ name: 'geolocation' })
+        .then(permissionStatus => {
+          setLocationPermission(permissionStatus.state)
+          permissionStatus.onchange = () => {
+            setLocationPermission(permissionStatus.state)
+          }
+        })
+    }
+  }, [])
+
+  // Handle extension check-in/out
+  const handleExtensionCheckIn = async () => {
+    try {
+      if (!location) {
+        toast.error('Location permission required')
+        return
+      }
+
+      const response = await chrome.runtime.sendMessage({
+        type: 'CHECK_IN',
+        data: {
+          location,
+          deviceInfo: {
+            userAgent: navigator.userAgent,
+            platform: navigator.platform,
+            language: navigator.language,
+            screenResolution: `${window.screen.width}x${window.screen.height}`
+          }
+        }
+      })
+
+      if (response?.error) {
+        throw new Error(response.error)
+      }
+
+      setExtensionStatus(prev => ({ ...prev, tracking: true }))
+      toast.success('Extension check-in successful')
+      handleSuccess()
+    } catch (error) {
+      console.error('Extension check-in error:', error)
+      toast.error(error.message || 'Failed to check in with extension')
+    }
+  }
+
+  const handleExtensionCheckOut = async () => {
+    try {
+      const response = await chrome.runtime.sendMessage({ type: 'CHECK_OUT' })
+      
+      if (response?.error) {
+        throw new Error(response.error)
+      }
+
+      setExtensionStatus(prev => ({ ...prev, tracking: false }))
+      toast.success('Extension check-out successful')
+      handleSuccess()
+    } catch (error) {
+      console.error('Extension check-out error:', error)
+      toast.error(error.message || 'Failed to check out with extension')
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -361,6 +440,44 @@ export default function AttendancePage() {
         </div>
       </div>
 
+      {/* Location Permission Status */}
+      {locationPermission === 'denied' && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+          <div className="flex items-center">
+            <MapPin className="h-5 w-5 text-red-500 mr-2" />
+            <div>
+              <h3 className="text-sm font-medium text-red-800">Location Access Required</h3>
+              <p className="text-sm text-red-700 mt-1">
+                Please enable location services in your browser settings to use the attendance system.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Extension Status */}
+      {!extensionStatus.installed && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
+          <div className="flex items-center">
+            <AlertCircle className="h-5 w-5 text-yellow-500 mr-2" />
+            <div>
+              <h3 className="text-sm font-medium text-yellow-800">Extension Not Installed</h3>
+              <p className="text-sm text-yellow-700 mt-1">
+                Install the StyleTry Attendance Extension to enable activity tracking.
+              </p>
+              <a
+                href="https://chrome.google.com/webstore/detail/styletry-attendance/your-extension-id"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm text-yellow-800 underline mt-2 inline-block"
+              >
+                Install Extension
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Today's Status */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <Card>
@@ -369,15 +486,15 @@ export default function AttendancePage() {
             <Clock className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            {todayRecord ? (
+            {extensionStatus.installed && extensionStatus.tracking ? (
               <AttendanceCheckOut
                 record={todayRecord}
-                onSuccess={handleSuccess}
+                onSuccess={handleExtensionCheckOut}
               />
             ) : (
               <AttendanceCheckIn
                 location={location}
-                onSuccess={handleSuccess}
+                onSuccess={handleExtensionCheckIn}
               />
             )}
           </CardContent>

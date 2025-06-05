@@ -224,6 +224,12 @@ service cloud.firestore {
       allow create, update, delete: if isAuthenticated() && isAdmin();
     }
 
+    // Settings collection rules
+    match /settings/{settingId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && isAdmin();
+    }
+
     // Managers collection rules
     match /managers/{managerId} {
       // Allow unauthenticated users to query by email for login

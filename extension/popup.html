@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>StyleTry Attendance</title>
+  <meta charset="UTF-8">
+  <style>
+    body {
+      width: 320px;
+      padding: 16px;
+      font-family: system-ui, -apple-system, sans-serif;
+    }
+
+    .status-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px;
+      background: #f8fafc;
+      border-radius: 8px;
+      margin-bottom: 16px;
+    }
+
+    .status-indicator {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+    }
+
+    .status-dot.checked-in {
+      background: #22c55e;
+    }
+
+    .status-dot.checked-out {
+      background: #ef4444;
+    }
+
+    .status-dot.syncing {
+      background: #3b82f6;
+      animation: pulse 2s infinite;
+    }
+
+    .status-text {
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    .sync-status {
+      font-size: 12px;
+      color: #64748b;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .stat-card {
+      background: white;
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid #e2e8f0;
+    }
+
+    .stat-label {
+      font-size: 12px;
+      color: #64748b;
+      margin-bottom: 4px;
+    }
+
+    .stat-value {
+      font-size: 16px;
+      font-weight: 500;
+    }
+
+    .btn {
+      width: 100%;
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      border: none;
+    }
+
+    .btn-primary {
+      background: #000;
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: #1a1a1a;
+    }
+
+    .btn-primary:disabled {
+      background: #e2e8f0;
+      color: #94a3b8;
+      cursor: not-allowed;
+    }
+
+    .btn-secondary {
+      background: #f1f5f9;
+      color: #0f172a;
+    }
+
+    .btn-secondary:hover {
+      background: #e2e8f0;
+    }
+
+    .btn-secondary:disabled {
+      background: #f1f5f9;
+      color: #94a3b8;
+      cursor: not-allowed;
+    }
+
+    .notifications {
+      margin-top: 16px;
+    }
+
+    .notification {
+      padding: 12px;
+      border-radius: 8px;
+      margin-bottom: 8px;
+      font-size: 13px;
+      display: flex;
+      align-items: start;
+      gap: 8px;
+    }
+
+    .notification.info {
+      background: #eff6ff;
+      color: #1e40af;
+    }
+
+    .notification.warning {
+      background: #fef3c7;
+      color: #92400e;
+    }
+
+    .notification.error {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+
+    .notification.success {
+      background: #f0fdf4;
+      color: #166534;
+    }
+
+    .settings-section {
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid #e2e8f0;
+    }
+
+    .settings-title {
+      font-size: 14px;
+      font-weight: 500;
+      margin-bottom: 12px;
+    }
+
+    .setting-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+
+    .setting-label {
+      font-size: 13px;
+      color: #475569;
+    }
+
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 36px;
+      height: 20px;
+    }
+
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #cbd5e1;
+      transition: .4s;
+      border-radius: 20px;
+    }
+
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 16px;
+      width: 16px;
+      left: 2px;
+      bottom: 2px;
+      background-color: white;
+      transition: .4s;
+      border-radius: 50%;
+    }
+
+    input:checked + .slider {
+      background-color: #000;
+    }
+
+    input:checked + .slider:before {
+      transform: translateX(16px);
+    }
+
+    @keyframes pulse {
+      0% { opacity: 1; }
+      50% { opacity: 0.5; }
+      100% { opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+  <!-- Status Bar -->
+  <div class="status-bar">
+    <div class="status-indicator">
+      <div id="statusIndicator" class="status-dot checked-out"></div>
+      <span id="statusText" class="status-text">Checked Out</span>
+    </div>
+    <div id="syncStatus" class="sync-status">Last sync: Never</div>
+  </div>
+
+  <!-- Stats Grid -->
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-label">Active Time</div>
+      <div id="activeTime" class="stat-value">0h 0m</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Idle Time</div>
+      <div id="idleTime" class="stat-value">0h 0m</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Location Status</div>
+      <div id="locationStatus" class="stat-value">Not tracking</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Flags</div>
+      <div id="flagCount" class="stat-value">0</div>
+    </div>
+  </div>
+
+  <!-- Action Buttons -->
+  <div class="grid grid-cols-2 gap-3">
+    <button id="checkInBtn" class="btn btn-primary">
+      Check In
+    </button>
+    <button id="checkOutBtn" class="btn btn-secondary" disabled>
+      Check Out
+    </button>
+  </div>
+
+  <!-- Notifications -->
+  <div id="notifications" class="notifications">
+    <!-- Notifications will be dynamically inserted here -->
+  </div>
+
+  <!-- Settings -->
+  <div class="settings-section">
+    <div class="settings-title">Settings</div>
+    <div class="setting-item">
+      <label class="setting-label">Break Reminders</label>
+      <label class="switch">
+        <input type="checkbox" id="breakReminders" checked>
+        <span class="slider"></span>
+      </label>
+    </div>
+    <div class="setting-item">
+      <label class="setting-label">Meeting Notifications</label>
+      <label class="switch">
+        <input type="checkbox" id="meetingNotifications" checked>
+        <span class="slider"></span>
+      </label>
+    </div>
+    <div class="setting-item">
+      <label class="setting-label">Idle Warnings</label>
+      <label class="switch">
+        <input type="checkbox" id="idleWarnings" checked>
+        <span class="slider"></span>
+      </label>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html> 

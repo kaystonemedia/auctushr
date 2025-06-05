@@ -6,10 +6,39 @@ import { EmployeeTable } from "@/components/employee-table"
 import { EmployeeForm } from "@/components/employee-form"
 import { Employee, EmployeeFormData } from "@/types/employee"
 import { db } from "@/lib/firebase"
-import { collection, getDocs, updateDoc, deleteDoc, doc, query, orderBy, Timestamp } from "firebase/firestore"
+import { collection, getDocs, updateDoc, deleteDoc, doc, query, orderBy, Timestamp, getDoc } from "firebase/firestore"
 import { toast } from "react-hot-toast"
 import { createEmployee, deleteEmployee, updateEmployee } from "@/lib/firebase"
 import { useNewAuth } from '@/contexts/new-auth-context'
+
+// Normalize employee data so that all fields (especially hireDate, address, emergencyContact) are present and in the correct format.
+function normalizeEmployeeData(emp: Employee | null): EmployeeFormData | undefined {
+  if (!emp) return undefined;
+  // Convert hireDate (if it's a Firestore Timestamp) to a JS Date, or default to a new Date.
+  const hireDate = (emp.hireDate instanceof Timestamp) ? emp.hireDate.toDate() : (emp.hireDate || new Date());
+  // Ensure address and emergencyContact are present (with defaults if missing).
+  const address = emp.address || { street: "", city: "", state: "", country: "", postalCode: "" };
+  const emergencyContact = emp.emergencyContact || { name: "", relationship: "", phone: "" };
+  // Return a normalized object (omitting id, createdAt, updatedAt) for EmployeeForm.
+  return {
+    firstName: emp.firstName || "",
+    lastName: emp.lastName || "",
+    email: emp.email || "",
+    phone: emp.phone || "",
+    department: emp.department || "",
+    position: emp.position || "",
+    role: emp.role || "employee",
+    managerId: emp.managerId || null,
+    hasPassword: emp.hasPassword || false,
+    hireDate,
+    salary: (typeof emp.salary === "number") ? emp.salary : 0,
+    status: emp.status || "active",
+    address,
+    emergencyContact,
+    documents: emp.documents || [],
+    uid: emp.uid || null
+  };
+}
 
 export default function EmployeesPage() {
   const { user, firebaseUser, isLoading: authLoading } = useNewAuth()
@@ -181,9 +210,24 @@ export default function EmployeesPage() {
     }
   }
 
-  const handleEdit = (employee: Employee) => {
-    setSelectedEmployee(employee)
-    setIsFormOpen(true)
+  const handleEdit = async (employee: Employee) => {
+    try {
+      console.log('Editing employee:', employee);
+      const docRef = doc(db, "employees", employee.id);
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) {
+        const freshData = { id: docSnap.id, ...docSnap.data() } as Employee;
+        console.log('Fetched fresh data:', freshData);
+        setSelectedEmployee(freshData);
+        setIsFormOpen(true);
+      } else {
+        console.error("Employee not found in Firestore (id: " + employee.id + ")");
+        toast.error("Employee not found in database.");
+      }
+    } catch (err) {
+      console.error("Error fetching fresh employee data:", err);
+      toast.error("Failed to load employee details.");
+    }
   }
 
   const handleDelete = (employeeId: string) => {
@@ -231,24 +275,7 @@ export default function EmployeesPage() {
 
       <EmployeeForm
         isOpen={isFormOpen}
-        initialData={selectedEmployee ? {
-          firstName: selectedEmployee.firstName,
-          lastName: selectedEmployee.lastName,
-          email: selectedEmployee.email,
-          phone: selectedEmployee.phone,
-          department: selectedEmployee.department,
-          position: selectedEmployee.position,
-          role: selectedEmployee.role,
-          managerId: selectedEmployee.managerId,
-          hasPassword: selectedEmployee.hasPassword,
-          hireDate: selectedEmployee.hireDate,
-          salary: selectedEmployee.salary,
-          status: selectedEmployee.status,
-          address: selectedEmployee.address,
-          emergencyContact: selectedEmployee.emergencyContact,
-          documents: selectedEmployee.documents,
-          uid: selectedEmployee.uid
-        } : undefined}
+        initialData={normalizeEmployeeData(selectedEmployee)}
         onSubmit={handleFormSubmit}
         onClose={() => {
           setIsFormOpen(false)

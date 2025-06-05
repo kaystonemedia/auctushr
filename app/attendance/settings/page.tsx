@@ -5,9 +5,13 @@ import { Header } from "@/components/header"
 import { Sidebar } from "@/components/sidebar"
 import { useAuth } from "@/contexts/auth-context"
 import { db } from "@/lib/firebase"
-import { doc, getDoc, updateDoc } from "firebase/firestore"
+import { doc, getDoc, updateDoc, collection, addDoc, getDocs, query, where, deleteDoc } from "firebase/firestore"
 import { toast } from "react-hot-toast"
 import { AttendanceSettings } from "@/types/attendance"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
+import { MapPin, Plus, Trash2, Edit2 } from "lucide-react"
 
 const DEFAULT_SETTINGS: AttendanceSettings = {
   workingHours: {
@@ -35,14 +39,41 @@ function flattenObject(obj: any, prefix = ''): { [key: string]: any } {
   }, {});
 }
 
+interface OfficeLocation {
+  id: string;
+  name: string;
+  address: string;
+  city: string;
+  region: string;
+  coordinates: {
+    lat: number;
+    lng: number;
+  };
+  radius: number; // in meters
+  isActive: boolean;
+}
+
 export default function AttendanceSettingsPage() {
   const { user } = useAuth()
   const [settings, setSettings] = useState<AttendanceSettings>(DEFAULT_SETTINGS)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [officeLocations, setOfficeLocations] = useState<OfficeLocation[]>([])
+  const [newLocation, setNewLocation] = useState<Partial<OfficeLocation>>({
+    name: '',
+    address: '',
+    city: '',
+    region: '',
+    coordinates: { lat: 0, lng: 0 },
+    radius: 100,
+    isActive: true
+  })
+  const [isEditing, setIsEditing] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
 
   useEffect(() => {
     fetchSettings()
+    fetchOfficeLocations()
   }, [])
 
   const fetchSettings = async () => {
@@ -63,6 +94,21 @@ export default function AttendanceSettingsPage() {
       toast.error('Failed to load settings')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const fetchOfficeLocations = async () => {
+    try {
+      const q = query(collection(db, "officeLocations"))
+      const snapshot = await getDocs(q)
+      const locations = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as OfficeLocation[]
+      setOfficeLocations(locations)
+    } catch (error) {
+      console.error("Error fetching office locations:", error)
+      toast.error("Failed to fetch office locations")
     }
   }
 
@@ -98,6 +144,71 @@ export default function AttendanceSettingsPage() {
         ? prev.requiredCheckInDays.filter(d => d !== day)
         : [...prev.requiredCheckInDays, day]
     }))
+  }
+
+  const handleAddLocation = async () => {
+    try {
+      if (!newLocation.name || !newLocation.address || !newLocation.city || !newLocation.region) {
+        toast.error("Please fill in all required fields")
+        return
+      }
+
+      const docRef = await addDoc(collection(db, "officeLocations"), {
+        ...newLocation,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      })
+
+      setOfficeLocations(prev => [...prev, { id: docRef.id, ...newLocation } as OfficeLocation])
+      setNewLocation({
+        name: '',
+        address: '',
+        city: '',
+        region: '',
+        coordinates: { lat: 0, lng: 0 },
+        radius: 100,
+        isActive: true
+      })
+      toast.success("Office location added successfully")
+    } catch (error) {
+      console.error("Error adding office location:", error)
+      toast.error("Failed to add office location")
+    }
+  }
+
+  const handleUpdateLocation = async (id: string) => {
+    try {
+      const location = officeLocations.find(loc => loc.id === id)
+      if (!location) return
+
+      await updateDoc(doc(db, "officeLocations", id), {
+        ...location,
+        updatedAt: new Date()
+      })
+
+      setOfficeLocations(prev => prev.map(loc => 
+        loc.id === id ? { ...loc, ...location } : loc
+      ))
+      setIsEditing(false)
+      setEditingId(null)
+      toast.success("Office location updated successfully")
+    } catch (error) {
+      console.error("Error updating office location:", error)
+      toast.error("Failed to update office location")
+    }
+  }
+
+  const handleDeleteLocation = async (id: string) => {
+    if (!window.confirm("Are you sure you want to delete this office location?")) return
+
+    try {
+      await deleteDoc(doc(db, "officeLocations", id))
+      setOfficeLocations(prev => prev.filter(loc => loc.id !== id))
+      toast.success("Office location deleted successfully")
+    } catch (error) {
+      console.error("Error deleting office location:", error)
+      toast.error("Failed to delete office location")
+    }
   }
 
   if (loading) {
@@ -302,6 +413,140 @@ export default function AttendanceSettingsPage() {
                   </label>
                 </div>
               </div>
+
+              {/* Office Locations Management */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Office Locations</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-6">
+                    {/* Add/Edit Location Form */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 border rounded-lg">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">Office Name</label>
+                        <Input
+                          type="text"
+                          value={newLocation.name}
+                          onChange={(e) => setNewLocation(prev => ({ ...prev, name: e.target.value }))}
+                          placeholder="Enter office name"
+                          className="mt-1"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">Address</label>
+                        <Input
+                          type="text"
+                          value={newLocation.address}
+                          onChange={(e) => setNewLocation(prev => ({ ...prev, address: e.target.value }))}
+                          placeholder="Enter full address"
+                          className="mt-1"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">City</label>
+                        <Input
+                          type="text"
+                          value={newLocation.city}
+                          onChange={(e) => setNewLocation(prev => ({ ...prev, city: e.target.value }))}
+                          placeholder="Enter city"
+                          className="mt-1"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">Region</label>
+                        <Input
+                          type="text"
+                          value={newLocation.region}
+                          onChange={(e) => setNewLocation(prev => ({ ...prev, region: e.target.value }))}
+                          placeholder="Enter region"
+                          className="mt-1"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">Latitude</label>
+                        <Input
+                          type="number"
+                          value={newLocation.coordinates?.lat}
+                          onChange={(e) => setNewLocation(prev => ({
+                            ...prev,
+                            coordinates: { ...prev.coordinates!, lat: parseFloat(e.target.value) }
+                          }))}
+                          placeholder="Enter latitude"
+                          className="mt-1"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">Longitude</label>
+                        <Input
+                          type="number"
+                          value={newLocation.coordinates?.lng}
+                          onChange={(e) => setNewLocation(prev => ({
+                            ...prev,
+                            coordinates: { ...prev.coordinates!, lng: parseFloat(e.target.value) }
+                          }))}
+                          placeholder="Enter longitude"
+                          className="mt-1"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">Radius (meters)</label>
+                        <Input
+                          type="number"
+                          value={newLocation.radius}
+                          onChange={(e) => setNewLocation(prev => ({ ...prev, radius: parseInt(e.target.value) }))}
+                          placeholder="Enter radius in meters"
+                          className="mt-1"
+                        />
+                      </div>
+                      <div className="flex items-end">
+                        <Button
+                          onClick={isEditing ? () => handleUpdateLocation(editingId!) : handleAddLocation}
+                          className="w-full"
+                        >
+                          {isEditing ? 'Update Location' : 'Add Location'}
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Locations List */}
+                    <div className="space-y-4">
+                      {officeLocations.map(location => (
+                        <div key={location.id} className="flex items-center justify-between p-4 border rounded-lg">
+                          <div className="space-y-1">
+                            <h3 className="font-medium">{location.name}</h3>
+                            <p className="text-sm text-gray-500">{location.address}, {location.city}, {location.region}</p>
+                            <p className="text-sm text-gray-500">
+                              Coordinates: {location.coordinates.lat}, {location.coordinates.lng} | 
+                              Radius: {location.radius}m
+                            </p>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setNewLocation(location)
+                                setIsEditing(true)
+                                setEditingId(location.id)
+                              }}
+                            >
+                              <Edit2 className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleDeleteLocation(location.id)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
             </div>
           </div>
         </main>
