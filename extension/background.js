@@ -27,98 +27,185 @@ const ACTIVITY_TYPES = {
 const BREAK_THRESHOLD = 5 * 60 * 1000; // 5 minutes
 const FOCUS_THRESHOLD = 25 * 60 * 1000; // 25 minutes
 
-// State
-let isCheckedIn = false;
-let lastActiveTime = Date.now();
-let idleStartTime = null;
-let currentSession = {
-  startTime: null,
-  activities: [],
-  idleTime: 0,
-  activeTime: 0,
-  locationHistory: [],
-  checkInLocation: null,
-  deviceInfo: null,
-  flags: []
+// State management using chrome.storage
+let state = {
+  isCheckedIn: false,
+  lastActiveTime: Date.now(),
+  idleStartTime: null,
+  currentSession: {
+    startTime: null,
+    activities: [],
+    idleTime: 0,
+    activeTime: 0,
+    locationHistory: [],
+    checkInLocation: null,
+    deviceInfo: null,
+    flags: []
+  },
+  currentApp: null,
+  breakStartTime: null,
+  focusStartTime: null,
+  meetingStartTime: null,
+  taskStartTime: null,
+  productivityStats: {
+    focusTime: 0,
+    idleTime: 0,
+    breakTime: 0,
+    meetingTime: 0,
+    taskProgress: 0,
+    topWebsites: [],
+    activityByHour: Array(24).fill(0).map((_, hour) => ({
+      hour,
+      active: 0,
+      idle: 0
+    })),
+    meetings: [],
+    tasks: []
+  },
+  lastSync: null
 };
 
-// State for enhanced tracking
-let currentApp = null;
-let breakStartTime = null;
-let focusStartTime = null;
-let meetingStartTime = null;
-let taskStartTime = null;
-let productivityStats = {
-  focusTime: 0,
-  idleTime: 0,
-  breakTime: 0,
-  meetingTime: 0,
-  taskProgress: 0,
-  topWebsites: [],
-  activityByHour: Array(24).fill(0).map((_, hour) => ({
-    hour,
-    active: 0,
-    idle: 0
-  })),
-  meetings: [],
-  tasks: []
-};
+// Initialize extension state
+async function initializeState() {
+  try {
+    const storedState = await chrome.storage.local.get([
+      'isCheckedIn',
+      'currentSession',
+      'lastSync',
+      'lastActiveTime',
+      'idleStartTime',
+      'currentApp',
+      'breakStartTime',
+      'focusStartTime',
+      'meetingStartTime',
+      'taskStartTime',
+      'productivityStats'
+    ]);
 
-// Initialize extension
-chrome.runtime.onInstalled.addListener(async () => {
-  // Set up periodic sync
-  chrome.alarms.create('syncActivity', { periodInMinutes: 5 });
-  
-  // Initialize storage
-  await chrome.storage.local.set({
-    isCheckedIn: false,
-    currentSession: null,
-    lastSync: null,
-    settings: {
-      breakReminders: true,
-      meetingNotifications: true,
-      idleWarnings: true,
-      syncInterval: 5,
-      idleThreshold: 5
+    // Update state from storage
+    state = {
+      ...state,
+      ...storedState,
+      currentSession: storedState.currentSession || state.currentSession,
+      productivityStats: storedState.productivityStats || state.productivityStats,
+      lastSync: storedState.lastSync ? new Date(storedState.lastSync) : null
+    };
+
+    // Set up periodic sync
+    await chrome.alarms.create('syncActivity', { periodInMinutes: 5 });
+    
+    // Set up idle detection
+    await chrome.idle.setDetectionInterval(IDLE_THRESHOLD);
+
+    // If checked in, ensure tracking is active
+    if (state.isCheckedIn && state.currentSession.startTime) {
+      startLocationTracking();
+      startActivityTracking();
     }
-  });
 
-  // Set up idle detection
-  chrome.idle.setDetectionInterval(IDLE_THRESHOLD);
-});
+    console.log('Extension state initialized:', { 
+      isCheckedIn: state.isCheckedIn, 
+      lastSync: state.lastSync?.toISOString() || 'Never'
+    });
+
+    // Save initial state
+    await saveState();
+  } catch (error) {
+    console.error('Error initializing extension state:', error);
+  }
+}
+
+// Save state to storage
+async function saveState() {
+  try {
+    const stateToSave = {
+      ...state,
+      lastSync: new Date().toISOString()
+    };
+    await chrome.storage.local.set(stateToSave);
+    state.lastSync = new Date();
+  } catch (error) {
+    console.error('Error saving state:', error);
+  }
+}
 
 // Handle alarms
 chrome.alarms.onAlarm.addListener(async (alarm) => {
-  if (alarm.name === 'syncActivity') {
+  if (alarm.name === 'syncActivity' && state.isCheckedIn) {
     await syncActivityData();
   }
 });
 
-// Handle idle state changes
-chrome.idle.onStateChanged.addListener(async (state) => {
-  if (!isCheckedIn) return;
-
-  const now = Date.now();
+// Handle messages from popup and content script
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  console.log('Received message:', message.type);
   
-  if (state === 'idle') {
-    idleStartTime = now;
-    currentSession.flags.push({
-      type: 'idle_start',
-      timestamp: new Date(now).toISOString(),
-      severity: 'low'
+  switch (message.type) {
+    case 'GET_STATUS':
+      sendResponse({
+        isCheckedIn: state.isCheckedIn,
+        currentSession: state.isCheckedIn ? {
+          ...state.currentSession,
+          startTime: state.currentSession.startTime ? new Date(state.currentSession.startTime).toISOString() : null,
+          endTime: state.currentSession.endTime ? new Date(state.currentSession.endTime).toISOString() : null,
+          locationHistory: state.currentSession.locationHistory.map(loc => ({
+            ...loc,
+            timestamp: new Date(loc.timestamp).toISOString()
+          }))
+        } : null,
+        lastSync: state.lastSync ? state.lastSync.toISOString() : null
+      });
+      break;
+      
+    case 'CHECK_IN':
+      handleCheckIn(message.data)
+        .then(sendResponse)
+        .catch(error => sendResponse({ error: error.message }));
+      return true;
+      
+    case 'CHECK_OUT':
+      handleCheckOut()
+        .then(sendResponse)
+        .catch(error => sendResponse({ error: error.message }));
+      return true;
+      
+    case 'LOG_ACTIVITY':
+      if (!state.isCheckedIn) {
+        sendResponse({ error: 'Not checked in' });
+        return true;
+      }
+      logActivity(message.data.type, message.data)
+        .then(() => sendResponse({ success: true }))
+        .catch(error => sendResponse({ error: error.message }));
+      return true;
+      
+    case 'UPDATE_SETTINGS':
+      updateSettings(message.data)
+        .then(() => sendResponse({ success: true }))
+        .catch(error => sendResponse({ error: error.message }));
+      return true;
+      
+    default:
+      sendResponse({ error: 'Unknown message type' });
+      return true;
+  }
+});
+
+// Handle idle state
+chrome.idle.onStateChanged.addListener(async (newState) => {
+  if (newState === 'idle' && state.isCheckedIn) {
+    state.idleStartTime = Date.now();
+    await logActivity('idle_start', { timestamp: new Date().toISOString() });
+    await saveState();
+  } else if (newState === 'active' && state.idleStartTime) {
+    const idleDuration = Date.now() - state.idleStartTime;
+    state.currentSession.idleTime += idleDuration;
+    state.idleStartTime = null;
+    await logActivity('idle_end', { 
+      timestamp: new Date().toISOString(),
+      duration: idleDuration
     });
-  } else if (state === 'active' && idleStartTime) {
-    const idleDuration = now - idleStartTime;
-    currentSession.idleTime += idleDuration;
-    
-    currentSession.flags.push({
-      type: 'idle_end',
-      timestamp: new Date(now).toISOString(),
-      duration: Math.round(idleDuration / 1000 / 60), // Convert to minutes
-      severity: idleDuration > 30 * 60 * 1000 ? 'high' : 'medium' // 30 minutes
-    });
-    
-    idleStartTime = null;
+    await saveState();
   }
 });
 
@@ -136,7 +223,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 
 // Track web activity
 chrome.webNavigation.onCompleted.addListener((details) => {
-  if (!isCheckedIn || !currentSession.startTime) return
+  if (!state.isCheckedIn || !state.currentSession.startTime) return
 
   logActivity(WEB_ACTIVITY_TYPES.NAVIGATION, {
     url: details.url,
@@ -147,7 +234,7 @@ chrome.webNavigation.onCompleted.addListener((details) => {
 
 // Track tab updates
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (!isCheckedIn || !currentSession.startTime || !changeInfo.url) return
+  if (!state.isCheckedIn || !state.currentSession.startTime || !changeInfo.url) return
 
   logActivity(WEB_ACTIVITY_TYPES.NAVIGATION, {
     url: changeInfo.url,
@@ -158,7 +245,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 
 // Track tab focus
 chrome.tabs.onActivated.addListener((activeInfo) => {
-  if (!isCheckedIn || !currentSession.startTime) return
+  if (!state.isCheckedIn || !state.currentSession.startTime) return
 
   chrome.tabs.get(activeInfo.tabId, (tab) => {
     logActivity(WEB_ACTIVITY_TYPES.FOCUS, {
@@ -181,14 +268,14 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 
 // Track application usage
 chrome.tabs.onActivated.addListener(async (activeInfo) => {
-  if (!isCheckedIn || !currentSession.startTime) return;
+  if (!state.isCheckedIn || !state.currentSession.startTime) return;
 
   const tab = await chrome.tabs.get(activeInfo.tabId);
   const url = new URL(tab.url);
   const domain = url.hostname;
 
   // Update current app
-  currentApp = {
+  state.currentApp = {
     name: domain,
     startTime: Date.now()
   };
@@ -205,7 +292,7 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
 
 // Track meetings (integrate with calendar)
 async function checkCalendarEvents() {
-  if (!isCheckedIn || !currentSession.startTime) return;
+  if (!state.isCheckedIn || !state.currentSession.startTime) return;
 
   try {
     // Check if user has a meeting now
@@ -224,18 +311,18 @@ async function checkCalendarEvents() {
     const events = await response.json();
     if (events.items?.length > 0) {
       const currentEvent = events.items[0];
-      if (!meetingStartTime) {
-        meetingStartTime = Date.now();
+      if (!state.meetingStartTime) {
+        state.meetingStartTime = Date.now();
         logActivity(ACTIVITY_TYPES.MEETING, {
           title: currentEvent.summary,
           startTime: currentEvent.start.dateTime,
           endTime: currentEvent.end.dateTime
         });
       }
-    } else if (meetingStartTime) {
-      const duration = Date.now() - meetingStartTime;
-      productivityStats.meetingTime += duration;
-      meetingStartTime = null;
+    } else if (state.meetingStartTime) {
+      const duration = Date.now() - state.meetingStartTime;
+      state.productivityStats.meetingTime += duration;
+      state.meetingStartTime = null;
     }
   } catch (error) {
     console.error('Error checking calendar:', error);
@@ -244,20 +331,20 @@ async function checkCalendarEvents() {
 
 // Track breaks
 function checkBreakStatus() {
-  if (!isCheckedIn || !currentSession.startTime) return;
+  if (!state.isCheckedIn || !state.currentSession.startTime) return;
 
   const now = Date.now();
-  const lastActivity = lastActiveTime;
+  const lastActivity = state.lastActiveTime;
 
   if (now - lastActivity > BREAK_THRESHOLD) {
-    if (!breakStartTime) {
-      breakStartTime = now;
+    if (!state.breakStartTime) {
+      state.breakStartTime = now;
       logActivity(ACTIVITY_TYPES.BREAK, { startTime: new Date(now).toISOString() });
     }
-  } else if (breakStartTime) {
-    const duration = now - breakStartTime;
-    productivityStats.breakTime += duration;
-    breakStartTime = null;
+  } else if (state.breakStartTime) {
+    const duration = now - state.breakStartTime;
+    state.productivityStats.breakTime += duration;
+    state.breakStartTime = null;
     logActivity(ACTIVITY_TYPES.BREAK, {
       endTime: new Date(now).toISOString(),
       duration
@@ -267,20 +354,20 @@ function checkBreakStatus() {
 
 // Track focus time
 function checkFocusStatus() {
-  if (!isCheckedIn || !currentSession.startTime) return;
+  if (!state.isCheckedIn || !state.currentSession.startTime) return;
 
   const now = Date.now();
-  const lastActivity = lastActiveTime;
+  const lastActivity = state.lastActiveTime;
 
   if (now - lastActivity < FOCUS_THRESHOLD) {
-    if (!focusStartTime) {
-      focusStartTime = now;
+    if (!state.focusStartTime) {
+      state.focusStartTime = now;
       logActivity(ACTIVITY_TYPES.FOCUS, { startTime: new Date(now).toISOString() });
     }
-  } else if (focusStartTime) {
-    const duration = now - focusStartTime;
-    productivityStats.focusTime += duration;
-    focusStartTime = null;
+  } else if (state.focusStartTime) {
+    const duration = now - state.focusStartTime;
+    state.productivityStats.focusTime += duration;
+    state.focusStartTime = null;
     logActivity(ACTIVITY_TYPES.FOCUS, {
       endTime: new Date(now).toISOString(),
       duration
@@ -294,15 +381,15 @@ function updateWebsiteStats(domain) {
   const hour = now.getHours();
   
   // Update activity by hour
-  productivityStats.activityByHour[hour].active += 1;
+  state.productivityStats.activityByHour[hour].active += 1;
 
   // Update top websites
-  const websiteIndex = productivityStats.topWebsites.findIndex(w => w.domain === domain);
+  const websiteIndex = state.productivityStats.topWebsites.findIndex(w => w.domain === domain);
   if (websiteIndex >= 0) {
-    productivityStats.topWebsites[websiteIndex].time += 1;
-    productivityStats.topWebsites[websiteIndex].visits += 1;
+    state.productivityStats.topWebsites[websiteIndex].time += 1;
+    state.productivityStats.topWebsites[websiteIndex].visits += 1;
   } else {
-    productivityStats.topWebsites.push({
+    state.productivityStats.topWebsites.push({
       domain,
       time: 1,
       visits: 1
@@ -310,93 +397,31 @@ function updateWebsiteStats(domain) {
   }
 
   // Sort and limit top websites
-  productivityStats.topWebsites.sort((a, b) => b.time - a.time);
-  productivityStats.topWebsites = productivityStats.topWebsites.slice(0, 10);
+  state.productivityStats.topWebsites.sort((a, b) => b.time - a.time);
+  state.productivityStats.topWebsites = state.productivityStats.topWebsites.slice(0, 10);
 }
-
-// Handle messages from popup and content script
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  try {
-    switch (message.type) {
-      case 'CHECK_IN':
-        handleCheckIn(message.data)
-          .then(() => sendResponse({ success: true }))
-          .catch(error => {
-            console.error('Check-in error:', error);
-            sendResponse({ error: error.message || 'Failed to check in' });
-          });
-        return true;
-
-      case 'CHECK_OUT':
-        handleCheckOut()
-          .then(() => sendResponse({ success: true }))
-          .catch(error => {
-            console.error('Check-out error:', error);
-            sendResponse({ error: error.message || 'Failed to check out' });
-          });
-        return true;
-
-      case 'GET_STATUS':
-        sendResponse({
-          isCheckedIn,
-          currentSession: currentSession.startTime ? {
-            ...currentSession,
-            activeTime: calculateActiveTime()
-          } : null,
-          lastSync: chrome.storage.local.get('lastSync')
-        });
-        return true;
-
-      case 'GET_PRODUCTIVITY_STATS':
-        const { timeRange } = message.data;
-        const stats = getProductivityStats(timeRange);
-        sendResponse({ stats });
-        return true;
-
-      case 'UPDATE_SETTINGS':
-        updateSettings(message.data)
-          .then(() => sendResponse({ success: true }))
-          .catch(error => sendResponse({ error: error.message }));
-        return true;
-
-      case 'LOG_ACTIVITY':
-        logActivity(message.data.type, message.data)
-          .then(() => sendResponse({ success: true }))
-          .catch(error => sendResponse({ error: error.message }));
-        return true;
-
-      default:
-        sendResponse({ error: 'Unknown message type' });
-        return true;
-    }
-  } catch (error) {
-    console.error('Message handling error:', error);
-    sendResponse({ error: 'Internal error' });
-    return true;
-  }
-});
 
 // Helper functions
 function updateLastActiveTime() {
   const now = Date.now();
-  if (idleStartTime) {
-    currentSession.idleTime += now - idleStartTime;
-    idleStartTime = null;
+  if (state.idleStartTime) {
+    state.currentSession.idleTime += now - state.idleStartTime;
+    state.idleStartTime = null;
   }
-  lastActiveTime = now;
+  state.lastActiveTime = now;
   logActivity('active');
 }
 
 function calculateActiveTime() {
-  if (!currentSession.startTime) return 0;
+  if (!state.currentSession.startTime) return 0;
   
   const now = Date.now();
-  const totalTime = now - new Date(currentSession.startTime).getTime();
-  return totalTime - currentSession.idleTime;
+  const totalTime = now - new Date(state.currentSession.startTime).getTime();
+  return totalTime - state.currentSession.idleTime;
 }
 
 async function logActivity(type, data) {
-  if (!isCheckedIn) return;
+  if (!state.isCheckedIn) return;
 
   const activity = {
     type,
@@ -404,8 +429,8 @@ async function logActivity(type, data) {
     timestamp: new Date().toISOString()
   };
 
-  currentSession.activities.push(activity);
-  lastActiveTime = Date.now();
+  state.currentSession.activities.push(activity);
+  state.lastActiveTime = Date.now();
 
   // Sync if it's an important activity
   if (['check_in', 'check_out', 'idle_start', 'idle_end'].includes(type)) {
@@ -415,51 +440,53 @@ async function logActivity(type, data) {
 
 async function handleCheckIn(data) {
   if (!data || !data.location || !data.deviceInfo) {
-    throw new Error('Invalid check-in data');
+    return { error: 'Invalid check-in data' }
   }
 
-  if (isCheckedIn) {
-    throw new Error('Already checked in');
+  if (state.isCheckedIn) {
+    return { error: 'Already checked in' }
   }
-
-  // Start new session
-  currentSession = {
-    startTime: new Date().toISOString(),
-    activities: [],
-    idleTime: 0,
-    activeTime: 0,
-    locationHistory: [],
-    checkInLocation: data.location,
-    deviceInfo: data.deviceInfo,
-    flags: []
-  };
-
-  isCheckedIn = true;
-  lastActiveTime = Date.now();
 
   try {
+    // Start new session
+    state.currentSession = {
+      startTime: new Date().toISOString(),
+      activities: [],
+      idleTime: 0,
+      activeTime: 0,
+      locationHistory: [{
+        ...data.location,
+        timestamp: new Date().toISOString()
+      }],
+      checkInLocation: data.location,
+      deviceInfo: data.deviceInfo,
+      flags: []
+    }
+
+    state.isCheckedIn = true
+    state.lastActiveTime = Date.now()
+    state.lastSync = new Date()
+
     // Save to storage
-    await chrome.storage.local.set({
-      isCheckedIn: true,
-      currentSession,
-      lastSync: new Date().toISOString()
-    });
+    await saveState()
 
     // Start location tracking
-    startLocationTracking();
+    startLocationTracking()
 
     // Log initial activity
     await logActivity('check_in', {
       location: data.location,
       deviceInfo: data.deviceInfo
-    });
+    })
 
     // Sync immediately
-    await syncActivityData();
+    await syncActivityData()
+
+    return { success: true }
   } catch (error) {
     // Rollback on error
-    isCheckedIn = false;
-    currentSession = {
+    state.isCheckedIn = false
+    state.currentSession = {
       startTime: null,
       activities: [],
       idleTime: 0,
@@ -468,57 +495,35 @@ async function handleCheckIn(data) {
       checkInLocation: null,
       deviceInfo: null,
       flags: []
-    };
-    throw error;
+    }
+    state.lastSync = null
+    console.error('Check-in error:', error)
+    return { error: error.message || 'Failed to check in' }
   }
 }
 
 async function handleCheckOut() {
-  if (!isCheckedIn) {
-    throw new Error('Not checked in');
+  if (!state.isCheckedIn) {
+    return { error: 'Not checked in' }
   }
 
   try {
-    // Get current location
-    const position = await new Promise((resolve, reject) => {
-      navigator.geolocation.getCurrentPosition(
-        resolve,
-        reject,
-        {
-          enableHighAccuracy: true,
-          timeout: 5000,
-          maximumAge: 0
-        }
-      );
-    });
-
-    const checkOutData = {
-      time: new Date().toISOString(),
-      location: {
-        latitude: position.coords.latitude,
-        longitude: position.coords.longitude,
-        accuracy: position.coords.accuracy
-      },
-      deviceInfo: {
-        userAgent: navigator.userAgent,
-        platform: navigator.platform,
-        language: navigator.language,
-        screenResolution: `${window.screen.width}x${window.screen.height}`
-      }
-    };
-
-    // Log check-out activity
-    await logActivity('check_out', checkOutData);
-
     // Stop location tracking
-    stopLocationTracking();
+    stopLocationTracking()
+
+    // Update session
+    state.currentSession.endTime = new Date().toISOString()
+    state.currentSession.activeTime = calculateActiveTime()
+
+    // Save final state
+    await saveState()
 
     // Sync final data
-    await syncActivityData(true);
+    await syncActivityData(true)
 
-    // Reset session
-    isCheckedIn = false;
-    currentSession = {
+    // Reset state
+    state.isCheckedIn = false
+    state.currentSession = {
       startTime: null,
       activities: [],
       idleTime: 0,
@@ -527,22 +532,17 @@ async function handleCheckOut() {
       checkInLocation: null,
       deviceInfo: null,
       flags: []
-    };
+    }
 
-    // Clear storage
-    await chrome.storage.local.set({
-      isCheckedIn: false,
-      currentSession: null,
-      lastSync: new Date().toISOString()
-    });
+    return { success: true }
   } catch (error) {
-    console.error('Check-out error:', error);
-    throw new Error(error.message || 'Failed to check out');
+    console.error('Check-out error:', error)
+    return { error: error.message || 'Failed to check out' }
   }
 }
 
 async function syncActivityData(isCheckOut = false) {
-  if (!isCheckedIn || !currentSession.startTime) return;
+  if (!state.isCheckedIn || !state.currentSession.startTime) return;
 
   try {
     const response = await fetch(`${API_BASE_URL}/attendance/sync`, {
@@ -553,7 +553,7 @@ async function syncActivityData(isCheckOut = false) {
       },
       body: JSON.stringify({
         session: {
-          ...currentSession,
+          ...state.currentSession,
           activeTime: calculateActiveTime(),
           isCheckOut
         }
@@ -565,14 +565,12 @@ async function syncActivityData(isCheckOut = false) {
     }
 
     // Update last sync time
-    await chrome.storage.local.set({
-      lastSync: new Date().toISOString()
-    });
+    await saveState()
 
     // Clear synced activities but keep recent ones
     if (!isCheckOut) {
-      currentSession.activities = currentSession.activities.slice(-100);
-      currentSession.locationHistory = currentSession.locationHistory.slice(-50);
+      state.currentSession.activities = state.currentSession.activities.slice(-100);
+      state.currentSession.locationHistory = state.currentSession.locationHistory.slice(-50);
     }
   } catch (error) {
     console.error('Error syncing activity data:', error);
@@ -600,13 +598,13 @@ function getProductivityStats(timeRange) {
   }
 
   // Filter activities by time range
-  const filteredActivities = currentSession.activities.filter(
+  const filteredActivities = state.currentSession.activities.filter(
     activity => new Date(activity.timestamp) >= startTime
   );
 
   // Calculate stats
   const stats = {
-    ...productivityStats,
+    ...state.productivityStats,
     activities: filteredActivities
   };
 
@@ -634,11 +632,11 @@ function startLocationTracking() {
         timestamp: new Date().toISOString()
       };
 
-      currentSession.locationHistory.push(location);
+      state.currentSession.locationHistory.push(location);
 
       // Check for suspicious movement
-      if (currentSession.locationHistory.length >= 2) {
-        const lastLocation = currentSession.locationHistory[currentSession.locationHistory.length - 2];
+      if (state.currentSession.locationHistory.length >= 2) {
+        const lastLocation = state.currentSession.locationHistory[state.currentSession.locationHistory.length - 2];
         const distance = calculateDistance(
           lastLocation.latitude,
           lastLocation.longitude,
@@ -649,7 +647,7 @@ function startLocationTracking() {
         
         // If moving faster than 30 km/h
         if (distance / timeDiff > 8.33) { // 30 km/h in m/s
-          currentSession.flags.push({
+          state.currentSession.flags.push({
             type: 'suspicious_movement',
             timestamp: location.timestamp,
             distance: Math.round(distance),
@@ -661,7 +659,7 @@ function startLocationTracking() {
     },
     (error) => {
       console.error('Location tracking error:', error);
-      currentSession.flags.push({
+      state.currentSession.flags.push({
         type: 'location_error',
         timestamp: new Date().toISOString(),
         error: error.message,
@@ -707,11 +705,11 @@ async function updateSettings(newSettings) {
   await chrome.storage.local.set({ settings: newSettings });
   
   // Update idle detection interval
-  chrome.idle.setDetectionInterval(newSettings.idleThreshold * 60);
+  await chrome.idle.setDetectionInterval(newSettings.idleThreshold * 60);
   
   // Update sync interval
-  chrome.alarms.clear('syncActivity');
-  chrome.alarms.create('syncActivity', { periodInMinutes: newSettings.syncInterval });
+  await chrome.alarms.clear('syncActivity');
+  await chrome.alarms.create('syncActivity', { periodInMinutes: newSettings.syncInterval });
 }
 
 // ... rest of the existing code ... 

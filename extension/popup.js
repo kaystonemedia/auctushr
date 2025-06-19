@@ -23,18 +23,44 @@ let settings = {
   idleThreshold: 5
 };
 
-// Format time duration
-function formatDuration(ms) {
-  const hours = Math.floor(ms / (1000 * 60 * 60));
-  const minutes = Math.floor((ms % (1000 * 60 * 60)) / (1000 * 60));
-  return `${hours}h ${minutes}m`;
+let updateInterval = null;
+
+// Format time for display
+function formatTime(timestamp) {
+  if (!timestamp) return 'Never';
+  const date = new Date(timestamp);
+  if (isNaN(date.getTime())) return 'Invalid date';
+  
+  const now = new Date();
+  const diff = now - date;
+  
+  // If less than a minute ago
+  if (diff < 60000) {
+    return 'Just now';
+  }
+  
+  // If less than an hour ago
+  if (diff < 3600000) {
+    const minutes = Math.floor(diff / 60000);
+    return `${minutes}m ago`;
+  }
+  
+  // If less than a day ago
+  if (diff < 86400000) {
+    const hours = Math.floor(diff / 3600000);
+    return `${hours}h ago`;
+  }
+  
+  // Otherwise show date and time
+  return date.toLocaleString();
 }
 
-// Format time
-function formatTime(isoString) {
-  if (!isoString) return 'Never';
-  const date = new Date(isoString);
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+// Format duration for display
+function formatDuration(seconds) {
+  if (!seconds) return '0h 0m';
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  return `${hours}h ${minutes}m`;
 }
 
 // Show notification
@@ -80,10 +106,20 @@ function updateStatusUI() {
 
   // Update stats
   if (currentStatus.currentSession) {
-    activeTime.textContent = formatDuration(currentStatus.currentSession.activeTime);
-    idleTime.textContent = formatDuration(currentStatus.currentSession.idleTime);
-    locationStatus.textContent = currentStatus.currentSession.locationHistory?.length > 0 ? 'Tracking' : 'Not tracking';
-    flagCount.textContent = currentStatus.currentSession.flags?.length || 0;
+    const session = currentStatus.currentSession;
+    const startTime = session.startTime ? new Date(session.startTime) : null;
+    const now = new Date();
+    
+    // Calculate active time
+    let activeTimeSeconds = session.activeTime || 0;
+    if (startTime && currentStatus.isCheckedIn) {
+      activeTimeSeconds += Math.floor((now - startTime) / 1000);
+    }
+    
+    activeTime.textContent = formatDuration(activeTimeSeconds);
+    idleTime.textContent = formatDuration(session.idleTime || 0);
+    locationStatus.textContent = session.locationHistory?.length > 0 ? 'Tracking' : 'Not tracking';
+    flagCount.textContent = session.flags?.length || 0;
   } else {
     activeTime.textContent = '0h 0m';
     idleTime.textContent = '0h 0m';
@@ -92,17 +128,14 @@ function updateStatusUI() {
   }
 }
 
-// Update status from background
-async function updateStatus() {
+// Fetch current status
+async function fetchStatus() {
   try {
     const response = await chrome.runtime.sendMessage({ type: 'GET_STATUS' });
-    if (response?.error) throw new Error(response.error);
-    
     currentStatus = response;
     updateStatusUI();
   } catch (error) {
-    console.error('Error updating status:', error);
-    showNotification('Failed to update status', 'error');
+    console.error('Error fetching status:', error);
   }
 }
 
@@ -149,19 +182,14 @@ function setupEventListeners() {
   // Check in/out buttons
   checkInBtn.addEventListener('click', async () => {
     try {
-      // Get current location
       const position = await new Promise((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(
-          resolve,
-          reject,
-          {
-            enableHighAccuracy: true,
-            timeout: 10000,
-            maximumAge: 0
-          }
-        );
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 0
+        });
       });
-
+      
       const response = await chrome.runtime.sendMessage({
         type: 'CHECK_IN',
         data: {
@@ -178,27 +206,28 @@ function setupEventListeners() {
           }
         }
       });
-
-      if (response?.error) throw new Error(response.error);
       
-      await updateStatus();
-      showNotification('Successfully checked in', 'success');
+      if (response.error) {
+        throw new Error(response.error);
+      }
+      
+      await fetchStatus();
     } catch (error) {
-      console.error('Error checking in:', error);
-      showNotification(error.message || 'Error checking in', 'error');
+      console.error('Check-in error:', error);
+      alert(error.message || 'Failed to check in');
     }
   });
 
   checkOutBtn.addEventListener('click', async () => {
     try {
       const response = await chrome.runtime.sendMessage({ type: 'CHECK_OUT' });
-      if (response?.error) throw new Error(response.error);
-      
-      await updateStatus();
-      showNotification('Successfully checked out', 'success');
+      if (response.error) {
+        throw new Error(response.error);
+      }
+      await fetchStatus();
     } catch (error) {
-      console.error('Error checking out:', error);
-      showNotification(error.message || 'Error checking out', 'error');
+      console.error('Check-out error:', error);
+      alert(error.message || 'Failed to check out');
     }
   });
 
@@ -212,11 +241,18 @@ function setupEventListeners() {
 async function initialize() {
   await loadSettings();
   setupEventListeners();
-  await updateStatus();
+  await fetchStatus();
 
-  // Update status every 5 seconds
-  setInterval(updateStatus, 5000);
+  // Set up periodic updates
+  updateInterval = setInterval(fetchStatus, 5000);
 }
 
 // Start initialization when popup loads
-document.addEventListener('DOMContentLoaded', initialize); 
+document.addEventListener('DOMContentLoaded', initialize);
+
+// Clean up on popup close
+window.addEventListener('unload', () => {
+  if (updateInterval) {
+    clearInterval(updateInterval);
+  }
+}); 

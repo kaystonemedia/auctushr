@@ -64,7 +64,8 @@ const roleBasedRoutes = {
     '/settings',
     '/help',
     '/managers',
-    '/administrators'
+    '/administrators',
+    '/tasks'
   ],
   manager: [
     '/dashboard',
@@ -78,7 +79,8 @@ const roleBasedRoutes = {
     '/productivity',
     '/performance',
     '/settings',
-    '/help'
+    '/help',
+    '/tasks'
   ],
   employee: [
     '/dashboard',
@@ -89,7 +91,8 @@ const roleBasedRoutes = {
     '/productivity',
     '/performance',
     '/settings',
-    '/help'
+    '/help',
+    '/tasks'
   ]
 }
 

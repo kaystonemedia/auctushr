@@ -110,7 +110,7 @@ export function ProductivityDashboard() {
               {Math.round(stats.focusTime / 60)}h {Math.round(stats.focusTime % 60)}m
             </div>
             <p className="text-xs text-muted-foreground">
-              {Math.round((stats.focusTime / (stats.focusTime + stats.idleTime)) * 100)}% of total time
+              {(stats.focusTime + stats.idleTime) > 0 ? Math.round((stats.focusTime / (stats.focusTime + stats.idleTime)) * 100) : 0}% of total time
             </p>
           </CardContent>
         </Card>
@@ -125,7 +125,7 @@ export function ProductivityDashboard() {
               {Math.round(stats.breakTime / 60)}h {Math.round(stats.breakTime % 60)}m
             </div>
             <p className="text-xs text-muted-foreground">
-              {Math.round((stats.breakTime / (stats.focusTime + stats.idleTime)) * 100)}% of total time
+              {(stats.focusTime + stats.idleTime) > 0 ? Math.round((stats.breakTime / (stats.focusTime + stats.idleTime)) * 100) : 0}% of total time
             </p>
           </CardContent>
         </Card>

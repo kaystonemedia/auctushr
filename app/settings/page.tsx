@@ -1,853 +1,1261 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { db } from "@/lib/firebase"
-import { doc, getDoc, setDoc } from "firebase/firestore"
-import { toast } from "react-hot-toast"
-import { AttendanceSettings, SystemSettings, PayrollSettings, LocationSettings } from "@/types/settings"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Button } from "@/components/ui/button"
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Switch } from "@/components/ui/switch"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { OfficeLocationsManager } from '@/components/office-locations-manager'
-import { countries } from '@/lib/countries'
-
-const DEFAULT_ATTENDANCE_SETTINGS: AttendanceSettings = {
-  workingHours: {
-    start: "09:00",
-    end: "17:00"
-  },
-  idleThreshold: 15,
-  maxIdlePeriods: 3,
-  allowedLateMinutes: 15,
-  locationRadius: 100,
-  requiredCheckInDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
-  requireManagerApproval: true,
-  autoApproveThreshold: 30
-}
-
-const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
-  companyName: "",
-  timezone: "UTC",
-  dateFormat: "MM/DD/YYYY",
-  language: "en",
-  emailNotifications: true,
-  smsNotifications: false
-}
-
-const DEFAULT_PAYROLL_SETTINGS: PayrollSettings = {
-  currency: {
-    code: "USD",
-    symbol: "$",
-    exchangeRate: 1,
-    lastUpdated: new Date()
-  },
-  deductions: {
-    tax: {
-      enabled: true,
-      percentage: 20
-    },
-    insurance: {
-      enabled: true,
-      percentage: 10
-    },
-    other: {
-      enabled: false,
-      items: []
-    }
-  },
-  hourlyRate: {
-    enabled: false,
-    baseRate: 0,
-    overtimeMultiplier: 1.5
-  },
-  idleTime: {
-    enabled: false,
-    threshold: 15,
-    deductionPercentage: 5
-  }
-}
-
-const DEFAULT_LOCATION_SETTINGS: LocationSettings = {
-  allowedCountries: ['GH'], // Default to Ghana
-  defaultCountry: 'GH',
-  requireLocationValidation: true,
-  allowRemoteWork: false,
-  officeLocations: [],
-  locationValidationRules: {
-    requireExactLocation: true,
-    allowApproximateLocation: false,
-    minimumAccuracy: 100, // meters
-    validateOnCheckIn: true,
-    validateOnCheckOut: true
-  }
-}
-
-type SettingsValue = string | number | boolean | string[] | { start: string; end: string }
-type SettingsObject = Record<string, SettingsValue>
-
-function flattenObject(obj: SettingsObject, prefix = ''): Record<string, SettingsValue> {
-  return Object.keys(obj).reduce((acc: Record<string, SettingsValue>, k: string) => {
-    const pre = prefix.length ? prefix + '.' : '';
-    if (typeof obj[k] === 'object' && obj[k] !== null && !Array.isArray(obj[k])) {
-      Object.assign(acc, flattenObject(obj[k] as SettingsObject, pre + k));
-    } else {
-      acc[pre + k] = obj[k];
-    }
-    return acc;
-  }, {});
-}
-
-interface SettingsData {
-  attendance?: Partial<AttendanceSettings>;
-  system?: Partial<SystemSettings>;
-  payroll?: Partial<PayrollSettings>;
-  location?: Partial<LocationSettings>;
-}
+import { useNewAuth } from '@/contexts/new-auth-context'
+import { settingsService } from '@/lib/settings'
+import { Settings, PayrollSettings, BonusTier } from '@/types/settings'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Badge } from '@/components/ui/badge'
+import { Separator } from '@/components/ui/separator'
+import { Slider } from '@/components/ui/slider'
+import { 
+  Save, 
+  RefreshCw, 
+  Download, 
+  Upload, 
+  Plus, 
+  Trash2, 
+  Settings as SettingsIcon,
+  DollarSign,
+  TrendingUp,
+  Clock,
+  Users,
+  Shield,
+  Bell,
+  Globe,
+  MapPin,
+  Target,
+  AlertCircle
+} from 'lucide-react'
+import { toast } from '@/components/ui/use-toast'
 
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState("attendance")
-  const [attendanceSettings, setAttendanceSettings] = useState<AttendanceSettings>(DEFAULT_ATTENDANCE_SETTINGS)
-  const [systemSettings, setSystemSettings] = useState<SystemSettings>(DEFAULT_SYSTEM_SETTINGS)
-  const [payrollSettings, setPayrollSettings] = useState<PayrollSettings>(DEFAULT_PAYROLL_SETTINGS)
-  const [locationSettings, setLocationSettings] = useState<LocationSettings>(DEFAULT_LOCATION_SETTINGS)
+  const { user } = useNewAuth()
+  const [settings, setSettings] = useState<Settings | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    const fetchSettings = async () => {
-      try {
-        const settingsDoc = await getDoc(doc(db, "settings", "company"))
-        if (settingsDoc.exists()) {
-          const data = settingsDoc.data() as SettingsData
-          setAttendanceSettings({
-            ...DEFAULT_ATTENDANCE_SETTINGS,
-            ...data.attendance,
-            workingHours: {
-              ...DEFAULT_ATTENDANCE_SETTINGS.workingHours,
-              ...data.attendance?.workingHours
-            }
-          })
-          setSystemSettings({
-            ...DEFAULT_SYSTEM_SETTINGS,
-            ...data.system
-          })
-          setPayrollSettings({
-            ...DEFAULT_PAYROLL_SETTINGS,
-            ...data.payroll
-          })
-          setLocationSettings({
-            ...DEFAULT_LOCATION_SETTINGS,
-            ...data.location
-          })
-        }
-      } catch (error) {
-        console.error("Error fetching settings:", error)
-        toast.error("Failed to load settings")
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    fetchSettings()
+    loadSettings()
   }, [])
 
-  const handleSave = async () => {
+  const loadSettings = async () => {
+    try {
+      const currentSettings = await settingsService.getSettings()
+      setSettings(currentSettings)
+    } catch (error) {
+      console.error('Error loading settings:', error)
+      toast({
+        title: "Error",
+        description: "Failed to load settings",
+        variant: "destructive"
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const saveSettings = async () => {
+    if (!settings) return
+    
     setSaving(true)
     try {
-      const settingsRef = doc(db, "settings", "company")
-      const flattenedAttendance = flattenObject(attendanceSettings as unknown as SettingsObject)
-      const flattenedSystem = flattenObject(systemSettings as unknown as SettingsObject)
-      const flattenedPayroll = flattenObject(payrollSettings as unknown as SettingsObject)
-      const flattenedLocation = flattenObject(locationSettings as unknown as SettingsObject)
-
-      await setDoc(settingsRef, {
-        attendance: flattenedAttendance,
-        system: flattenedSystem,
-        payroll: flattenedPayroll,
-        location: flattenedLocation
-      }, { merge: true })
-
-      toast.success("Settings saved successfully")
+      await settingsService.updateSettings(settings)
+      toast({
+        title: "Success",
+        description: "Settings saved successfully"
+      })
     } catch (error) {
-      console.error("Error saving settings:", error)
-      toast.error("Failed to save settings")
+      console.error('Error saving settings:', error)
+      toast({
+        title: "Error",
+        description: "Failed to save settings",
+        variant: "destructive"
+      })
     } finally {
       setSaving(false)
     }
   }
 
-  const handleAttendanceChange = (key: keyof AttendanceSettings, value: AttendanceSettings[keyof AttendanceSettings]) => {
-    setAttendanceSettings(prev => ({ ...prev, [key]: value }))
+  const resetToDefaults = async () => {
+    if (!confirm('Are you sure you want to reset all settings to defaults?')) return
+    
+    setSaving(true)
+    try {
+      await settingsService.resetToDefaults()
+      await loadSettings()
+      toast({
+        title: "Success",
+        description: "Settings reset to defaults"
+      })
+    } catch (error) {
+      console.error('Error resetting settings:', error)
+      toast({
+        title: "Error",
+        description: "Failed to reset settings",
+        variant: "destructive"
+      })
+    } finally {
+      setSaving(false)
+    }
   }
 
-  const handleSystemChange = (key: keyof SystemSettings, value: SystemSettings[keyof SystemSettings]) => {
-    setSystemSettings(prev => ({ ...prev, [key]: value }))
+  const exportSettings = async () => {
+    try {
+      const settingsJson = await settingsService.exportSettings()
+      const blob = new Blob([settingsJson], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'hr-settings.json'
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      console.error('Error exporting settings:', error)
+      toast({
+        title: "Error",
+        description: "Failed to export settings",
+        variant: "destructive"
+      })
+    }
   }
 
-  const handleCheckInDaysChange = (day: string, checked: boolean) => {
-    setAttendanceSettings(prev => ({
-      ...prev,
-      requiredCheckInDays: checked
-        ? [...prev.requiredCheckInDays, day]
-        : prev.requiredCheckInDays.filter(d => d !== day)
-    }))
+  const importSettings = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    try {
+      const text = await file.text()
+      await settingsService.importSettings(text)
+      await loadSettings()
+      toast({
+        title: "Success",
+        description: "Settings imported successfully"
+      })
+    } catch (error) {
+      console.error('Error importing settings:', error)
+      toast({
+        title: "Error",
+        description: "Failed to import settings",
+        variant: "destructive"
+      })
+    }
   }
 
-  const handleLocationChange = (key: keyof LocationSettings, value: LocationSettings[keyof LocationSettings]) => {
-    setLocationSettings(prev => ({ ...prev, [key]: value }))
+  const updatePayrollSettings = (updates: Partial<PayrollSettings>) => {
+    if (!settings) return
+    setSettings({
+      ...settings,
+      payroll: { ...settings.payroll, ...updates }
+    })
   }
 
-  const handleAllowedCountriesChange = (countryCode: string, checked: boolean) => {
-    setLocationSettings(prev => ({
-      ...prev,
-      allowedCountries: checked
-        ? [...prev.allowedCountries, countryCode]
-        : prev.allowedCountries.filter(code => code !== countryCode)
-    }))
+  const updateAttendanceSettings = (updates: Partial<Settings['attendance']>) => {
+    if (!settings) return
+    setSettings({
+      ...settings,
+      attendance: { ...settings.attendance, ...updates }
+    })
+  }
+
+  const updateProductivitySettings = (updates: Partial<Settings['productivity']>) => {
+    if (!settings) return
+    setSettings({
+      ...settings,
+      productivity: { ...settings.productivity, ...updates }
+    })
+  }
+
+  const updateNotificationSettings = (updates: Partial<Settings['notifications']>) => {
+    if (!settings) return
+    setSettings({
+      ...settings,
+      notifications: { ...settings.notifications, ...updates }
+    })
+  }
+
+  const updateSecuritySettings = (updates: Partial<Settings['security']>) => {
+    if (!settings) return
+    setSettings({
+      ...settings,
+      security: { ...settings.security, ...updates }
+    })
+  }
+
+  const addBonusTier = (type: 'productivity' | 'attendance') => {
+    if (!settings) return
+
+    const newTier: BonusTier = {
+      minValue: 0,
+      maxValue: 100,
+      bonusPercentage: 5,
+      description: 'New Tier'
+    }
+
+    const updatedTiers = [...settings.payroll.bonusStructure[type].tiers, newTier]
+    
+    updatePayrollSettings({
+      bonusStructure: {
+        ...settings.payroll.bonusStructure,
+        [type]: {
+          ...settings.payroll.bonusStructure[type],
+          tiers: updatedTiers
+        }
+      }
+    })
+  }
+
+  const removeBonusTier = (type: 'productivity' | 'attendance', index: number) => {
+    if (!settings) return
+
+    const updatedTiers = settings.payroll.bonusStructure[type].tiers.filter((_, i) => i !== index)
+    
+    updatePayrollSettings({
+      bonusStructure: {
+        ...settings.payroll.bonusStructure,
+        [type]: {
+          ...settings.payroll.bonusStructure[type],
+          tiers: updatedTiers
+        }
+      }
+    })
+  }
+
+  const updateBonusTier = (type: 'productivity' | 'attendance', index: number, updates: Partial<BonusTier>) => {
+    if (!settings) return
+
+    const updatedTiers = settings.payroll.bonusStructure[type].tiers.map((tier, i) => 
+      i === index ? { ...tier, ...updates } : tier
+    )
+    
+    updatePayrollSettings({
+      bonusStructure: {
+        ...settings.payroll.bonusStructure,
+        [type]: {
+          ...settings.payroll.bonusStructure[type],
+          tiers: updatedTiers
+        }
+      }
+    })
   }
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[calc(100vh-4rem)]">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-4" />
+          <p>Loading settings...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!user || (user.role !== 'admin' && user.role !== 'manager')) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <Shield className="h-12 w-12 text-red-500 mx-auto mb-4" />
+          <h1 className="text-2xl font-bold mb-2">Access Denied</h1>
+          <p className="text-gray-600">You don't have permission to access settings.</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!settings) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <SettingsIcon className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+          <h1 className="text-2xl font-bold mb-2">Settings Not Found</h1>
+          <p className="text-gray-600">Unable to load system settings.</p>
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="container mx-auto py-6">
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="attendance">Attendance</TabsTrigger>
-          <TabsTrigger value="location">Location</TabsTrigger>
-          <TabsTrigger value="system">System</TabsTrigger>
-          <TabsTrigger value="payroll">Payroll</TabsTrigger>
+    <div className="p-6 max-w-7xl mx-auto">
+      <div className="flex items-center justify-between mb-8">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">System Settings</h1>
+          <p className="text-gray-600 mt-2">
+            Configure system-wide settings and bonus structures
+          </p>
+        </div>
+        <div className="flex space-x-2">
+          <Button variant="outline" onClick={exportSettings}>
+            <Download className="h-4 w-4 mr-2" />
+            Export
+          </Button>
+          <Button variant="outline" onClick={resetToDefaults}>
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Reset
+          </Button>
+          <Button onClick={saveSettings} disabled={saving}>
+            <Save className="h-4 w-4 mr-2" />
+            {saving ? 'Saving...' : 'Save Changes'}
+          </Button>
+        </div>
+      </div>
+
+      <Tabs defaultValue="payroll" className="space-y-6">
+        <TabsList className="grid w-full grid-cols-6">
+          <TabsTrigger value="payroll" className="flex items-center space-x-2">
+            <DollarSign className="h-4 w-4" />
+            <span>Payroll</span>
+          </TabsTrigger>
+          <TabsTrigger value="company" className="flex items-center space-x-2">
+            <Users className="h-4 w-4" />
+            <span>Company</span>
+          </TabsTrigger>
+          <TabsTrigger value="attendance" className="flex items-center space-x-2">
+            <Clock className="h-4 w-4" />
+            <span>Attendance</span>
+          </TabsTrigger>
+          <TabsTrigger value="productivity" className="flex items-center space-x-2">
+            <TrendingUp className="h-4 w-4" />
+            <span>Productivity</span>
+          </TabsTrigger>
+          <TabsTrigger value="notifications" className="flex items-center space-x-2">
+            <Bell className="h-4 w-4" />
+            <span>Notifications</span>
+          </TabsTrigger>
+          <TabsTrigger value="security" className="flex items-center space-x-2">
+            <Shield className="h-4 w-4" />
+            <span>Security</span>
+          </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="attendance" className="mt-6">
-          <div className="grid gap-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Working Hours</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Start Time</Label>
-                    <Input
-                      type="time"
-                      value={attendanceSettings.workingHours?.start || DEFAULT_ATTENDANCE_SETTINGS.workingHours.start}
-                      onChange={(e) => handleAttendanceChange('workingHours', {
-                        ...attendanceSettings.workingHours,
-                        start: e.target.value
-                      })}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>End Time</Label>
-                    <Input
-                      type="time"
-                      value={attendanceSettings.workingHours?.end || DEFAULT_ATTENDANCE_SETTINGS.workingHours.end}
-                      onChange={(e) => handleAttendanceChange('workingHours', {
-                        ...attendanceSettings.workingHours,
-                        end: e.target.value
-                      })}
-                    />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Attendance Rules</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-2">
-                    <Label>Idle Threshold (minutes)</Label>
-                    <Input
-                      type="number"
-                      value={attendanceSettings.idleThreshold}
-                      onChange={(e) => handleAttendanceChange('idleThreshold', Number(e.target.value))}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Max Idle Periods</Label>
-                    <Input
-                      type="number"
-                      value={attendanceSettings.maxIdlePeriods}
-                      onChange={(e) => handleAttendanceChange('maxIdlePeriods', Number(e.target.value))}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Allowed Late Minutes</Label>
-                    <Input
-                      type="number"
-                      value={attendanceSettings.allowedLateMinutes}
-                      onChange={(e) => handleAttendanceChange('allowedLateMinutes', Number(e.target.value))}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Location Radius (meters)</Label>
-                    <Input
-                      type="number"
-                      value={attendanceSettings.locationRadius}
-                      onChange={(e) => handleAttendanceChange('locationRadius', Number(e.target.value))}
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-4">
-                  <Label>Required Check-in Days</Label>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-7 gap-4">
-                    {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map((day) => (
-                      <div key={day} className="flex items-center space-x-2">
-                        <Switch
-                          checked={attendanceSettings.requiredCheckInDays.includes(day)}
-                          onCheckedChange={(checked: boolean) => handleCheckInDaysChange(day, checked)}
-                        />
-                        <Label className="text-sm">{day.slice(0, 3)}</Label>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="space-y-4">
-                  <div className="flex items-center space-x-2">
-                    <Switch
-                      checked={attendanceSettings.requireManagerApproval}
-                      onCheckedChange={(checked: boolean) => handleAttendanceChange('requireManagerApproval', checked)}
-                    />
-                    <Label>Require Manager Approval</Label>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Auto-approve Threshold (hours)</Label>
-                  <Input
-                    type="number"
-                    value={attendanceSettings.autoApproveThreshold}
-                    onChange={(e) => handleAttendanceChange('autoApproveThreshold', Number(e.target.value))}
-                  />
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-
-        <TabsContent value="location">
+        <TabsContent value="payroll" className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Location Settings</CardTitle>
+              <CardTitle>Payroll Configuration</CardTitle>
+              <CardDescription>
+                Configure payroll settings, bonus structures, and deductions
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <Label>Default Country</Label>
-                  <Select
-                    value={locationSettings.defaultCountry}
-                    onValueChange={(value) => handleLocationChange('defaultCountry', value)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select default country" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {countries.map((country) => (
-                        <SelectItem key={country.code} value={country.code}>
-                          {country.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Minimum Location Accuracy (meters)</Label>
+              {/* Basic Payroll Settings */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <Label htmlFor="currency">Currency</Label>
                   <Input
+                    id="currency"
+                    value={settings.payroll.currency}
+                    onChange={(e) => updatePayrollSettings({ currency: e.target.value })}
+                    placeholder="USD"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="taxRate">Default Tax Rate (%)</Label>
+                  <Input
+                    id="taxRate"
                     type="number"
-                    value={locationSettings.locationValidationRules.minimumAccuracy}
-                    onChange={(e) => handleLocationChange('locationValidationRules', {
-                      ...locationSettings.locationValidationRules,
-                      minimumAccuracy: Number(e.target.value)
-                    })}
+                    value={settings.payroll.taxRate}
+                    onChange={(e) => updatePayrollSettings({ taxRate: Number(e.target.value) })}
+                    placeholder="20"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="insuranceRate">Default Insurance Rate (%)</Label>
+                  <Input
+                    id="insuranceRate"
+                    type="number"
+                    value={settings.payroll.insuranceRate}
+                    onChange={(e) => updatePayrollSettings({ insuranceRate: Number(e.target.value) })}
+                    placeholder="10"
                   />
                 </div>
               </div>
 
+              <Separator />
+
+              {/* Productivity Bonus Structure */}
               <div className="space-y-4">
-                <div className="flex items-center space-x-2">
-                  <Switch
-                    checked={locationSettings.requireLocationValidation}
-                    onCheckedChange={(checked) => handleLocationChange('requireLocationValidation', checked)}
-                  />
-                  <Label>Require Location Validation</Label>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-lg font-medium">Productivity Bonus Structure</h3>
+                    <p className="text-sm text-gray-600">
+                      Configure bonus tiers based on productivity scores
+                    </p>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Switch
+                      checked={settings.payroll.bonusStructure.productivity.enabled}
+                      onCheckedChange={(checked) => updatePayrollSettings({
+                        bonusStructure: {
+                          ...settings.payroll.bonusStructure,
+                          productivity: {
+                            ...settings.payroll.bonusStructure.productivity,
+                            enabled: checked
+                          }
+                        }
+                      })}
+                    />
+                    <Label>Enabled</Label>
+                  </div>
                 </div>
 
-                <div className="flex items-center space-x-2">
-                  <Switch
-                    checked={locationSettings.allowRemoteWork}
-                    onCheckedChange={(checked) => handleLocationChange('allowRemoteWork', checked)}
-                  />
-                  <Label>Allow Remote Work</Label>
-                </div>
-
-                <div className="flex items-center space-x-2">
-                  <Switch
-                    checked={locationSettings.locationValidationRules.requireExactLocation}
-                    onCheckedChange={(checked) => handleLocationChange('locationValidationRules', {
-                      ...locationSettings.locationValidationRules,
-                      requireExactLocation: checked
-                    })}
-                  />
-                  <Label>Require Exact Location</Label>
-                </div>
-
-                <div className="flex items-center space-x-2">
-                  <Switch
-                    checked={locationSettings.locationValidationRules.validateOnCheckIn}
-                    onCheckedChange={(checked) => handleLocationChange('locationValidationRules', {
-                      ...locationSettings.locationValidationRules,
-                      validateOnCheckIn: checked
-                    })}
-                  />
-                  <Label>Validate Location on Check-in</Label>
-                </div>
-
-                <div className="flex items-center space-x-2">
-                  <Switch
-                    checked={locationSettings.locationValidationRules.validateOnCheckOut}
-                    onCheckedChange={(checked) => handleLocationChange('locationValidationRules', {
-                      ...locationSettings.locationValidationRules,
-                      validateOnCheckOut: checked
-                    })}
-                  />
-                  <Label>Validate Location on Check-out</Label>
-                </div>
+                {settings.payroll.bonusStructure.productivity.enabled && (
+                  <div className="space-y-4">
+                    {settings.payroll.bonusStructure.productivity.tiers.map((tier, index) => (
+                      <Card key={index} className="p-4">
+                        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-center">
+                          <div>
+                            <Label>Min Score</Label>
+                            <Input
+                              type="number"
+                              value={tier.minScore}
+                              onChange={(e) => updateBonusTier('productivity', index, { minScore: Number(e.target.value) })}
+                              placeholder="0"
+                            />
+                          </div>
+                          <div>
+                            <Label>Max Score</Label>
+                            <Input
+                              type="number"
+                              value={tier.maxScore}
+                              onChange={(e) => updateBonusTier('productivity', index, { maxScore: Number(e.target.value) })}
+                              placeholder="100"
+                            />
+                          </div>
+                          <div>
+                            <Label>Bonus (%)</Label>
+                            <Input
+                              type="number"
+                              value={tier.bonusPercentage}
+                              onChange={(e) => updateBonusTier('productivity', index, { bonusPercentage: Number(e.target.value) })}
+                              placeholder="5"
+                            />
+                          </div>
+                          <div>
+                            <Label>Description</Label>
+                            <Input
+                              value={tier.description}
+                              onChange={(e) => updateBonusTier('productivity', index, { description: e.target.value })}
+                              placeholder="High Performance"
+                            />
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <Badge variant="secondary">
+                              {tier.minScore}-{tier.maxScore}%
+                            </Badge>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => removeBonusTier('productivity', index)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      </Card>
+                    ))}
+                    <Button
+                      variant="outline"
+                      onClick={() => addBonusTier('productivity')}
+                      className="w-full"
+                    >
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add Productivity Tier
+                    </Button>
+                  </div>
+                )}
               </div>
 
+              <Separator />
+
+              {/* Attendance Bonus Structure */}
               <div className="space-y-4">
-                <Label>Allowed Countries</Label>
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                  {countries.map((country) => (
-                    <label key={country.code} className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        checked={locationSettings.allowedCountries.includes(country.code)}
-                        onChange={(e) => handleAllowedCountriesChange(country.code, e.target.checked)}
-                        className="rounded border-gray-300 text-blue-500 focus:ring-blue-500"
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-lg font-medium">Attendance Bonus Structure</h3>
+                    <p className="text-sm text-gray-600">
+                      Configure bonus tiers based on attendance rates
+                    </p>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Switch
+                      checked={settings.payroll.bonusStructure.attendance.enabled}
+                      onCheckedChange={(checked) => updatePayrollSettings({
+                        bonusStructure: {
+                          ...settings.payroll.bonusStructure,
+                          attendance: {
+                            ...settings.payroll.bonusStructure.attendance,
+                            enabled: checked
+                          }
+                        }
+                      })}
+                    />
+                    <Label>Enabled</Label>
+                  </div>
+                </div>
+
+                {settings.payroll.bonusStructure.attendance.enabled && (
+                  <div className="space-y-4">
+                    {settings.payroll.bonusStructure.attendance.tiers.map((tier, index) => (
+                      <Card key={index} className="p-4">
+                        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-center">
+                          <div>
+                            <Label>Min Rate (%)</Label>
+                            <Input
+                              type="number"
+                              value={tier.minRate}
+                              onChange={(e) => updateBonusTier('attendance', index, { minRate: Number(e.target.value) })}
+                              placeholder="0"
+                            />
+                          </div>
+                          <div>
+                            <Label>Max Rate (%)</Label>
+                            <Input
+                              type="number"
+                              value={tier.maxRate}
+                              onChange={(e) => updateBonusTier('attendance', index, { maxRate: Number(e.target.value) })}
+                              placeholder="100"
+                            />
+                          </div>
+                          <div>
+                            <Label>Bonus (%)</Label>
+                            <Input
+                              type="number"
+                              value={tier.bonusPercentage}
+                              onChange={(e) => updateBonusTier('attendance', index, { bonusPercentage: Number(e.target.value) })}
+                              placeholder="5"
+                            />
+                          </div>
+                          <div>
+                            <Label>Description</Label>
+                            <Input
+                              value={tier.description}
+                              onChange={(e) => updateBonusTier('attendance', index, { description: e.target.value })}
+                              placeholder="Perfect Attendance"
+                            />
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <Badge variant="secondary">
+                              {tier.minRate}-{tier.maxRate}%
+                            </Badge>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => removeBonusTier('attendance', index)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      </Card>
+                    ))}
+                    <Button
+                      variant="outline"
+                      onClick={() => addBonusTier('attendance')}
+                      className="w-full"
+                    >
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add Attendance Tier
+                    </Button>
+                  </div>
+                )}
+              </div>
+
+              <Separator />
+
+              {/* Overtime Settings */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-lg font-medium">Overtime Settings</h3>
+                    <p className="text-sm text-gray-600">
+                      Configure overtime pay rates and limits
+                    </p>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Switch
+                      checked={settings.payroll.bonusStructure.overtime.enabled}
+                      onCheckedChange={(checked) => updatePayrollSettings({
+                        bonusStructure: {
+                          ...settings.payroll.bonusStructure,
+                          overtime: {
+                            ...settings.payroll.bonusStructure.overtime,
+                            enabled: checked
+                          }
+                        }
+                      })}
+                    />
+                    <Label>Enabled</Label>
+                  </div>
+                </div>
+
+                {settings.payroll.bonusStructure.overtime.enabled && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="overtimeRate">Overtime Rate (multiplier)</Label>
+                      <Input
+                        id="overtimeRate"
+                        type="number"
+                        step="0.1"
+                        value={settings.payroll.bonusStructure.overtime.rate}
+                        onChange={(e) => updatePayrollSettings({
+                          bonusStructure: {
+                            ...settings.payroll.bonusStructure,
+                            overtime: {
+                              ...settings.payroll.bonusStructure.overtime,
+                              rate: Number(e.target.value)
+                            }
+                          }
+                        })}
+                        placeholder="1.5"
                       />
-                      <span className="text-sm text-gray-700">{country.name}</span>
-                    </label>
-                  ))}
-                </div>
+                    </div>
+                    <div>
+                      <Label htmlFor="maxOvertimeHours">Max Overtime Hours</Label>
+                      <Input
+                        id="maxOvertimeHours"
+                        type="number"
+                        value={settings.payroll.bonusStructure.overtime.maxHours}
+                        onChange={(e) => updatePayrollSettings({
+                          bonusStructure: {
+                            ...settings.payroll.bonusStructure,
+                            overtime: {
+                              ...settings.payroll.bonusStructure.overtime,
+                              maxHours: Number(e.target.value)
+                            }
+                          }
+                        })}
+                        placeholder="40"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
-
-              <OfficeLocationsManager
-                settings={locationSettings}
-                onUpdate={setLocationSettings}
-              />
             </CardContent>
           </Card>
         </TabsContent>
 
-        <TabsContent value="system" className="mt-6">
-          <div className="grid gap-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Company Information</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Company Name</Label>
-                  <Input
-                    value={systemSettings.companyName}
-                    onChange={(e) => handleSystemChange('companyName', e.target.value)}
-                  />
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Preferences</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-2">
-                    <Label>Timezone</Label>
-                    <Select
-                      value={systemSettings.timezone}
-                      onValueChange={(value) => handleSystemChange('timezone', value)}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select timezone" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="UTC">UTC</SelectItem>
-                        <SelectItem value="EST">Eastern Time</SelectItem>
-                        <SelectItem value="PST">Pacific Time</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Date Format</Label>
-                    <Select
-                      value={systemSettings.dateFormat}
-                      onValueChange={(value) => handleSystemChange('dateFormat', value)}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select date format" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="MM/DD/YYYY">MM/DD/YYYY</SelectItem>
-                        <SelectItem value="DD/MM/YYYY">DD/MM/YYYY</SelectItem>
-                        <SelectItem value="YYYY-MM-DD">YYYY-MM-DD</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Language</Label>
-                    <Select
-                      value={systemSettings.language}
-                      onValueChange={(value) => handleSystemChange('language', value)}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select language" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="en">English</SelectItem>
-                        <SelectItem value="es">Spanish</SelectItem>
-                        <SelectItem value="fr">French</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                <div className="space-y-4">
-                  <div className="flex items-center space-x-2">
-                    <Switch
-                      checked={systemSettings.emailNotifications}
-                      onCheckedChange={(checked: boolean) => handleSystemChange('emailNotifications', checked)}
-                    />
-                    <Label>Email Notifications</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <Switch
-                      checked={systemSettings.smsNotifications}
-                      onCheckedChange={(checked: boolean) => handleSystemChange('smsNotifications', checked)}
-                    />
-                    <Label>SMS Notifications</Label>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-
-        <TabsContent value="payroll">
+        <TabsContent value="company" className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Payroll Settings</CardTitle>
+              <CardTitle>Company Information</CardTitle>
+              <CardDescription>
+                Configure company details and working hours
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="companyName">Company Name</Label>
+                  <Input
+                    id="companyName"
+                    value={settings.company.name}
+                    onChange={(e) => setSettings({
+                      ...settings,
+                      company: { ...settings.company, name: e.target.value }
+                    })}
+                    placeholder="Your Company"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="timezone">Timezone</Label>
+                  <Input
+                    id="timezone"
+                    value={settings.company.timezone}
+                    onChange={(e) => setSettings({
+                      ...settings,
+                      company: { ...settings.company, timezone: e.target.value }
+                    })}
+                    placeholder="UTC"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="workStart">Work Start Time</Label>
+                  <Input
+                    id="workStart"
+                    type="time"
+                    value={settings.company.workingHours.start}
+                    onChange={(e) => setSettings({
+                      ...settings,
+                      company: {
+                        ...settings.company,
+                        workingHours: { ...settings.company.workingHours, start: e.target.value }
+                      }
+                    })}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="workEnd">Work End Time</Label>
+                  <Input
+                    id="workEnd"
+                    type="time"
+                    value={settings.company.workingHours.end}
+                    onChange={(e) => setSettings({
+                      ...settings,
+                      company: {
+                        ...settings.company,
+                        workingHours: { ...settings.company.workingHours, end: e.target.value }
+                      }
+                    })}
+                  />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="attendance" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center">
+                <Clock className="mr-2 h-5 w-5" />
+                Attendance Settings
+              </CardTitle>
+              <CardDescription>
+                Configure attendance tracking parameters and policies
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              {/* Currency Settings */}
+              {/* Working Hours */}
               <div className="space-y-4">
-                <h3 className="text-lg font-medium">Currency Settings</h3>
-                <div className="grid grid-cols-2 gap-4">
+                <h3 className="text-lg font-medium">Working Hours</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <Label>Currency Code</Label>
+                    <Label htmlFor="checkInTime">Check-in Time</Label>
                     <Input
-                      value={payrollSettings.currency.code}
-                      onChange={(e) => setPayrollSettings(prev => ({
-                        ...prev,
-                        currency: { ...prev.currency, code: e.target.value }
-                      }))}
+                      id="checkInTime"
+                      type="time"
+                      value={settings.attendance.checkInTime}
+                      onChange={(e) => updateAttendanceSettings({ checkInTime: e.target.value })}
                     />
                   </div>
                   <div>
-                    <Label>Currency Symbol</Label>
+                    <Label htmlFor="checkOutTime">Check-out Time</Label>
                     <Input
-                      value={payrollSettings.currency.symbol}
-                      onChange={(e) => setPayrollSettings(prev => ({
-                        ...prev,
-                        currency: { ...prev.currency, symbol: e.target.value }
-                      }))}
+                      id="checkOutTime"
+                      type="time"
+                      value={settings.attendance.checkOutTime}
+                      onChange={(e) => updateAttendanceSettings({ checkOutTime: e.target.value })}
                     />
                   </div>
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* Thresholds */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-medium">Thresholds</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
-                    <Label>Exchange Rate</Label>
+                    <Label htmlFor="lateThreshold">Late Threshold (minutes)</Label>
                     <Input
+                      id="lateThreshold"
                       type="number"
-                      value={payrollSettings.currency.exchangeRate}
-                      onChange={(e) => setPayrollSettings(prev => ({
-                        ...prev,
-                        currency: { ...prev.currency, exchangeRate: Number(e.target.value) }
-                      }))}
+                      value={settings.attendance.lateThreshold}
+                      onChange={(e) => updateAttendanceSettings({ lateThreshold: Number(e.target.value) })}
+                      placeholder="15"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="earlyLeaveThreshold">Early Leave Threshold (minutes)</Label>
+                    <Input
+                      id="earlyLeaveThreshold"
+                      type="number"
+                      value={settings.attendance.earlyLeaveThreshold}
+                      onChange={(e) => updateAttendanceSettings({ earlyLeaveThreshold: Number(e.target.value) })}
+                      placeholder="30"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="overtimeThreshold">Overtime Threshold (hours)</Label>
+                    <Input
+                      id="overtimeThreshold"
+                      type="number"
+                      value={settings.attendance.overtimeThreshold}
+                      onChange={(e) => updateAttendanceSettings({ overtimeThreshold: Number(e.target.value) })}
+                      placeholder="8"
                     />
                   </div>
                 </div>
               </div>
 
-              {/* Deductions Settings */}
+              <Separator />
+
+              {/* Location Settings */}
               <div className="space-y-4">
-                <h3 className="text-lg font-medium">Deductions</h3>
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <Label>Tax</Label>
-                      <p className="text-sm text-gray-500">Enable and set tax percentage</p>
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <Switch
-                        checked={payrollSettings.deductions.tax.enabled}
-                        onCheckedChange={(checked) => setPayrollSettings(prev => ({
-                          ...prev,
-                          deductions: {
-                            ...prev.deductions,
-                            tax: { ...prev.deductions.tax, enabled: checked }
-                          }
-                        }))}
-                      />
-                      <Input
-                        type="number"
-                        value={payrollSettings.deductions.tax.percentage}
-                        onChange={(e) => setPayrollSettings(prev => ({
-                          ...prev,
-                          deductions: {
-                            ...prev.deductions,
-                            tax: { ...prev.deductions.tax, percentage: Number(e.target.value) }
-                          }
-                        }))}
-                        className="w-24"
-                        disabled={!payrollSettings.deductions.tax.enabled}
-                      />
-                    </div>
+                <h3 className="text-lg font-medium flex items-center">
+                  <MapPin className="mr-2 h-5 w-5" />
+                  Location Settings
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="flex items-center space-x-2">
+                    <Switch
+                      checked={settings.attendance.geolocationRequired}
+                      onCheckedChange={(checked) => updateAttendanceSettings({ geolocationRequired: checked })}
+                    />
+                    <Label>Require Geolocation</Label>
                   </div>
-
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <Label>Insurance</Label>
-                      <p className="text-sm text-gray-500">Enable and set insurance percentage</p>
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <Switch
-                        checked={payrollSettings.deductions.insurance.enabled}
-                        onCheckedChange={(checked) => setPayrollSettings(prev => ({
-                          ...prev,
-                          deductions: {
-                            ...prev.deductions,
-                            insurance: { ...prev.deductions.insurance, enabled: checked }
-                          }
-                        }))}
-                      />
-                      <Input
-                        type="number"
-                        value={payrollSettings.deductions.insurance.percentage}
-                        onChange={(e) => setPayrollSettings(prev => ({
-                          ...prev,
-                          deductions: {
-                            ...prev.deductions,
-                            insurance: { ...prev.deductions.insurance, percentage: Number(e.target.value) }
-                          }
-                        }))}
-                        className="w-24"
-                        disabled={!payrollSettings.deductions.insurance.enabled}
-                      />
-                    </div>
+                  <div>
+                    <Label htmlFor="maxDistance">Max Distance (meters)</Label>
+                    <Input
+                      id="maxDistance"
+                      type="number"
+                      value={settings.attendance.maxDistance}
+                      onChange={(e) => updateAttendanceSettings({ maxDistance: Number(e.target.value) })}
+                      placeholder="100"
+                    />
                   </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <Label>Other Deductions</Label>
-                        <p className="text-sm text-gray-500">Enable and add custom deductions</p>
-                      </div>
-                      <Switch
-                        checked={payrollSettings.deductions.other.enabled}
-                        onCheckedChange={(checked) => setPayrollSettings(prev => ({
-                          ...prev,
-                          deductions: {
-                            ...prev.deductions,
-                            other: { ...prev.deductions.other, enabled: checked }
-                          }
-                        }))}
-                      />
-                    </div>
-                    {payrollSettings.deductions.other.enabled && (
-                      <div className="space-y-4">
-                        {payrollSettings.deductions.other.items.map((item, index) => (
-                          <div key={index} className="flex items-center gap-4">
-                            <Input
-                              value={item.name}
-                              onChange={(e) => {
-                                const newItems = [...payrollSettings.deductions.other.items]
-                                newItems[index] = { ...item, name: e.target.value }
-                                setPayrollSettings(prev => ({
-                                  ...prev,
-                                  deductions: {
-                                    ...prev.deductions,
-                                    other: { ...prev.deductions.other, items: newItems }
-                                  }
-                                }))
-                              }}
-                              placeholder="Deduction Name"
-                            />
-                            <Input
-                              type="number"
-                              value={item.percentage}
-                              onChange={(e) => {
-                                const newItems = [...payrollSettings.deductions.other.items]
-                                newItems[index] = { ...item, percentage: Number(e.target.value) }
-                                setPayrollSettings(prev => ({
-                                  ...prev,
-                                  deductions: {
-                                    ...prev.deductions,
-                                    other: { ...prev.deductions.other, items: newItems }
-                                  }
-                                }))
-                              }}
-                              placeholder="Percentage"
-                              className="w-24"
-                            />
-                            <Button
-                              variant="outline"
-                              onClick={() => {
-                                const newItems = payrollSettings.deductions.other.items.filter((_, i) => i !== index)
-                                setPayrollSettings(prev => ({
-                                  ...prev,
-                                  deductions: {
-                                    ...prev.deductions,
-                                    other: { ...prev.deductions.other, items: newItems }
-                                  }
-                                }))
-                              }}
-                            >
-                              Remove
-                            </Button>
-                          </div>
-                        ))}
-                        <Button
-                          variant="outline"
-                          onClick={() => setPayrollSettings(prev => ({
-                            ...prev,
-                            deductions: {
-                              ...prev.deductions,
-                              other: {
-                                ...prev.deductions.other,
-                                items: [...prev.deductions.other.items, { name: '', percentage: 0 }]
-                              }
-                            }
-                          }))}
-                        >
-                          Add Deduction
-                        </Button>
-                      </div>
-                    )}
+        <TabsContent value="productivity" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center">
+                <TrendingUp className="mr-2 h-5 w-5" />
+                Productivity Settings
+              </CardTitle>
+              <CardDescription>
+                Configure productivity tracking and focus session parameters
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Basic Settings */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-medium flex items-center">
+                  <Target className="mr-2 h-5 w-5" />
+                  Basic Settings
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="flex items-center space-x-2">
+                    <Switch
+                      checked={settings.productivity.trackingEnabled}
+                      onCheckedChange={(checked) => updateProductivitySettings({ trackingEnabled: checked })}
+                    />
+                    <Label>Enable Productivity Tracking</Label>
+                  </div>
+                  <div>
+                    <Label htmlFor="idleThreshold">Idle Threshold (minutes)</Label>
+                    <Input
+                      id="idleThreshold"
+                      type="number"
+                      value={settings.productivity.idleThreshold}
+                      onChange={(e) => updateProductivitySettings({ idleThreshold: Number(e.target.value) })}
+                      placeholder="15"
+                    />
                   </div>
                 </div>
               </div>
 
-              {/* Hourly Rate Settings */}
+              <Separator />
+
+              {/* Focus Sessions */}
               <div className="space-y-4">
-                <h3 className="text-lg font-medium">Hourly Rate Settings</h3>
-                <div className="flex items-center justify-between">
+                <h3 className="text-lg font-medium">Focus Session Settings</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <Label>Enable Hourly Rate</Label>
-                    <p className="text-sm text-gray-500">Calculate salary based on hours worked</p>
+                    <Label htmlFor="focusSessionDuration">Focus Session Duration (minutes)</Label>
+                    <Input
+                      id="focusSessionDuration"
+                      type="number"
+                      value={settings.productivity.focusSessionDuration}
+                      onChange={(e) => updateProductivitySettings({ focusSessionDuration: Number(e.target.value) })}
+                      placeholder="25"
+                    />
                   </div>
-                  <Switch
-                    checked={payrollSettings.hourlyRate.enabled}
-                    onCheckedChange={(checked) => setPayrollSettings(prev => ({
-                      ...prev,
-                      hourlyRate: { ...prev.hourlyRate, enabled: checked }
-                    }))}
-                  />
+                  <div>
+                    <Label htmlFor="targetProductiveHours">Target Productive Hours</Label>
+                    <Input
+                      id="targetProductiveHours"
+                      type="number"
+                      value={settings.productivity.targetProductiveHours}
+                      onChange={(e) => updateProductivitySettings({ targetProductiveHours: Number(e.target.value) })}
+                      placeholder="6"
+                    />
+                  </div>
                 </div>
-                {payrollSettings.hourlyRate.enabled && (
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label>Base Hourly Rate</Label>
-                      <Input
-                        type="number"
-                        value={payrollSettings.hourlyRate.baseRate}
-                        onChange={(e) => setPayrollSettings(prev => ({
-                          ...prev,
-                          hourlyRate: { ...prev.hourlyRate, baseRate: Number(e.target.value) }
-                        }))}
-                      />
-                    </div>
-                    <div>
-                      <Label>Overtime Multiplier</Label>
-                      <Input
-                        type="number"
-                        value={payrollSettings.hourlyRate.overtimeMultiplier}
-                        onChange={(e) => setPayrollSettings(prev => ({
-                          ...prev,
-                          hourlyRate: { ...prev.hourlyRate, overtimeMultiplier: Number(e.target.value) }
-                        }))}
-                      />
-                    </div>
-                  </div>
-                )}
               </div>
 
-              {/* Idle Time Settings */}
+              <Separator />
+
+              {/* Domain Lists */}
               <div className="space-y-4">
-                <h3 className="text-lg font-medium">Idle Time Settings</h3>
-                <div className="flex items-center justify-between">
+                <h3 className="text-lg font-medium">Domain Configuration</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <Label>Enable Idle Time Tracking</Label>
-                    <p className="text-sm text-gray-500">Deduct salary for idle time</p>
+                    <Label htmlFor="productiveDomains">Productive Domains (comma-separated)</Label>
+                    <Input
+                      id="productiveDomains"
+                      value={settings.productivity.productiveDomains.join(', ')}
+                      onChange={(e) => updateProductivitySettings({ 
+                        productiveDomains: e.target.value.split(',').map(d => d.trim()).filter(d => d)
+                      })}
+                      placeholder="github.com, stackoverflow.com, docs.google.com"
+                    />
                   </div>
-                  <Switch
-                    checked={payrollSettings.idleTime.enabled}
-                    onCheckedChange={(checked) => setPayrollSettings(prev => ({
-                      ...prev,
-                      idleTime: { ...prev.idleTime, enabled: checked }
-                    }))}
-                  />
+                  <div>
+                    <Label htmlFor="unproductiveSites">Unproductive Sites (comma-separated)</Label>
+                    <Input
+                      id="unproductiveSites"
+                      value={settings.productivity.unproductiveSites.join(', ')}
+                      onChange={(e) => updateProductivitySettings({ 
+                        unproductiveSites: e.target.value.split(',').map(d => d.trim()).filter(d => d)
+                      })}
+                      placeholder="facebook.com, twitter.com, youtube.com"
+                    />
+                  </div>
                 </div>
-                {payrollSettings.idleTime.enabled && (
-                  <div className="grid grid-cols-2 gap-4">
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="notifications" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center">
+                <Bell className="mr-2 h-5 w-5" />
+                Notification Settings
+              </CardTitle>
+              <CardDescription>
+                Configure notification preferences and alerts
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Email Notifications */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-medium">Email Notifications</h3>
+                <div className="space-y-3">
+                  <div className="flex items-center space-x-2">
+                    <Switch
+                      checked={settings.notifications.email.enabled}
+                      onCheckedChange={(checked) => updateNotificationSettings({
+                        email: { ...settings.notifications.email, enabled: checked }
+                      })}
+                    />
+                    <Label>Enable Email Notifications</Label>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <Label>Idle Time Threshold (minutes)</Label>
+                      <Label htmlFor="emailFrom">From Email</Label>
                       <Input
-                        type="number"
-                        value={payrollSettings.idleTime.threshold}
-                        onChange={(e) => setPayrollSettings(prev => ({
-                          ...prev,
-                          idleTime: { ...prev.idleTime, threshold: Number(e.target.value) }
-                        }))}
+                        id="emailFrom"
+                        type="email"
+                        value={settings.notifications.email.from}
+                        onChange={(e) => updateNotificationSettings({
+                          email: { ...settings.notifications.email, from: e.target.value }
+                        })}
+                        placeholder="noreply@company.com"
                       />
                     </div>
                     <div>
-                      <Label>Deduction Percentage</Label>
+                      <Label htmlFor="emailReplyTo">Reply To</Label>
                       <Input
-                        type="number"
-                        value={payrollSettings.idleTime.deductionPercentage}
-                        onChange={(e) => setPayrollSettings(prev => ({
-                          ...prev,
-                          idleTime: { ...prev.idleTime, deductionPercentage: Number(e.target.value) }
-                        }))}
+                        id="emailReplyTo"
+                        type="email"
+                        value={settings.notifications.email.replyTo}
+                        onChange={(e) => updateNotificationSettings({
+                          email: { ...settings.notifications.email, replyTo: e.target.value }
+                        })}
+                        placeholder="hr@company.com"
                       />
                     </div>
                   </div>
-                )}
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* SMS Notifications */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-medium">SMS Notifications</h3>
+                <div className="space-y-3">
+                  <div className="flex items-center space-x-2">
+                    <Switch
+                      checked={settings.notifications.sms.enabled}
+                      onCheckedChange={(checked) => updateNotificationSettings({
+                        sms: { ...settings.notifications.sms, enabled: checked }
+                      })}
+                    />
+                    <Label>Enable SMS Notifications</Label>
+                  </div>
+                  <div>
+                    <Label htmlFor="smsProvider">SMS Provider</Label>
+                    <Input
+                      id="smsProvider"
+                      value={settings.notifications.sms.provider}
+                      onChange={(e) => updateNotificationSettings({
+                        sms: { ...settings.notifications.sms, provider: e.target.value }
+                      })}
+                      placeholder="Twilio"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* Push Notifications */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-medium">Push Notifications</h3>
+                <div className="space-y-3">
+                  <div className="flex items-center space-x-2">
+                    <Switch
+                      checked={settings.notifications.push.enabled}
+                      onCheckedChange={(checked) => updateNotificationSettings({
+                        push: { ...settings.notifications.push, enabled: checked }
+                      })}
+                    />
+                    <Label>Enable Push Notifications</Label>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="vapidPublicKey">VAPID Public Key</Label>
+                      <Input
+                        id="vapidPublicKey"
+                        value={settings.notifications.push.vapidPublicKey}
+                        onChange={(e) => updateNotificationSettings({
+                          push: { ...settings.notifications.push, vapidPublicKey: e.target.value }
+                        })}
+                        placeholder="Public key for push notifications"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="vapidPrivateKey">VAPID Private Key</Label>
+                      <Input
+                        id="vapidPrivateKey"
+                        type="password"
+                        value={settings.notifications.push.vapidPrivateKey}
+                        onChange={(e) => updateNotificationSettings({
+                          push: { ...settings.notifications.push, vapidPrivateKey: e.target.value }
+                        })}
+                        placeholder="Private key for push notifications"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="security" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center">
+                <Shield className="mr-2 h-5 w-5" />
+                Security Settings
+              </CardTitle>
+              <CardDescription>
+                Configure security policies and access controls
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Password Policy */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-medium">Password Policy</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <Label htmlFor="minPasswordLength">Minimum Length</Label>
+                    <Input
+                      id="minPasswordLength"
+                      type="number"
+                      value={settings.security.passwordPolicy.minLength}
+                      onChange={(e) => updateSecuritySettings({
+                        passwordPolicy: { ...settings.security.passwordPolicy, minLength: Number(e.target.value) }
+                      })}
+                      placeholder="8"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="maxPasswordAge">Max Age (days)</Label>
+                    <Input
+                      id="maxPasswordAge"
+                      type="number"
+                      value={settings.security.passwordPolicy.maxAge}
+                      onChange={(e) => updateSecuritySettings({
+                        passwordPolicy: { ...settings.security.passwordPolicy, maxAge: Number(e.target.value) }
+                      })}
+                      placeholder="90"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="passwordHistory">Password History</Label>
+                    <Input
+                      id="passwordHistory"
+                      type="number"
+                      value={settings.security.passwordPolicy.historyCount}
+                      onChange={(e) => updateSecuritySettings({
+                        passwordPolicy: { ...settings.security.passwordPolicy, historyCount: Number(e.target.value) }
+                      })}
+                      placeholder="5"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center space-x-2">
+                    <Switch
+                      checked={settings.security.passwordPolicy.requireUppercase}
+                      onCheckedChange={(checked) => updateSecuritySettings({
+                        passwordPolicy: { ...settings.security.passwordPolicy, requireUppercase: checked }
+                      })}
+                    />
+                    <Label>Require Uppercase</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Switch
+                      checked={settings.security.passwordPolicy.requireLowercase}
+                      onCheckedChange={(checked) => updateSecuritySettings({
+                        passwordPolicy: { ...settings.security.passwordPolicy, requireLowercase: checked }
+                      })}
+                    />
+                    <Label>Require Lowercase</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Switch
+                      checked={settings.security.passwordPolicy.requireNumbers}
+                      onCheckedChange={(checked) => updateSecuritySettings({
+                        passwordPolicy: { ...settings.security.passwordPolicy, requireNumbers: checked }
+                      })}
+                    />
+                    <Label>Require Numbers</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Switch
+                      checked={settings.security.passwordPolicy.requireSpecialChars}
+                      onCheckedChange={(checked) => updateSecuritySettings({
+                        passwordPolicy: { ...settings.security.passwordPolicy, requireSpecialChars: checked }
+                      })}
+                    />
+                    <Label>Require Special Characters</Label>
+                  </div>
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* Session Management */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-medium">Session Management</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="sessionTimeout">Session Timeout (minutes)</Label>
+                    <Input
+                      id="sessionTimeout"
+                      type="number"
+                      value={settings.security.sessionManagement.timeout}
+                      onChange={(e) => updateSecuritySettings({
+                        sessionManagement: { ...settings.security.sessionManagement, timeout: Number(e.target.value) }
+                      })}
+                      placeholder="30"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="maxConcurrentSessions">Max Concurrent Sessions</Label>
+                    <Input
+                      id="maxConcurrentSessions"
+                      type="number"
+                      value={settings.security.sessionManagement.maxConcurrent}
+                      onChange={(e) => updateSecuritySettings({
+                        sessionManagement: { ...settings.security.sessionManagement, maxConcurrent: Number(e.target.value) }
+                      })}
+                      placeholder="3"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* Two-Factor Authentication */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-medium">Two-Factor Authentication</h3>
+                <div className="space-y-3">
+                  <div className="flex items-center space-x-2">
+                    <Switch
+                      checked={settings.security.twoFactor.enabled}
+                      onCheckedChange={(checked) => updateSecuritySettings({
+                        twoFactor: { ...settings.security.twoFactor, enabled: checked }
+                      })}
+                    />
+                    <Label>Enable 2FA</Label>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="twoFactorMethod">Default Method</Label>
+                      <Input
+                        id="twoFactorMethod"
+                        value={settings.security.twoFactor.defaultMethod}
+                        onChange={(e) => updateSecuritySettings({
+                          twoFactor: { ...settings.security.twoFactor, defaultMethod: e.target.value }
+                        })}
+                        placeholder="TOTP"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="backupCodes">Backup Codes Count</Label>
+                      <Input
+                        id="backupCodes"
+                        type="number"
+                        value={settings.security.twoFactor.backupCodesCount}
+                        onChange={(e) => updateSecuritySettings({
+                          twoFactor: { ...settings.security.twoFactor, backupCodesCount: Number(e.target.value) }
+                        })}
+                        placeholder="10"
+                      />
+                    </div>
+                  </div>
+                </div>
               </div>
             </CardContent>
           </Card>
         </TabsContent>
       </Tabs>
 
-      <div className="mt-6">
-        <Button onClick={handleSave} disabled={saving}>
-          {saving ? "Saving..." : "Save Settings"}
-        </Button>
+      {/* Import Settings */}
+      <div className="mt-8">
+        <Card>
+          <CardHeader>
+            <CardTitle>Import/Export Settings</CardTitle>
+            <CardDescription>
+              Backup or restore your settings configuration
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center space-x-4">
+              <Button variant="outline" onClick={exportSettings}>
+                <Download className="h-4 w-4 mr-2" />
+                Export Settings
+              </Button>
+              <div>
+                <input
+                  type="file"
+                  accept=".json"
+                  onChange={importSettings}
+                  className="hidden"
+                  id="import-settings"
+                />
+                <Label htmlFor="import-settings" className="cursor-pointer">
+                  <Button variant="outline" asChild>
+                    <span>
+                      <Upload className="h-4 w-4 mr-2" />
+                      Import Settings
+                    </span>
+                  </Button>
+                </Label>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   )

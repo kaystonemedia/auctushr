@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic'
 
 export async function GET() {
   try {
-    const cookieStore = cookies()
+    const cookieStore = await cookies()
     const sessionCookie = cookieStore.get('session')?.value
 
     if (!sessionCookie) {
@@ -46,8 +46,8 @@ export async function GET() {
       { error: 'Invalid session' },
       { status: 401 }
     )
-    response.cookies.delete('session')
-    response.cookies.delete('user-role')
+    response.cookies.set('session', '', { expires: new Date(0), path: '/' })
+    response.cookies.set('user-role', '', { expires: new Date(0), path: '/' })
     
     return response
   }

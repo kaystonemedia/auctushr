@@ -1,20 +1,14 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/firebase'
 import { collection, query, where, getDocs, updateDoc, doc, addDoc } from 'firebase/firestore'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { auth } from '@/lib/firebase'
+import { getAuth } from 'firebase/auth'
 
 export async function POST(request: Request) {
   try {
-    // Get user session
-    const session = await getServerSession(authOptions)
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
     // Get request body
-    const { session: activitySession } = await request.json()
-    if (!activitySession) {
+    const { session: activitySession, userId } = await request.json()
+    if (!activitySession || !userId) {
       return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
     }
 
@@ -25,7 +19,7 @@ export async function POST(request: Request) {
     today.setHours(0, 0, 0, 0)
     const attendanceQuery = query(
       collection(db, 'attendance'),
-      where('employeeId', '==', session.user.id),
+      where('employeeId', '==', userId),
       where('date', '>=', today)
     )
     const attendanceSnapshot = await getDocs(attendanceQuery)
@@ -33,9 +27,7 @@ export async function POST(request: Request) {
     if (attendanceSnapshot.empty) {
       // Create new attendance record if none exists
       const attendanceData = {
-        employeeId: session.user.id,
-        employeeName: session.user.name,
-        department: session.user.department,
+        employeeId: userId,
         date: new Date(),
         checkIn: {
           time: new Date(startTime),
@@ -72,7 +64,7 @@ export async function POST(request: Request) {
 
       // Handle check-out
       if (isCheckOut) {
-        const checkOutActivity = activities?.find(a => a.type === 'check_out')
+        const checkOutActivity = activities?.find((a: any) => a.type === 'check_out')
         if (checkOutActivity) {
           updateData.checkOut = {
             time: new Date(checkOutActivity.time),

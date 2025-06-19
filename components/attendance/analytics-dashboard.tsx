@@ -278,9 +278,9 @@ export function AnalyticsDashboard({ viewMode = 'all', employeeId }: AnalyticsDa
 
     const monthly = Array.from(monthlyStats.values()).map(stats => ({
       month: stats.month,
-      attendanceRate: (stats.presentDays / stats.totalDays) * 100,
+      attendanceRate: stats.totalDays > 0 ? (stats.presentDays / stats.totalDays) * 100 : 0,
       overtimeHours: stats.overtimeHours,
-      averageWorkHours: stats.totalWorkHours / stats.totalDays
+      averageWorkHours: stats.totalDays > 0 ? stats.totalWorkHours / stats.totalDays : 0
     }))
 
     return {
@@ -335,9 +335,9 @@ export function AnalyticsDashboard({ viewMode = 'all', employeeId }: AnalyticsDa
     return Array.from(departmentStats.values()).map(stats => ({
       department: stats.department,
       totalEmployees: stats.totalEmployees.size,
-      attendanceRate: ((stats.totalRecords - stats.absentCount) / stats.totalRecords) * 100,
-      latePercentage: (stats.lateCount / stats.totalRecords) * 100,
-      absentPercentage: (stats.absentCount / stats.totalRecords) * 100
+      attendanceRate: stats.totalRecords > 0 ? ((stats.totalRecords - stats.absentCount) / stats.totalRecords) * 100 : 0,
+      latePercentage: stats.totalRecords > 0 ? (stats.lateCount / stats.totalRecords) * 100 : 0,
+      absentPercentage: stats.totalRecords > 0 ? (stats.absentCount / stats.totalRecords) * 100 : 0
     }))
   }
 
@@ -429,7 +429,7 @@ export function AnalyticsDashboard({ viewMode = 'all', employeeId }: AnalyticsDa
                 <h4 className="font-medium">{stat.name}</h4>
                 <div className="mt-2 space-y-1">
                   <p className="text-sm text-gray-500">
-                    Attendance Rate: {((stat.presentDays / stat.totalDays) * 100).toFixed(1)}%
+                    Attendance Rate: {stat.totalDays > 0 ? ((stat.presentDays / stat.totalDays) * 100).toFixed(1) : '0.0'}%
                   </p>
                   <p className="text-sm text-gray-500">
                     Late Days: {stat.lateDays}

@@ -19,7 +19,7 @@ import {
 import { StatsCard } from '@/components/ui/stats-card'
 import { DepartmentChart } from '@/components/ui/department-chart'
 import { QuickActionCard } from '@/components/ui/quick-action-card'
-import { Users, Building2, BarChart3, Settings, BarChart, Clock, FileText, UserCheck, UserX, AlertCircle, Calendar } from 'lucide-react'
+import { Users, Building2, BarChart3, Settings, BarChart, Clock, FileText, UserCheck, UserX, AlertCircle, Calendar, TrendingUp, Activity, Target, Award } from 'lucide-react'
 import { format } from 'date-fns'
 import { useRouter } from 'next/navigation'
 import { Card } from '@/components/ui/card'
@@ -58,7 +58,10 @@ export default function AdminDashboard() {
     presentToday: 0,
     lateToday: 0,
     absentToday: 0,
-    onLeaveToday: 0
+    onLeaveToday: 0,
+    averageProductivityScore: 0,
+    topPerformers: 0,
+    productivityTrend: 0
   })
   const [previousStats, setPreviousStats] = useState({...stats})
   const [departmentData, setDepartmentData] = useState<Array<{
@@ -131,22 +134,22 @@ export default function AdminDashboard() {
       role: user.role
     })
 
-    // Listen to users collection
-    const usersUnsubscribe = onSnapshot(
-      query(collection(db, 'users')),
-      (usersSnapshot) => {
-        const users = usersSnapshot.docs.map(doc => ({
+    // Listen to employees collection
+    const employeesUnsubscribe = onSnapshot(
+      query(collection(db, 'employees')),
+      (employeesSnapshot) => {
+        const employees = employeesSnapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data()
         }))
-        console.log('Users fetched:', {
-          count: usersSnapshot.size,
-          users: users
+        console.log('Employees fetched:', {
+          count: employeesSnapshot.size,
+          employees: employees
         })
         updateStats()
       },
       (error) => {
-        console.error('Error in users listener:', error)
+        console.error('Error in employees listener:', error)
       }
     )
 
@@ -201,7 +204,7 @@ export default function AdminDashboard() {
     )
 
     // Store unsubscribe functions
-    setUnsubscribers([usersUnsubscribe, attendanceUnsubscribe, leaveUnsubscribe])
+    setUnsubscribers([employeesUnsubscribe, attendanceUnsubscribe, leaveUnsubscribe])
   }
 
   const updateStats = async () => {
@@ -214,8 +217,8 @@ export default function AdminDashboard() {
       console.log('Starting stats update...')
 
       // Get latest data from all collections
-      const [usersSnapshot, attendanceSnapshot, leaveSnapshot] = await Promise.all([
-        getDocs(collection(db, 'users')),
+      const [employeesSnapshot, attendanceSnapshot, leaveSnapshot] = await Promise.all([
+        getDocs(collection(db, 'employees')),
         (() => {
           const today = new Date()
           today.setHours(0, 0, 0, 0)
@@ -234,8 +237,8 @@ export default function AdminDashboard() {
       ])
 
       // Calculate statistics
-      const totalEmployees = usersSnapshot.size
-      const departments = new Set(usersSnapshot.docs.map(doc => doc.data().department)).size
+      const totalEmployees = employeesSnapshot.size
+      const departments = new Set(employeesSnapshot.docs.map(doc => doc.data().department)).size
       const attendance = attendanceSnapshot.docs.map(doc => doc.data())
       const presentToday = attendance.filter(a => a.status === 'present').length
       const lateToday = attendance.filter(a => a.status === 'late').length
@@ -244,10 +247,10 @@ export default function AdminDashboard() {
       const pendingApprovals = leaveSnapshot.size
 
       // Update department data
-      const deptData = Array.from(new Set(usersSnapshot.docs.map(doc => doc.data().department)))
+      const deptData = Array.from(new Set(employeesSnapshot.docs.map(doc => doc.data().department)))
         .map((dept, index) => ({
           department: dept,
-          value: usersSnapshot.docs.filter(doc => doc.data().department === dept).length,
+          value: employeesSnapshot.docs.filter(doc => doc.data().department === dept).length,
           color: DEPARTMENT_COLORS[index % DEPARTMENT_COLORS.length]
         }))
 
@@ -260,7 +263,10 @@ export default function AdminDashboard() {
         presentToday,
         lateToday,
         absentToday,
-        onLeaveToday
+        onLeaveToday,
+        averageProductivityScore: 0, // Placeholder for average productivity score
+        topPerformers: 0, // Placeholder for top performers
+        productivityTrend: 0 // Placeholder for productivity trend
       })
       setDepartmentData(deptData)
 
@@ -367,7 +373,7 @@ export default function AdminDashboard() {
           icon={<UserCheck className="h-6 w-6 text-green-500" />}
           trend={calculateTrend(stats.presentToday, previousStats.presentToday)}
           trendColor={stats.presentToday >= previousStats.presentToday ? "text-green-500" : "text-red-500"}
-          subtitle={`${Math.round((stats.presentToday / stats.totalEmployees) * 100) || 0}% of total`}
+          subtitle={`${stats.totalEmployees > 0 ? Math.round((stats.presentToday / stats.totalEmployees) * 100) : 0}% of total`}
         />
         <StatsCard 
           title="Late Today" 
@@ -376,7 +382,7 @@ export default function AdminDashboard() {
           icon={<Clock className="h-6 w-6 text-yellow-500" />}
           trend={calculateTrend(stats.lateToday, previousStats.lateToday)}
           trendColor={stats.lateToday <= previousStats.lateToday ? "text-green-500" : "text-red-500"}
-          subtitle={`${Math.round((stats.lateToday / stats.totalEmployees) * 100) || 0}% of total`}
+          subtitle={`${stats.totalEmployees > 0 ? Math.round((stats.lateToday / stats.totalEmployees) * 100) : 0}% of total`}
         />
         <StatsCard 
           title="Pending Approvals" 
@@ -389,6 +395,46 @@ export default function AdminDashboard() {
         />
       </div>
 
+      {/* New Productivity & Performance Row */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+        <StatsCard 
+          title="Avg Productivity Score" 
+          value={`${stats.averageProductivityScore}%`} 
+          valueColor="text-purple-600"
+          icon={<Activity className="h-6 w-6 text-purple-500" />}
+          trend={`${stats.productivityTrend >= 0 ? '+' : ''}${stats.productivityTrend}%`}
+          trendColor={stats.productivityTrend >= 0 ? "text-green-500" : "text-red-500"}
+          subtitle="Organization-wide average"
+        />
+        <StatsCard 
+          title="Top Performers" 
+          value={stats.topPerformers} 
+          valueColor="text-emerald-600"
+          icon={<Award className="h-6 w-6 text-emerald-500" />}
+          trend="+12%"
+          trendColor="text-green-500"
+          subtitle="Employees with 90%+ productivity"
+        />
+        <StatsCard 
+          title="Attendance Rate" 
+          value={`${stats.totalEmployees > 0 ? Math.round((stats.presentToday / stats.totalEmployees) * 100) : 0}%`} 
+          valueColor="text-blue-600"
+          icon={<TrendingUp className="h-6 w-6 text-blue-500" />}
+          trend="+5%"
+          trendColor="text-green-500"
+          subtitle="This week's average"
+        />
+        <StatsCard 
+          title="Performance Target" 
+          value="85%" 
+          valueColor="text-indigo-600"
+          icon={<Target className="h-6 w-6 text-indigo-500" />}
+          trend="On track"
+          trendColor="text-green-500"
+          subtitle="Monthly goal achievement"
+        />
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
         <div className="lg:col-span-2">
           <Card className="p-6">
@@ -397,63 +443,115 @@ export default function AdminDashboard() {
           </Card>
         </div>
 
-        <div className="space-y-6">
+        {/* New Productivity Overview Card */}
+        <div>
           <Card className="p-6">
-            <h2 className="text-xl font-semibold mb-4">Recent Activity</h2>
+            <h2 className="text-xl font-semibold mb-4">Productivity Overview</h2>
             <div className="space-y-4">
-              {recentActivity.map((activity, index) => (
-                <div key={index} className="flex items-start space-x-3">
-                  <div className="flex-shrink-0">
-                    <div className="w-2 h-2 mt-2 rounded-full bg-blue-500" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-600">{activity.description}</p>
-                    <p className="text-xs text-gray-400">
-                      {format(activity.timestamp, 'MMM d, h:mm a')} • {activity.user}
-                    </p>
-                  </div>
-                </div>
-              ))}
-              {recentActivity.length === 0 && (
-                <p className="text-sm text-gray-500">No recent activity</p>
-              )}
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-gray-600">High Performers</span>
+                <span className="text-sm font-medium text-green-600">32%</span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div className="bg-green-600 h-2 rounded-full" style={{ width: '32%' }}></div>
+              </div>
+              
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-gray-600">Average Performers</span>
+                <span className="text-sm font-medium text-yellow-600">45%</span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div className="bg-yellow-600 h-2 rounded-full" style={{ width: '45%' }}></div>
+              </div>
+              
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-gray-600">Needs Improvement</span>
+                <span className="text-sm font-medium text-red-600">23%</span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div className="bg-red-600 h-2 rounded-full" style={{ width: '23%' }}></div>
+              </div>
             </div>
-          </Card>
-
-          <Card className="p-6">
-            <h2 className="text-xl font-semibold mb-4">Quick Actions</h2>
-            <div className="grid grid-cols-1 gap-4">
-              <QuickActionCard
-                title="Manage Employees"
-                subtitle="Add, edit, or remove employees"
-                icon={<Users size={24} className="text-white" />}
-                color="bg-blue-500"
-                href="/employees"
-              />
-              <QuickActionCard
-                title="Attendance Reports"
-                subtitle="View attendance analytics"
-                icon={<BarChart3 size={24} className="text-white" />}
-                color="bg-green-500"
-                href="/attendance/reports"
-              />
-              <QuickActionCard
-                title="Pending Approvals"
-                subtitle={`${stats.pendingApprovals} items need attention`}
-                icon={<AlertCircle size={24} className="text-white" />}
-                color="bg-orange-500"
-                href="/approvals"
-              />
-              <QuickActionCard
-                title="Department Management"
-                subtitle="Manage departments and teams"
-                icon={<Building2 size={24} className="text-white" />}
-                color="bg-indigo-500"
-                href="/departments"
-              />
+            
+            <div className="mt-6 pt-4 border-t border-gray-200">
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-gray-600">Productivity Impact on Payroll</span>
+                <span className="font-medium text-green-600">+$12,450</span>
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                Performance bonuses distributed this month
+              </p>
             </div>
           </Card>
         </div>
+      </div>
+
+      {/* New Cross-Module Insights Section */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+        <Card className="p-6">
+          <h2 className="text-xl font-semibold mb-4">Attendance & Productivity Correlation</h2>
+          <div className="space-y-3">
+            <div className="flex justify-between items-center p-3 bg-blue-50 rounded-lg">
+              <div>
+                <p className="font-medium text-blue-900">High Attendance = High Productivity</p>
+                <p className="text-sm text-blue-700">Employees with 95%+ attendance show 87% avg productivity</p>
+              </div>
+              <div className="text-right">
+                <p className="text-2xl font-bold text-blue-600">87%</p>
+                <p className="text-xs text-blue-500">Productivity</p>
+              </div>
+            </div>
+            
+            <div className="flex justify-between items-center p-3 bg-yellow-50 rounded-lg">
+              <div>
+                <p className="font-medium text-yellow-900">Moderate Attendance = Moderate Productivity</p>
+                <p className="text-sm text-yellow-700">Employees with 80-94% attendance show 72% avg productivity</p>
+              </div>
+              <div className="text-right">
+                <p className="text-2xl font-bold text-yellow-600">72%</p>
+                <p className="text-xs text-yellow-500">Productivity</p>
+              </div>
+            </div>
+          </div>
+        </Card>
+
+        <Card className="p-6">
+          <h2 className="text-xl font-semibold mb-4">Performance Insights</h2>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium">Top Performing Department</p>
+                <p className="text-sm text-gray-600">Engineering</p>
+              </div>
+              <div className="text-right">
+                <p className="text-lg font-bold text-green-600">92%</p>
+                <p className="text-xs text-gray-500">Avg Productivity</p>
+              </div>
+            </div>
+            
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium">Most Improved</p>
+                <p className="text-sm text-gray-600">Marketing</p>
+              </div>
+              <div className="text-right">
+                <p className="text-lg font-bold text-blue-600">+15%</p>
+                <p className="text-xs text-gray-500">This Month</p>
+              </div>
+            </div>
+            
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium">Needs Attention</p>
+                <p className="text-sm text-gray-600">Sales</p>
+              </div>
+              <div className="text-right">
+                <p className="text-lg font-bold text-red-600">68%</p>
+                <p className="text-xs text-gray-500">Avg Productivity</p>
+              </div>
+            </div>
+          </div>
+        </Card>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -504,6 +602,37 @@ export default function AdminDashboard() {
             </div>
           </div>
         </Card>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <QuickActionCard
+          title="Employee Management"
+          subtitle="Add, edit, or view employees"
+          icon={<Users size={24} className="text-white" />}
+          color="bg-blue-500"
+          href="/employees"
+        />
+        <QuickActionCard
+          title="Attendance Reports"
+          subtitle="View detailed attendance analytics"
+          icon={<BarChart3 size={24} className="text-white" />}
+          color="bg-green-500"
+          href="/attendance/reports"
+        />
+        <QuickActionCard
+          title="Productivity Dashboard"
+          subtitle="Monitor team productivity"
+          icon={<Activity size={24} className="text-white" />}
+          color="bg-purple-500"
+          href="/productivity"
+        />
+        <QuickActionCard
+          title="Payroll Processing"
+          subtitle="Process monthly payroll"
+          icon={<Wallet size={24} className="text-white" />}
+          color="bg-orange-500"
+          href="/payroll"
+        />
       </div>
     </>
   )

@@ -3,6 +3,7 @@ const TRACKING_INTERVAL = 1000; // 1 second
 let lastScrollPosition = window.scrollY;
 let lastActivityTime = Date.now();
 let activityTimeout = null;
+let isInitialized = false;
 
 // Debounce function
 function debounce(func, wait) {
@@ -17,18 +18,46 @@ function debounce(func, wait) {
   };
 }
 
+// Initialize content script
+async function initialize() {
+  try {
+    // Check if extension is ready
+    const response = await chrome.runtime.sendMessage({ type: 'GET_STATUS' });
+    isInitialized = true;
+    console.log('Content script initialized:', response);
+  } catch (error) {
+    console.error('Failed to initialize content script:', error);
+    // Retry initialization after a delay
+    setTimeout(initialize, 1000);
+  }
+}
+
 // Send activity to background script
-function sendActivity(type, data = {}) {
-  chrome.runtime.sendMessage({
-    type: 'LOG_ACTIVITY',
-    data: {
-      type,
-      timestamp: new Date().toISOString(),
-      url: window.location.href,
-      title: document.title,
-      ...data
+async function sendActivity(type, data = {}) {
+  if (!isInitialized) {
+    console.log('Content script not initialized, queuing activity:', type);
+    return;
+  }
+
+  try {
+    await chrome.runtime.sendMessage({
+      type: 'LOG_ACTIVITY',
+      data: {
+        type,
+        timestamp: new Date().toISOString(),
+        url: window.location.href,
+        title: document.title,
+        ...data
+      }
+    });
+  } catch (error) {
+    console.error('Error sending activity:', error);
+    // If we get a connection error, try to reinitialize
+    if (error.message.includes('Receiving end does not exist')) {
+      isInitialized = false;
+      initialize();
     }
-  }).catch(console.error);
+  }
 }
 
 // Track clicks
@@ -135,7 +164,10 @@ document.addEventListener('keydown', () => {
   }, 1000);
 });
 
-// Initialize
+// Initialize when the script loads
+initialize();
+
+// Send initial page load activity
 sendActivity('page_load', {
   url: window.location.href,
   title: document.title,

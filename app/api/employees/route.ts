@@ -69,7 +69,7 @@ export async function GET(request: Request) {
         emergencyContact: data.emergencyContact || null
       }
       
-      console.log('Processed employee:', employee.id, employee.email)
+      console.log('Processed employee:', employee.id, data.email || 'No email')
       return employee
     })
 

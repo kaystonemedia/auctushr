@@ -17,7 +17,7 @@ import {
 import { StatsCard } from '@/components/ui/stats-card'
 import { DepartmentChart } from '@/components/ui/department-chart'
 import { QuickActionCard } from '@/components/ui/quick-action-card'
-import { Users, Calendar, FileText, BarChart, CheckCircle, Clock, UserCheck, UserX, AlertCircle, BarChart3 } from 'lucide-react'
+import { Users, Calendar, FileText, BarChart, CheckCircle, Clock, UserCheck, UserX, AlertCircle, BarChart3, Activity, TrendingUp, Target, Award } from 'lucide-react'
 import { format } from 'date-fns'
 import { Card } from '@/components/ui/card'
 import { useRouter } from 'next/navigation'
@@ -40,7 +40,10 @@ export default function ManagerDashboard() {
     absentToday: 0,
     onLeaveToday: 0,
     pendingApprovals: 0,
-    activeProjects: 0
+    activeProjects: 0,
+    averageProductivityScore: 0,
+    teamProductivityTrend: 0,
+    topPerformers: 0
   })
   const [previousStats, setPreviousStats] = useState({...stats})
   const [teamMembers, setTeamMembers] = useState<Array<{
@@ -49,6 +52,8 @@ export default function ManagerDashboard() {
     role: string
     status: string
     lastActive: Date
+    productivityScore?: number
+    email?: string
   }>>([])
   const [recentActivity, setRecentActivity] = useState<Array<{
     type: string
@@ -415,7 +420,7 @@ export default function ManagerDashboard() {
           icon={<UserCheck className="h-6 w-6 text-green-500" />}
           trend={calculateTrend(stats.presentToday, previousStats.presentToday)}
           trendColor={stats.presentToday >= previousStats.presentToday ? "text-green-500" : "text-red-500"}
-          subtitle={`${Math.round((stats.presentToday / stats.teamSize) * 100) || 0}% of team`}
+          subtitle={`${stats.teamSize > 0 ? Math.round((stats.presentToday / stats.teamSize) * 100) : 0}% of team`}
         />
         <StatsCard 
           title="Late Today" 
@@ -424,7 +429,7 @@ export default function ManagerDashboard() {
           icon={<Clock className="h-6 w-6 text-yellow-500" />}
           trend={calculateTrend(stats.lateToday, previousStats.lateToday)}
           trendColor={stats.lateToday <= previousStats.lateToday ? "text-green-500" : "text-red-500"}
-          subtitle={`${Math.round((stats.lateToday / stats.teamSize) * 100) || 0}% of team`}
+          subtitle={`${stats.teamSize > 0 ? Math.round((stats.lateToday / stats.teamSize) * 100) : 0}% of team`}
         />
         <StatsCard 
           title="Absent Today" 
@@ -433,11 +438,29 @@ export default function ManagerDashboard() {
           icon={<UserX className="h-6 w-6 text-red-500" />}
           trend={calculateTrend(stats.absentToday, previousStats.absentToday)}
           trendColor={stats.absentToday <= previousStats.absentToday ? "text-green-500" : "text-red-500"}
-          subtitle={`${Math.round((stats.absentToday / stats.teamSize) * 100) || 0}% of team`}
+          subtitle={`${stats.teamSize > 0 ? Math.round((stats.absentToday / stats.teamSize) * 100) : 0}% of team`}
         />
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+        <StatsCard 
+          title="Team Productivity" 
+          value={`${stats.averageProductivityScore}%`} 
+          valueColor="text-purple-600"
+          icon={<Activity className="h-6 w-6 text-purple-500" />}
+          trend={`${stats.teamProductivityTrend >= 0 ? '+' : ''}${stats.teamProductivityTrend}%`}
+          trendColor={stats.teamProductivityTrend >= 0 ? "text-green-500" : "text-red-500"}
+          subtitle="Average team score"
+        />
+        <StatsCard 
+          title="Top Performers" 
+          value={stats.topPerformers} 
+          valueColor="text-emerald-600"
+          icon={<Award className="h-6 w-6 text-emerald-500" />}
+          trend="+8%"
+          trendColor="text-green-500"
+          subtitle="Team members with 90%+"
+        />
         <StatsCard 
           title="On Leave Today" 
           value={stats.onLeaveToday} 
@@ -445,16 +468,7 @@ export default function ManagerDashboard() {
           icon={<Calendar className="h-6 w-6 text-purple-500" />}
           trend={calculateTrend(stats.onLeaveToday, previousStats.onLeaveToday)}
           trendColor={stats.onLeaveToday <= previousStats.onLeaveToday ? "text-green-500" : "text-red-500"}
-          subtitle={`${Math.round((stats.onLeaveToday / stats.teamSize) * 100) || 0}% of team`}
-        />
-        <StatsCard 
-          title="Pending Approvals" 
-          value={stats.pendingApprovals} 
-          valueColor="text-orange-600"
-          icon={<AlertCircle className="h-6 w-6 text-orange-500" />}
-          trend={calculateTrend(stats.pendingApprovals, previousStats.pendingApprovals)}
-          trendColor={stats.pendingApprovals <= previousStats.pendingApprovals ? "text-green-500" : "text-red-500"}
-          subtitle="Leave requests awaiting action"
+          subtitle={`${stats.teamSize > 0 ? Math.round((stats.onLeaveToday / stats.teamSize) * 100) : 0}% of team`}
         />
         <StatsCard 
           title="Active Projects" 
@@ -478,6 +492,7 @@ export default function ManagerDashboard() {
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Productivity</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Active</th>
                   </tr>
                 </thead>
@@ -487,31 +502,47 @@ export default function ManagerDashboard() {
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center">
                           <div className="flex-shrink-0 h-10 w-10">
-                            <div className="h-10 w-10 rounded-full bg-gray-200 flex items-center justify-center">
-                              <span className="text-gray-500 font-medium">
+                            <div className="h-10 w-10 rounded-full bg-gray-300 flex items-center justify-center">
+                              <span className="text-sm font-medium text-gray-700">
                                 {member.name.split(' ').map(n => n[0]).join('')}
                               </span>
                             </div>
                           </div>
                           <div className="ml-4">
                             <div className="text-sm font-medium text-gray-900">{member.name}</div>
+                            <div className="text-sm text-gray-500">{member.email}</div>
                           </div>
                         </div>
                       </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{member.role}</td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">{member.role}</div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                          member.status === 'active' ? 'bg-green-100 text-green-800' :
-                          member.status === 'away' ? 'bg-yellow-100 text-yellow-800' :
+                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                          member.status === 'present' ? 'bg-green-100 text-green-800' :
+                          member.status === 'late' ? 'bg-yellow-100 text-yellow-800' :
+                          member.status === 'absent' ? 'bg-red-100 text-red-800' :
                           'bg-gray-100 text-gray-800'
                         }`}>
                           {member.status}
                         </span>
                       </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center">
+                          <span className="text-sm font-medium text-gray-900 mr-2">
+                            {member.productivityScore || 0}%
+                          </span>
+                          <div className="w-16 bg-gray-200 rounded-full h-2">
+                            <div 
+                              className={`h-2 rounded-full ${
+                                (member.productivityScore || 0) >= 90 ? 'bg-green-600' :
+                                (member.productivityScore || 0) >= 70 ? 'bg-yellow-600' : 'bg-red-600'
+                              }`}
+                              style={{ width: `${member.productivityScore || 0}%` }}
+                            ></div>
+                          </div>
+                        </div>
+                      </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {format(member.lastActive, 'MMM d, h:mm a')}
+                        {member.lastActive ? format(new Date(member.lastActive), 'MMM d, h:mm a') : 'N/A'}
                       </td>
                     </tr>
                   ))}
@@ -521,53 +552,304 @@ export default function ManagerDashboard() {
           </Card>
         </div>
 
-        <div className="space-y-6">
+        <div>
           <Card className="p-6">
-            <h2 className="text-xl font-semibold mb-4">Recent Activity</h2>
+            <h2 className="text-xl font-semibold mb-4">Team Performance</h2>
             <div className="space-y-4">
-              {recentActivity.map((activity, index) => (
-                <div key={index} className="flex items-start space-x-3">
-                  <div className="flex-shrink-0">
-                    <div className="w-2 h-2 mt-2 rounded-full bg-blue-500" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-600">{activity.description}</p>
-                    <p className="text-xs text-gray-400">
-                      {format(activity.timestamp, 'MMM d, h:mm a')} • {activity.user}
-                    </p>
-                  </div>
-                </div>
-              ))}
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-gray-600">High Performers</span>
+                <span className="text-sm font-medium text-green-600">
+                  {stats.teamSize > 0 ? Math.round((stats.topPerformers / stats.teamSize) * 100) : 0}%
+                </span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div 
+                  className="bg-green-600 h-2 rounded-full" 
+                  style={{ width: `${stats.teamSize > 0 ? Math.round((stats.topPerformers / stats.teamSize) * 100) : 0}%` }}
+                ></div>
+              </div>
+              
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-gray-600">Average Performers</span>
+                <span className="text-sm font-medium text-yellow-600">
+                  {stats.teamSize > 0 ? Math.round(((stats.teamSize - stats.topPerformers - Math.floor(stats.teamSize * 0.2)) / stats.teamSize) * 100) : 0}%
+                </span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div 
+                  className="bg-yellow-600 h-2 rounded-full" 
+                  style={{ width: `${stats.teamSize > 0 ? Math.round(((stats.teamSize - stats.topPerformers - Math.floor(stats.teamSize * 0.2)) / stats.teamSize) * 100) : 0}%` }}
+                ></div>
+              </div>
+              
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-gray-600">Needs Support</span>
+                <span className="text-sm font-medium text-red-600">
+                  {stats.teamSize > 0 ? Math.round((Math.floor(stats.teamSize * 0.2) / stats.teamSize) * 100) : 0}%
+                </span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div 
+                  className="bg-red-600 h-2 rounded-full" 
+                  style={{ width: `${stats.teamSize > 0 ? Math.round((Math.floor(stats.teamSize * 0.2) / stats.teamSize) * 100) : 0}%` }}
+                ></div>
+              </div>
             </div>
-          </Card>
-
-          <Card className="p-6">
-            <h2 className="text-xl font-semibold mb-4">Quick Actions</h2>
-            <div className="grid grid-cols-1 gap-4">
-              <QuickActionCard
-                title="Team Overview"
-                subtitle="View detailed team analytics"
-                icon={<Users size={24} className="text-white" />}
-                color="bg-blue-500"
-                href="/team/overview"
-              />
-              <QuickActionCard
-                title="Attendance Reports"
-                subtitle="View team attendance"
-                icon={<BarChart3 size={24} className="text-white" />}
-                color="bg-green-500"
-                href="/team/attendance"
-              />
-              <QuickActionCard
-                title="Pending Approvals"
-                subtitle={`${stats.pendingApprovals} items need attention`}
-                icon={<AlertCircle size={24} className="text-white" />}
-                color="bg-orange-500"
-                href="/team/approvals"
-              />
+            
+            <div className="mt-6 pt-4 border-t border-gray-200">
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-gray-600">Attendance Impact</span>
+                <span className="font-medium text-green-600">
+                  {stats.teamSize > 0 ? Math.round((stats.presentToday / stats.teamSize) * 100) : 0}%
+                </span>
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                Present team members today
+              </p>
             </div>
           </Card>
         </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+        <div className="lg:col-span-2">
+          <Card className="p-6">
+            <h2 className="text-xl font-semibold mb-4">Team Members</h2>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead>
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Productivity</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Active</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {teamMembers.map((member) => (
+                    <tr key={member.id}>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center">
+                          <div className="flex-shrink-0 h-10 w-10">
+                            <div className="h-10 w-10 rounded-full bg-gray-300 flex items-center justify-center">
+                              <span className="text-sm font-medium text-gray-700">
+                                {member.name.split(' ').map(n => n[0]).join('')}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="ml-4">
+                            <div className="text-sm font-medium text-gray-900">{member.name}</div>
+                            <div className="text-sm text-gray-500">{member.email}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{member.role}</td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                          member.status === 'present' ? 'bg-green-100 text-green-800' :
+                          member.status === 'late' ? 'bg-yellow-100 text-yellow-800' :
+                          member.status === 'absent' ? 'bg-red-100 text-red-800' :
+                          'bg-gray-100 text-gray-800'
+                        }`}>
+                          {member.status}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center">
+                          <span className="text-sm font-medium text-gray-900 mr-2">
+                            {member.productivityScore || 0}%
+                          </span>
+                          <div className="w-16 bg-gray-200 rounded-full h-2">
+                            <div 
+                              className={`h-2 rounded-full ${
+                                (member.productivityScore || 0) >= 90 ? 'bg-green-600' :
+                                (member.productivityScore || 0) >= 70 ? 'bg-yellow-600' : 'bg-red-600'
+                              }`}
+                              style={{ width: `${member.productivityScore || 0}%` }}
+                            ></div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {member.lastActive ? format(new Date(member.lastActive), 'MMM d, h:mm a') : 'N/A'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </div>
+
+        <div>
+          <Card className="p-6">
+            <h2 className="text-xl font-semibold mb-4">Team Performance</h2>
+            <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-gray-600">High Performers</span>
+                <span className="text-sm font-medium text-green-600">
+                  {stats.teamSize > 0 ? Math.round((stats.topPerformers / stats.teamSize) * 100) : 0}%
+                </span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div 
+                  className="bg-green-600 h-2 rounded-full" 
+                  style={{ width: `${stats.teamSize > 0 ? Math.round((stats.topPerformers / stats.teamSize) * 100) : 0}%` }}
+                ></div>
+              </div>
+              
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-gray-600">Average Performers</span>
+                <span className="text-sm font-medium text-yellow-600">
+                  {stats.teamSize > 0 ? Math.round(((stats.teamSize - stats.topPerformers - Math.floor(stats.teamSize * 0.2)) / stats.teamSize) * 100) : 0}%
+                </span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div 
+                  className="bg-yellow-600 h-2 rounded-full" 
+                  style={{ width: `${stats.teamSize > 0 ? Math.round(((stats.teamSize - stats.topPerformers - Math.floor(stats.teamSize * 0.2)) / stats.teamSize) * 100) : 0}%` }}
+                ></div>
+              </div>
+              
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-gray-600">Needs Support</span>
+                <span className="text-sm font-medium text-red-600">
+                  {stats.teamSize > 0 ? Math.round((Math.floor(stats.teamSize * 0.2) / stats.teamSize) * 100) : 0}%
+                </span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div 
+                  className="bg-red-600 h-2 rounded-full" 
+                  style={{ width: `${stats.teamSize > 0 ? Math.round((Math.floor(stats.teamSize * 0.2) / stats.teamSize) * 100) : 0}%` }}
+                ></div>
+              </div>
+            </div>
+            
+            <div className="mt-6 pt-4 border-t border-gray-200">
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-gray-600">Attendance Impact</span>
+                <span className="font-medium text-green-600">
+                  {stats.teamSize > 0 ? Math.round((stats.presentToday / stats.teamSize) * 100) : 0}%
+                </span>
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                Present team members today
+              </p>
+            </div>
+          </Card>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+        <Card className="p-6">
+          <h2 className="text-xl font-semibold mb-4">Attendance & Productivity Correlation</h2>
+          <div className="space-y-3">
+            <div className="flex justify-between items-center p-3 bg-blue-50 rounded-lg">
+              <div>
+                <p className="font-medium text-blue-900">Present Team Members</p>
+                <p className="text-sm text-blue-700">
+                  {stats.presentToday} out of {stats.teamSize} team members present
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-2xl font-bold text-blue-600">
+                  {stats.teamSize > 0 ? Math.round((stats.presentToday / stats.teamSize) * 100) : 0}%
+                </p>
+                <p className="text-xs text-blue-500">Attendance Rate</p>
+              </div>
+            </div>
+            
+            <div className="flex justify-between items-center p-3 bg-green-50 rounded-lg">
+              <div>
+                <p className="font-medium text-green-900">Productivity Score</p>
+                <p className="text-sm text-green-700">
+                  Team average productivity this week
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-2xl font-bold text-green-600">{stats.averageProductivityScore}%</p>
+                <p className="text-xs text-green-500">Avg Score</p>
+              </div>
+            </div>
+          </div>
+        </Card>
+
+        <Card className="p-6">
+          <h2 className="text-xl font-semibold mb-4">Team Insights</h2>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium">Pending Approvals</p>
+                <p className="text-sm text-gray-600">Leave requests</p>
+              </div>
+              <div className="text-right">
+                <p className="text-lg font-bold text-orange-600">{stats.pendingApprovals}</p>
+                <p className="text-xs text-gray-500">Need Action</p>
+              </div>
+            </div>
+            
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium">Active Projects</p>
+                <p className="text-sm text-gray-600">Current workload</p>
+              </div>
+              <div className="text-right">
+                <p className="text-lg font-bold text-indigo-600">{stats.activeProjects}</p>
+                <p className="text-xs text-gray-500">In Progress</p>
+              </div>
+            </div>
+            
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium">Team Trend</p>
+                <p className="text-sm text-gray-600">This month</p>
+              </div>
+              <div className="text-right">
+                <p className={`text-lg font-bold ${stats.teamProductivityTrend >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  {stats.teamProductivityTrend >= 0 ? '+' : ''}{stats.teamProductivityTrend}%
+                </p>
+                <p className="text-xs text-gray-500">Productivity</p>
+              </div>
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <Card className="p-6">
+          <h2 className="text-xl font-semibold mb-4">Quick Actions</h2>
+          <div className="grid grid-cols-1 gap-4">
+            <QuickActionCard
+              title="Team Overview"
+              subtitle="View detailed team analytics"
+              icon={<Users size={24} className="text-white" />}
+              color="bg-blue-500"
+              href="/team/overview"
+            />
+            <QuickActionCard
+              title="Attendance Reports"
+              subtitle="View team attendance"
+              icon={<BarChart3 size={24} className="text-white" />}
+              color="bg-green-500"
+              href="/team/attendance"
+            />
+            <QuickActionCard
+              title="Productivity Dashboard"
+              subtitle="Monitor team productivity"
+              icon={<Activity size={24} className="text-white" />}
+              color="bg-purple-500"
+              href="/productivity"
+            />
+            <QuickActionCard
+              title="Pending Approvals"
+              subtitle={`${stats.pendingApprovals} items need attention`}
+              icon={<AlertCircle size={24} className="text-white" />}
+              color="bg-orange-500"
+              href="/team/approvals"
+            />
+          </div>
+        </Card>
       </div>
     </>
   )

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { Filter, Clock, MapPin, User, AlertCircle } from "lucide-react"
-import { AttendanceRecord, AttendanceStats, AttendanceFilters, AttendanceSettings, AttendanceNotification } from "@/types/attendance"
+import { AttendanceRecord, AttendanceStats, AttendanceFilters, AttendanceNotification } from "@/types/attendance"
 import { useNewAuth } from "@/contexts/new-auth-context"
 import { db } from "@/lib/firebase"
 import { collection, query, where, getDocs, addDoc, updateDoc, doc, Timestamp, orderBy, onSnapshot } from "firebase/firestore"
@@ -18,27 +18,16 @@ import { AttendanceTable } from '@/components/attendance-table'
 import { Calendar } from "@/components/ui/calendar"
 import { AttendanceCheckOut } from '@/components/attendance-check-out'
 import { TeamAttendanceOverview } from '@/components/team-attendance-overview'
-
-const DEFAULT_SETTINGS: AttendanceSettings = {
-  workingHours: {
-    start: "09:00",
-    end: "17:00"
-  },
-  idleThreshold: 15, // minutes
-  maxIdlePeriods: 3,
-  allowedLateMinutes: 15,
-  locationRadius: 100, // meters
-  requiredCheckInDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
-  requireManagerApproval: true,
-  autoApproveThreshold: 30 // minutes
-}
+import { settingsService } from '@/lib/settings'
+import { Settings } from '@/types/settings'
 
 export default function AttendancePage() {
-  const { user } = useNewAuth()
+  const { user, firebaseUser, isLoading: authLoading } = useNewAuth()
   const [todayRecord, setTodayRecord] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [selectedDate, setSelectedDate] = useState<Date>(new Date())
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([])
+  const [settings, setSettings] = useState<Settings | null>(null)
   const [stats, setStats] = useState<AttendanceStats>({
     totalDays: 0,
     presentDays: 0,
@@ -84,21 +73,32 @@ export default function AttendancePage() {
   })
 
   useEffect(() => {
-    fetchTodayRecord()
-    fetchAttendanceRecords()
-    fetchDepartments()
-  }, [filters])
+    loadSettings()
+  }, [])
+
+  const loadSettings = async () => {
+    try {
+      const currentSettings = await settingsService.getSettings()
+      setSettings(currentSettings)
+    } catch (error) {
+      console.error('Error loading settings:', error)
+      toast.error('Failed to load settings')
+    }
+  }
 
   useEffect(() => {
-    if (!user) return
+    if (!firebaseUser?.uid) {
+      setLoading(false)
+      return
+    }
 
     let q = query(
       collection(db, "attendance"),
       orderBy("date", "desc")
     )
 
-    if (user.role !== 'admin') {
-      q = query(q, where("employeeId", "==", user.uid))
+    if (user && user.role !== 'admin') {
+      q = query(q, where("employeeId", "==", firebaseUser.uid))
     }
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -132,12 +132,37 @@ export default function AttendancePage() {
     })
 
     return () => unsubscribe()
-  }, [user])
+  }, [firebaseUser?.uid, user?.role])
 
   useEffect(() => {
-    if (!user || !todayRecord || todayRecord.checkOut) return
+    if (!firebaseUser?.uid) {
+      setLoading(false)
+      return
+    }
 
-    // Start idle time tracking
+    fetchTodayRecord()
+    fetchAttendanceRecords()
+    fetchDepartments()
+  }, [filters, firebaseUser?.uid])
+
+  useEffect(() => {
+    if (!user || !todayRecord || todayRecord.checkOut || !settings) return
+
+    // Start idle time tracking with settings
+    const attendanceSettings = {
+      workingHours: {
+        start: settings.attendance.checkInTime,
+        end: settings.attendance.checkOutTime
+      },
+      idleThreshold: settings.productivity.idleThreshold,
+      maxIdlePeriods: 3,
+      allowedLateMinutes: settings.attendance.lateThreshold,
+      locationRadius: settings.attendance.maxDistance,
+      requiredCheckInDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+      requireManagerApproval: true,
+      autoApproveThreshold: 30
+    }
+
     const cleanup = startIdleTimeTracking(
       (startTime) => {
         setIsIdle(true)
@@ -153,19 +178,33 @@ export default function AttendancePage() {
           )
         )
       },
-      DEFAULT_SETTINGS
+      attendanceSettings
     )
 
     return cleanup
-  }, [user, todayRecord])
+  }, [user, todayRecord, settings])
 
   // Update attendance record with idle time
   useEffect(() => {
-    if (!todayRecord || !idlePeriods.length) return
+    if (!todayRecord || !idlePeriods.length || !settings) return
 
     const updateRecord = async () => {
       try {
         const recordRef = doc(db, 'attendance', todayRecord.id)
+        const attendanceSettings = {
+          workingHours: {
+            start: settings.attendance.checkInTime,
+            end: settings.attendance.checkOutTime
+          },
+          idleThreshold: settings.productivity.idleThreshold,
+          maxIdlePeriods: 3,
+          allowedLateMinutes: settings.attendance.lateThreshold,
+          locationRadius: settings.attendance.maxDistance,
+          requiredCheckInDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+          requireManagerApproval: true,
+          autoApproveThreshold: 30
+        }
+
         const updatedRecord = detectIdleTime({
           ...todayRecord,
           idleTime: idlePeriods.map(period => ({
@@ -173,7 +212,7 @@ export default function AttendancePage() {
             endTime: period.endTime,
             duration: (period.endTime.getTime() - period.startTime.getTime()) / (1000 * 60) // in minutes
           }))
-        }, DEFAULT_SETTINGS)
+        }, attendanceSettings)
 
         await updateDoc(recordRef, {
           idleTime: updatedRecord.idleTime,
@@ -188,7 +227,7 @@ export default function AttendancePage() {
     }
 
     updateRecord()
-  }, [todayRecord, idlePeriods])
+  }, [todayRecord, idlePeriods, settings])
 
   const getDeviceInfo = () => {
     return {
@@ -199,22 +238,36 @@ export default function AttendancePage() {
   }
 
   const fetchTodayRecord = async () => {
-    if (!user) return
+    if (!firebaseUser?.uid) return
 
     try {
       const today = new Date()
       today.setHours(0, 0, 0, 0)
       const attendanceQuery = query(
         collection(db, 'attendance'),
-        where('employeeId', '==', user.uid),
-        where('date', '>=', today)
+        where('employeeId', '==', firebaseUser.uid),
+        where('date', '==', Timestamp.fromDate(today))
       )
       const attendanceSnapshot = await getDocs(attendanceQuery)
 
       if (!attendanceSnapshot.empty) {
+        const data = attendanceSnapshot.docs[0].data()
         setTodayRecord({
           id: attendanceSnapshot.docs[0].id,
-          ...attendanceSnapshot.docs[0].data()
+          ...data,
+          date: data.date?.toDate() || new Date(),
+          checkIn: {
+            ...data.checkIn,
+            time: data.checkIn?.time?.toDate() || new Date(),
+            location: data.checkIn?.location || null,
+            deviceInfo: data.checkIn?.deviceInfo || null
+          },
+          checkOut: data.checkOut ? {
+            ...data.checkOut,
+            time: data.checkOut.time?.toDate() || new Date(),
+            location: data.checkOut.location || null,
+            deviceInfo: data.checkOut.deviceInfo || null
+          } : undefined
         })
       }
     } catch (error) {
@@ -225,13 +278,18 @@ export default function AttendancePage() {
   }
 
   const fetchAttendanceRecords = async () => {
+    if (!firebaseUser?.uid) {
+      setLoading(false)
+      return
+    }
+
     try {
       let q = query(collection(db, 'attendance'))
       
-      if (user?.role === 'employee') {
-        q = query(q, where('employeeId', '==', user.uid))
-      } else if (user?.role === 'manager') {
-        q = query(q, where('managerId', '==', user.uid))
+      if (user && user.role === 'employee') {
+        q = query(q, where('employeeId', '==', firebaseUser.uid))
+      } else if (user && user.role === 'manager') {
+        q = query(q, where('managerId', '==', firebaseUser.uid))
       }
       
       if (filters.startDate) {
@@ -243,19 +301,26 @@ export default function AttendancePage() {
       }
 
       const querySnapshot = await getDocs(q)
-      const records = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        date: doc.data().date.toDate(),
-        checkIn: {
-          ...doc.data().checkIn,
-          time: doc.data().checkIn.time.toDate()
-        },
-        checkOut: doc.data().checkOut ? {
-          ...doc.data().checkOut,
-          time: doc.data().checkOut.time.toDate()
-        } : undefined
-      })) as AttendanceRecord[]
+      const records = querySnapshot.docs.map(doc => {
+        const data = doc.data()
+        return {
+          id: doc.id,
+          ...data,
+          date: data.date?.toDate() || new Date(),
+          checkIn: {
+            ...data.checkIn,
+            time: data.checkIn?.time?.toDate() || new Date(),
+            location: data.checkIn?.location || null,
+            deviceInfo: data.checkIn?.deviceInfo || null
+          },
+          checkOut: data.checkOut ? {
+            ...data.checkOut,
+            time: data.checkOut.time?.toDate() || new Date(),
+            location: data.checkOut.location || null,
+            deviceInfo: data.checkOut.deviceInfo || null
+          } : undefined
+        }
+      }) as AttendanceRecord[]
 
       setAttendanceRecords(records)
       setStats(calculateAttendanceStats(records))
@@ -329,6 +394,7 @@ export default function AttendancePage() {
   // Check extension status
   useEffect(() => {
     const checkExtension = async () => {
+      if (typeof window === 'undefined' || typeof chrome === 'undefined' || !chrome.runtime) return;
       try {
         // Check if extension is installed
         const response = await chrome.runtime.sendMessage({ type: 'GET_STATUS' })
@@ -370,7 +436,10 @@ export default function AttendancePage() {
         toast.error('Location permission required')
         return
       }
-
+      if (typeof window === 'undefined' || typeof chrome === 'undefined' || !chrome.runtime) {
+        toast.error('Extension not available in this environment')
+        return
+      }
       const response = await chrome.runtime.sendMessage({
         type: 'CHECK_IN',
         data: {
@@ -393,12 +462,16 @@ export default function AttendancePage() {
       handleSuccess()
     } catch (error) {
       console.error('Extension check-in error:', error)
-      toast.error(error.message || 'Failed to check in with extension')
+      toast.error(error instanceof Error ? error.message : 'Failed to check in with extension')
     }
   }
 
   const handleExtensionCheckOut = async () => {
     try {
+      if (typeof window === 'undefined' || typeof chrome === 'undefined' || !chrome.runtime) {
+        toast.error('Extension not available in this environment')
+        return
+      }
       const response = await chrome.runtime.sendMessage({ type: 'CHECK_OUT' })
       
       if (response?.error) {
@@ -410,7 +483,7 @@ export default function AttendancePage() {
       handleSuccess()
     } catch (error) {
       console.error('Extension check-out error:', error)
-      toast.error(error.message || 'Failed to check out with extension')
+      toast.error(error instanceof Error ? error.message : 'Failed to check out with extension')
     }
   }
 

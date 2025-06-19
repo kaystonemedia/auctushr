@@ -12,16 +12,16 @@ export async function POST(request: Request) {
     const expiresIn = 60 * 60 * 24 * 5 * 1000 // 5 days
     const sessionCookie = await adminAuth.createSessionCookie(idToken, { expiresIn })
 
-    // Set cookie (await cookies() before using it)
-    const cookieStore = await cookies();
-    cookieStore.set('session', sessionCookie, {
+    // Set cookie using response.cookies.set()
+    const response = NextResponse.json({ status: 'success' })
+    response.cookies.set('session', sessionCookie, {
       maxAge: expiresIn,
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       path: '/'
     });
 
-    return NextResponse.json({ status: 'success' })
+    return response
   } catch (error) {
     console.error('Error creating session:', error)
     return NextResponse.json(

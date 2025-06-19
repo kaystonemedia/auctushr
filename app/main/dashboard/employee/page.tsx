@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useNewAuth } from '@/contexts/new-auth-context'
 import { db } from '@/lib/firebase'
-import { collection, query, where, getDocs } from 'firebase/firestore'
+import { collection, query, where, getDocs, Timestamp } from 'firebase/firestore'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Calendar, Clock, CheckCircle2, XCircle, AlertCircle } from "lucide-react"
@@ -23,7 +23,7 @@ interface MonthlyStats {
 }
 
 export default function EmployeeDashboard() {
-  const { user, isLoading: authLoading } = useNewAuth()
+  const { user, firebaseUser, isLoading: authLoading } = useNewAuth()
   const [loading, setLoading] = useState(true)
   const [todayAttendance, setTodayAttendance] = useState<AttendanceRecord | null>(null)
   const [monthlyStats, setMonthlyStats] = useState<MonthlyStats | null>(null)
@@ -31,25 +31,19 @@ export default function EmployeeDashboard() {
 
   useEffect(() => {
     const fetchAttendanceData = async () => {
-      if (!user) {
-        console.log('No user found, skipping fetch')
-        setLoading(false)
-        return
-      }
-
       try {
-        console.log('Fetching attendance data for user:', user.uid)
-        // Get today's attendance
+        setLoading(true)
         const today = new Date()
         today.setHours(0, 0, 0, 0)
-        const todayEnd = new Date(today)
-        todayEnd.setHours(23, 59, 59, 999)
+        const tomorrow = new Date(today)
+        tomorrow.setDate(tomorrow.getDate() + 1)
 
+        console.log('Fetching today\'s attendance...')
         const attendanceQuery = query(
           collection(db, 'attendance'),
-          where('uid', '==', user.uid),
-          where('date', '>=', today),
-          where('date', '<=', todayEnd)
+          where('employeeId', '==', firebaseUser.uid),
+          where('date', '>=', Timestamp.fromDate(today)),
+          where('date', '<', Timestamp.fromDate(tomorrow))
         )
 
         console.log('Fetching today\'s attendance...')
@@ -57,7 +51,24 @@ export default function EmployeeDashboard() {
         console.log('Today\'s attendance snapshot:', attendanceSnapshot.docs.map(doc => doc.data()))
         
         if (!attendanceSnapshot.empty) {
-          const attendanceData = attendanceSnapshot.docs[0].data() as AttendanceRecord
+          const data = attendanceSnapshot.docs[0].data()
+          const attendanceData = {
+            id: attendanceSnapshot.docs[0].id,
+            ...data,
+            date: data.date?.toDate() || new Date(),
+            checkIn: {
+              ...data.checkIn,
+              time: data.checkIn?.time?.toDate() || new Date(),
+              location: data.checkIn?.location || null,
+              deviceInfo: data.checkIn?.deviceInfo || null
+            },
+            checkOut: data.checkOut ? {
+              ...data.checkOut,
+              time: data.checkOut.time?.toDate() || new Date(),
+              location: data.checkOut.location || null,
+              deviceInfo: data.checkOut.deviceInfo || null
+            } : undefined
+          } as AttendanceRecord
           console.log('Setting today\'s attendance:', attendanceData)
           setTodayAttendance(attendanceData)
         } else {
@@ -71,9 +82,9 @@ export default function EmployeeDashboard() {
         console.log('Fetching monthly stats...')
         const monthlyQuery = query(
           collection(db, 'attendance'),
-          where('uid', '==', user.uid),
-          where('date', '>=', startOfMonth),
-          where('date', '<=', endOfMonth)
+          where('employeeId', '==', firebaseUser.uid),
+          where('date', '>=', Timestamp.fromDate(startOfMonth)),
+          where('date', '<=', Timestamp.fromDate(endOfMonth))
         )
 
         const monthlySnapshot = await getDocs(monthlyQuery)
@@ -94,13 +105,13 @@ export default function EmployeeDashboard() {
       }
     }
 
-    if (!authLoading && user) {
+    if (!authLoading && firebaseUser) {
       console.log('Auth loading complete, user available, fetching data...')
       fetchAttendanceData()
     } else {
-      console.log('Auth still loading or no user:', { authLoading, user })
+      console.log('Auth still loading or no user:', { authLoading, firebaseUser })
     }
-  }, [user, authLoading])
+  }, [firebaseUser, authLoading])
 
   if (authLoading || loading) {
     return (

@@ -13,7 +13,7 @@ interface LocationData {
 }
 
 export class LocationService {
-  private static instance: LocationService
+  private static instance: LocationService | null = null
   private watchId: number | null = null
   private currentRecord: AttendanceRecord | null = null
   private settings: AttendanceSettings
@@ -32,13 +32,22 @@ export class LocationService {
   public static getInstance(settings: AttendanceSettings, locationSettings: LocationSettings): LocationService {
     if (!LocationService.instance) {
       LocationService.instance = new LocationService(settings, locationSettings)
+    } else {
+      // Update settings if instance exists
+      LocationService.instance.updateSettings(settings, locationSettings)
     }
     return LocationService.instance
   }
 
+  private updateSettings(settings: AttendanceSettings, locationSettings: LocationSettings): void {
+    this.settings = settings
+    this.locationSettings = locationSettings
+    this.loadOfficeLocations() // Reload office locations with new settings
+  }
+
   private async loadOfficeLocations(): Promise<void> {
     try {
-      const locationsRef = collection(db, 'office_locations')
+      const locationsRef = collection(db, 'officeLocations')
       const q = query(locationsRef, where('isActive', '==', true))
       const snapshot = await getDocs(q)
       this.officeLocations = snapshot.docs.map(doc => ({
@@ -47,6 +56,7 @@ export class LocationService {
       })) as OfficeLocation[]
     } catch (error) {
       console.error('Error loading office locations:', error)
+      this.officeLocations = [] // Reset to empty array on error
     }
   }
 
@@ -57,6 +67,11 @@ export class LocationService {
     countryValid?: boolean
     message?: string
   }> {
+    // Ensure settings are loaded
+    if (!this.locationSettings || !this.settings) {
+      throw new Error('Location service settings not initialized')
+    }
+
     // First validate country if required
     if (this.locationSettings.requireLocationValidation && countryCode) {
       const isCountryAllowed = this.locationSettings.allowedCountries.includes(countryCode)
