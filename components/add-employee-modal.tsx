@@ -24,10 +24,6 @@ export function AddEmployeeModal({ isOpen, onClose, onSubmit, managers }: AddEmp
     managerId: ''
   })
 
-  // Debug logging
-  console.log('AddEmployeeModal - managers prop:', managers)
-  console.log('AddEmployeeModal - managers count:', managers?.length || 0)
-
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     onSubmit(formData)

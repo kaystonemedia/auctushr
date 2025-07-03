@@ -2,14 +2,14 @@
 
 import { useState, useEffect } from "react"
 import { useNewAuth } from '@/contexts/new-auth-context'
-import { db } from '@/lib/firebase'
+import { db, createEmployee } from '@/lib/firebase'
 import { collection, query, getDocs, orderBy } from 'firebase/firestore'
 import { Filter, ChevronLeft, ChevronRight, UserPlus, Loader2 } from "lucide-react"
 import { Sidebar } from "./sidebar"
 import { Header } from "./header"
 import { EmployeeRow } from "./employee-row"
 import { AddEmployeeModal } from "./add-employee-modal"
-import { Employee } from '@/types/employee'
+import { Employee, EmployeeFormData } from '@/types/employee'
 
 interface Manager {
   id: string
@@ -80,14 +80,52 @@ export default function PeopleWithAddPage() {
         ...doc.data()
       })) as Employee[]
 
-      const managersData = managersSnapshot.docs.map(doc => ({
+      const managersFromManagersCollection = managersSnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       })) as Manager[]
 
-      // Debug logging
-      console.log('Fetched managers:', managersData)
-      console.log('Number of managers:', managersData.length)
+      // Get managers from users collection (admins/managers with role)
+      const managersFromUsers = usersData.filter(user => 
+        user.role === 'manager' || user.role === 'admin'
+      ).map(user => ({
+        id: user.id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        position: user.position,
+        department: user.department,
+        avatar: user.photoURL
+      })) as Manager[]
+
+      // Get managers from employees collection (employees with manager role)
+      const managersFromEmployees = employeesData.filter(emp => 
+        emp.role === 'manager'
+      ).map(emp => ({
+        id: emp.id,
+        firstName: emp.firstName,
+        lastName: emp.lastName,
+        position: emp.position,
+        department: emp.department,
+        avatar: emp.photoURL
+      })) as Manager[]
+
+      // Combine all managers and deduplicate
+      const allManagers = [
+        ...managersFromManagersCollection,
+        ...managersFromUsers,
+        ...managersFromEmployees
+      ]
+      const uniqueManagers = allManagers.filter((manager, index, self) => 
+        index === self.findIndex(m => m.id === manager.id)
+      )
+
+      console.log('Fetched managers from all collections:', {
+        fromManagersCollection: managersFromManagersCollection.length,
+        fromUsersCollection: managersFromUsers.length,
+        fromEmployeesCollection: managersFromEmployees.length,
+        totalUnique: uniqueManagers.length,
+        managers: uniqueManagers
+      })
 
       // Combine and deduplicate employees
       const allEmployees = [...usersData, ...employeesData]
@@ -96,7 +134,7 @@ export default function PeopleWithAddPage() {
       )
 
       setEmployees(uniqueEmployees)
-      setManagers(managersData)
+      setManagers(uniqueManagers)
     } catch (error) {
       console.error('Error loading data:', error)
       setError('Failed to load data')
@@ -143,10 +181,36 @@ export default function PeopleWithAddPage() {
   }
 
   const handleAddEmployee = async (employeeData: any) => {
-    console.log("New employee data:", employeeData)
-    // Here you would typically send this data to your API
-    // and then update the employees list with the new employee
-    await loadData() // Reload data after adding
+    try {
+      console.log("New employee data:", employeeData)
+      
+      // Create the employee in the database
+      const employeeFormData = {
+        firstName: employeeData.firstName,
+        lastName: employeeData.lastName,
+        email: employeeData.email,
+        phone: '', // Add phone field if needed
+        department: employeeData.department,
+        position: employeeData.position,
+        role: 'employee',
+        managerId: employeeData.managerId || null,
+        hireDate: new Date(),
+        salary: 0, // Add salary field if needed
+        status: 'active',
+        address: null,
+        emergencyContact: null,
+        documents: []
+      }
+      
+      await createEmployee(employeeFormData)
+      console.log("Employee created successfully!")
+      
+      // Reload data to show the new employee
+      await loadData()
+    } catch (error) {
+      console.error("Error creating employee:", error)
+      setError("Failed to create employee. Please try again.")
+    }
   }
 
   if (loading) {
