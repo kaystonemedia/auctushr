@@ -5,6 +5,10 @@ import { Bell } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Button } from './ui/button'
 import { cn } from '@/lib/utils'
+import { useNewAuth } from '@/contexts/new-auth-context'
+import { subscribeToNotifications, markNotificationAsRead, getUnreadNotifications } from '@/lib/notifications'
+import { AttendanceNotification } from '@/types/attendance'
+import { toast } from 'react-hot-toast'
 
 interface Notification {
   id: string
@@ -16,9 +20,95 @@ interface Notification {
 }
 
 export function NotificationsDropdown() {
+  const { user } = useNewAuth()
   const [isOpen, setIsOpen] = useState(false)
   const [notifications, setNotifications] = useState<Notification[]>([])
+  const [loading, setLoading] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
+
+  // Load initial notifications
+  useEffect(() => {
+    if (!user?.id) return
+
+    const loadNotifications = async () => {
+      try {
+        setLoading(true)
+        const unreadNotifications = await getUnreadNotifications(user.id)
+        
+        // Convert AttendanceNotification to Notification format
+        const convertedNotifications: Notification[] = unreadNotifications.map(notif => ({
+          id: notif.id,
+          title: notif.type === 'late_check_in' ? 'Late Check-in' :
+                 notif.type === 'absent' ? 'Absent' :
+                 notif.type === 'flag_raised' ? 'Flag Raised' :
+                 notif.type === 'approval_required' ? 'Approval Required' :
+                 notif.type === 'approved' ? 'Approved' :
+                 notif.type === 'rejected' ? 'Rejected' : 'Notification',
+          message: notif.message,
+          type: notif.severity === 'high' ? 'error' :
+                notif.severity === 'medium' ? 'warning' : 'info',
+          read: notif.read,
+          createdAt: notif.createdAt
+        }))
+        
+        // Filter out notifications with invalid IDs and log them for debugging
+        const validNotifications = convertedNotifications.filter(notif => {
+          if (!notif.id || notif.id.trim() === '') {
+            console.warn('Found notification with invalid ID:', notif)
+            return false
+          }
+          return true
+        })
+        
+        setNotifications(validNotifications)
+      } catch (error) {
+        console.error('Error loading notifications:', error)
+        toast.error('Failed to load notifications')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadNotifications()
+  }, [user?.id])
+
+  // Set up real-time subscription
+  useEffect(() => {
+    if (!user?.id) return
+
+    const unsubscribe = subscribeToNotifications(user.id, (newNotification: AttendanceNotification) => {
+      // Convert and add new notification
+      const convertedNotification: Notification = {
+        id: newNotification.id,
+        title: newNotification.type === 'late_check_in' ? 'Late Check-in' :
+               newNotification.type === 'absent' ? 'Absent' :
+               newNotification.type === 'flag_raised' ? 'Flag Raised' :
+               newNotification.type === 'approval_required' ? 'Approval Required' :
+               newNotification.type === 'approved' ? 'Approved' :
+               newNotification.type === 'rejected' ? 'Rejected' : 'Notification',
+        message: newNotification.message,
+        type: newNotification.severity === 'high' ? 'error' :
+              newNotification.severity === 'medium' ? 'warning' : 'info',
+        read: newNotification.read,
+        createdAt: newNotification.createdAt
+      }
+
+      // Only add notification if it has a valid ID
+      if (convertedNotification.id && convertedNotification.id.trim() !== '') {
+        setNotifications(prev => [convertedNotification, ...prev])
+        
+        // Show toast for new notifications
+        toast.success(convertedNotification.message, {
+          duration: 4000,
+          position: 'top-right'
+        })
+      } else {
+        console.warn('Received notification with invalid ID:', convertedNotification)
+      }
+    })
+
+    return () => unsubscribe()
+  }, [user?.id])
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -35,7 +125,12 @@ export function NotificationsDropdown() {
 
   const handleMarkAsRead = async (notificationId: string) => {
     try {
-      // TODO: Implement mark as read API call
+      if (!notificationId || notificationId.trim() === '') {
+        toast.error('Invalid notification ID')
+        return
+      }
+      
+      await markNotificationAsRead(notificationId)
       setNotifications(prev =>
         prev.map(n =>
           n.id === notificationId ? { ...n, read: true } : n
@@ -43,17 +138,27 @@ export function NotificationsDropdown() {
       )
     } catch (error) {
       console.error('Error marking notification as read:', error)
+      toast.error('Failed to mark notification as read')
     }
   }
 
   const handleMarkAllAsRead = async () => {
     try {
-      // TODO: Implement mark all as read API call
+      const unreadNotifications = notifications.filter(n => !n.read && n.id && n.id.trim() !== '')
+      
+      if (unreadNotifications.length === 0) {
+        toast('No unread notifications to mark')
+        return
+      }
+      
+      await Promise.all(unreadNotifications.map(n => markNotificationAsRead(n.id)))
       setNotifications(prev =>
-        prev.map(n => ({ ...n, read: true }))
+        prev.map(n => n.id && n.id.trim() !== '' ? { ...n, read: true } : n)
       )
+      toast.success('All notifications marked as read')
     } catch (error) {
       console.error('Error marking all notifications as read:', error)
+      toast.error('Failed to mark all notifications as read')
     }
   }
 
@@ -94,15 +199,19 @@ export function NotificationsDropdown() {
               </div>
 
               <div className="max-h-96 overflow-y-auto">
-                {notifications.length === 0 ? (
+                {loading ? (
+                  <div className="text-center py-4 text-gray-500">
+                    Loading notifications...
+                  </div>
+                ) : notifications.length === 0 ? (
                   <div className="text-center py-4 text-gray-500">
                     No notifications
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {notifications.map((notification) => (
+                    {notifications.map((notification, index) => (
                       <div
-                        key={notification.id}
+                        key={notification.id || `notification-${index}`}
                         className={cn(
                           "p-3 rounded-lg",
                           notification.read ? "bg-gray-50" : "bg-blue-50",
@@ -119,7 +228,7 @@ export function NotificationsDropdown() {
                               {new Date(notification.createdAt).toLocaleString()}
                             </p>
                           </div>
-                          {!notification.read && (
+                          {!notification.read && notification.id && notification.id.trim() !== '' && (
                             <button
                               onClick={() => handleMarkAsRead(notification.id)}
                               className="text-sm text-blue-600 hover:text-blue-800"

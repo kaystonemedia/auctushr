@@ -1,11 +1,11 @@
 {
-  "name": "styletry-attendance-extension",
+  "name": "kaystonehr-attendance-extension",
   "version": "1.0.0",
-  "description": "Chrome extension for StyleTry attendance tracking",
+  "description": "Chrome extension for KaystoneHR attendance tracking",
   "scripts": {
     "generate-icons": "node scripts/generate-icons.js",
     "build": "npm run generate-icons",
-    "package": "zip -r ../styletry-attendance.zip . -x '*.git*' 'node_modules/*' 'scripts/*' 'package*.json'"
+    "package": "zip -r ../kaystonehr-attendance.zip . -x '*.git*' 'node_modules/*' 'scripts/*' 'package*.json'"
   },
   "devDependencies": {
     "sharp": "^0.32.1"

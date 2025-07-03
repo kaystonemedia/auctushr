@@ -1,9 +1,9 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useNewAuth } from '@/contexts/new-auth-context'
-import { settingsService } from '@/lib/settings'
-import { Settings, PayrollSettings, BonusTier } from '@/types/settings'
+import { useAuth } from '@/contexts/auth-context'
+import { SettingsService } from '@/lib/settings'
+import { Settings, PayrollSettings, ProductivityBonusTier, AttendanceBonusTier } from '@/types/settings'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -35,7 +35,7 @@ import {
 import { toast } from '@/components/ui/use-toast'
 
 export default function SettingsPage() {
-  const { user } = useNewAuth()
+  const { user } = useAuth()
   const [settings, setSettings] = useState<Settings | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -46,7 +46,7 @@ export default function SettingsPage() {
 
   const loadSettings = async () => {
     try {
-      const currentSettings = await settingsService.getSettings()
+      const currentSettings = await SettingsService.getInstance().getSettings()
       setSettings(currentSettings)
     } catch (error) {
       console.error('Error loading settings:', error)
@@ -65,7 +65,7 @@ export default function SettingsPage() {
     
     setSaving(true)
     try {
-      await settingsService.updateSettings(settings)
+      await SettingsService.getInstance().updateSettings(settings)
       toast({
         title: "Success",
         description: "Settings saved successfully"
@@ -87,7 +87,7 @@ export default function SettingsPage() {
     
     setSaving(true)
     try {
-      await settingsService.resetToDefaults()
+      await SettingsService.getInstance().resetToDefaults()
       await loadSettings()
       toast({
         title: "Success",
@@ -107,7 +107,7 @@ export default function SettingsPage() {
 
   const exportSettings = async () => {
     try {
-      const settingsJson = await settingsService.exportSettings()
+      const settingsJson = await SettingsService.getInstance().exportSettings()
       const blob = new Blob([settingsJson], { type: 'application/json' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -131,7 +131,7 @@ export default function SettingsPage() {
 
     try {
       const text = await file.text()
-      await settingsService.importSettings(text)
+      await SettingsService.getInstance().importSettings(text)
       await loadSettings()
       toast({
         title: "Success",
@@ -190,24 +190,45 @@ export default function SettingsPage() {
   const addBonusTier = (type: 'productivity' | 'attendance') => {
     if (!settings) return
 
-    const newTier: BonusTier = {
-      minValue: 0,
-      maxValue: 100,
-      bonusPercentage: 5,
-      description: 'New Tier'
-    }
-
-    const updatedTiers = [...settings.payroll.bonusStructure[type].tiers, newTier]
-    
-    updatePayrollSettings({
-      bonusStructure: {
-        ...settings.payroll.bonusStructure,
-        [type]: {
-          ...settings.payroll.bonusStructure[type],
-          tiers: updatedTiers
-        }
+    if (type === 'productivity') {
+      const newTier: ProductivityBonusTier = {
+        minScore: 0,
+        maxScore: 100,
+        bonusPercentage: 5,
+        description: 'New Tier'
       }
-    })
+
+      const updatedTiers = [...settings.payroll.bonusStructure[type].tiers, newTier]
+      
+      updatePayrollSettings({
+        bonusStructure: {
+          ...settings.payroll.bonusStructure,
+          [type]: {
+            ...settings.payroll.bonusStructure[type],
+            tiers: updatedTiers
+          }
+        }
+      })
+    } else {
+      const newTier: AttendanceBonusTier = {
+        minRate: 0,
+        maxRate: 100,
+        bonusPercentage: 5,
+        description: 'New Tier'
+      }
+
+      const updatedTiers = [...settings.payroll.bonusStructure[type].tiers, newTier]
+      
+      updatePayrollSettings({
+        bonusStructure: {
+          ...settings.payroll.bonusStructure,
+          [type]: {
+            ...settings.payroll.bonusStructure[type],
+            tiers: updatedTiers
+          }
+        }
+      })
+    }
   }
 
   const removeBonusTier = (type: 'productivity' | 'attendance', index: number) => {
@@ -226,7 +247,7 @@ export default function SettingsPage() {
     })
   }
 
-  const updateBonusTier = (type: 'productivity' | 'attendance', index: number, updates: Partial<BonusTier>) => {
+  const updateBonusTier = (type: 'productivity' | 'attendance', index: number, updates: Partial<ProductivityBonusTier | AttendanceBonusTier>) => {
     if (!settings) return
 
     const updatedTiers = settings.payroll.bonusStructure[type].tiers.map((tier, i) => 

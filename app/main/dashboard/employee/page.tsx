@@ -41,7 +41,7 @@ export default function EmployeeDashboard() {
         console.log('Fetching today\'s attendance...')
         const attendanceQuery = query(
           collection(db, 'attendance'),
-          where('employeeId', '==', firebaseUser.uid),
+          where('employeeId', '==', firebaseUser?.uid || ''),
           where('date', '>=', Timestamp.fromDate(today)),
           where('date', '<', Timestamp.fromDate(tomorrow))
         )
@@ -67,7 +67,9 @@ export default function EmployeeDashboard() {
               time: data.checkOut.time?.toDate() || new Date(),
               location: data.checkOut.location || null,
               deviceInfo: data.checkOut.deviceInfo || null
-            } : undefined
+            } : undefined,
+            status: data.status || 'present',
+            uid: data.uid || firebaseUser?.uid || ''
           } as AttendanceRecord
           console.log('Setting today\'s attendance:', attendanceData)
           setTodayAttendance(attendanceData)
@@ -82,7 +84,7 @@ export default function EmployeeDashboard() {
         console.log('Fetching monthly stats...')
         const monthlyQuery = query(
           collection(db, 'attendance'),
-          where('employeeId', '==', firebaseUser.uid),
+          where('employeeId', '==', firebaseUser?.uid || ''),
           where('date', '>=', Timestamp.fromDate(startOfMonth)),
           where('date', '<=', Timestamp.fromDate(endOfMonth))
         )

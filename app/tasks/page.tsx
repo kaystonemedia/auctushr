@@ -6,7 +6,7 @@ import { Task, TaskFilter } from '@/types/task'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Plus } from 'lucide-react'
-import { collection, query, where, getDocs, orderBy, Timestamp } from 'firebase/firestore'
+import { collection, query, where, getDocs, orderBy, Timestamp, and } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { useToast } from '@/components/ui/use-toast'
 import { CreateTaskModal } from '@/components/tasks/create-task-modal'
@@ -34,33 +34,40 @@ export default function TasksPage() {
     try {
       setLoading(true)
       const tasksRef = collection(db, 'tasks')
-      let q = query(tasksRef)
-
+      
+      // Build filters array
+      const filtersArray = []
+      
       // Apply filters
       if (filters.status?.length) {
-        q = query(q, where('status', 'in', filters.status))
+        filtersArray.push(where('status', 'in', filters.status))
       }
       if (filters.priority?.length) {
-        q = query(q, where('priority', 'in', filters.priority))
+        filtersArray.push(where('priority', 'in', filters.priority))
       }
       if (filters.category?.length) {
-        q = query(q, where('category', 'in', filters.category))
+        filtersArray.push(where('category', 'in', filters.category))
       }
       if (filters.assigneeId) {
-        q = query(q, where('assigneeId', '==', filters.assigneeId))
+        filtersArray.push(where('assigneeId', '==', filters.assigneeId))
       }
       if (filters.assignerId) {
-        q = query(q, where('assignerId', '==', filters.assignerId))
+        filtersArray.push(where('assignerId', '==', filters.assignerId))
       }
       if (dateRange.from) {
-        q = query(q, where('dueDate', '>=', Timestamp.fromDate(dateRange.from)))
+        filtersArray.push(where('dueDate', '>=', Timestamp.fromDate(dateRange.from)))
       }
       if (dateRange.to) {
-        q = query(q, where('dueDate', '<=', Timestamp.fromDate(dateRange.to)))
+        filtersArray.push(where('dueDate', '<=', Timestamp.fromDate(dateRange.to)))
       }
 
-      // Order by due date
-      q = query(q, orderBy('dueDate', 'asc'))
+      // Build query with proper structure
+      let q
+      if (filtersArray.length > 0) {
+        q = query(tasksRef, and(...filtersArray), orderBy('dueDate', 'asc'))
+      } else {
+        q = query(tasksRef, orderBy('dueDate', 'asc'))
+      }
 
       const querySnapshot = await getDocs(q)
       const tasksData = querySnapshot.docs.map(doc => ({

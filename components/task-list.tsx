@@ -26,9 +26,9 @@ export function TaskList({ tasks }: TaskListProps) {
           <div className="flex items-center gap-2">
             <span className={`px-2 py-1 text-xs rounded-full ${
               task.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-              task.status === 'accepted' ? 'bg-blue-100 text-blue-800' :
               task.status === 'in_progress' ? 'bg-purple-100 text-purple-800' :
-              'bg-green-100 text-green-800'
+              task.status === 'completed' ? 'bg-green-100 text-green-800' :
+              'bg-red-100 text-red-800'
             }`}>
               {task.status.replace('_', ' ')}
             </span>

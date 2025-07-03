@@ -12,6 +12,7 @@ import { Download, FileText, BarChart2, Users } from "lucide-react"
 import { AttendanceRecord, AttendanceStats } from "@/types/attendance"
 import { exportToExcel, exportToPDF } from "@/lib/export"
 import { generateAttendanceReport } from "@/lib/reports"
+import { toast } from 'react-hot-toast'
 
 interface AttendanceReportsProps {
   records: AttendanceRecord[]
@@ -77,8 +78,9 @@ export function AttendanceReports({ records, stats, employees }: AttendanceRepor
           <div className="space-y-2">
             <Label>Date Range</Label>
             <DateRangePicker
-              value={dateRange}
-              onChange={setDateRange}
+              from={dateRange.from}
+              to={dateRange.to}
+              onSelect={setDateRange}
             />
           </div>
           <div className="space-y-2">

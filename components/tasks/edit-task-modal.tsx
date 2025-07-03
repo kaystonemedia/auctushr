@@ -32,7 +32,6 @@ export function EditTaskModal({ task, isOpen, onClose, onSuccess }: EditTaskModa
     priority: task.priority,
     status: task.status,
     dueDate: task.dueDate instanceof Date ? task.dueDate : new Date(task.dueDate),
-    assigneeId: task.assigneeId,
     assignerId: task.assignerId
   })
 

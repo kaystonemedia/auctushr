@@ -49,7 +49,7 @@ export function TaskList({ tasks, loading, onTaskUpdate, onTaskDelete }: TaskLis
       const updates = {
         status: newStatus,
         updatedAt: new Date(),
-        completedAt: newStatus === 'completed' ? new Date() : null
+        completedAt: newStatus === 'completed' ? new Date() : undefined
       }
       await updateDoc(taskRef, updates)
       

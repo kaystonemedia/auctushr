@@ -9,14 +9,15 @@ import {
   onSnapshot,
   Timestamp,
   doc,
-  updateDoc
+  updateDoc,
+  or,
+  and
 } from 'firebase/firestore'
 import { AttendanceNotification, AttendanceRecord, AttendanceSettings } from '@/types/attendance'
 import { toast } from 'react-hot-toast'
 
 interface NotificationOptions {
   type: 'break' | 'meeting' | 'idle' | 'late' | 'early' | 'custom'
-  title: string
   message: string
   severity: 'info' | 'warning' | 'error'
   employeeId: string
@@ -25,17 +26,16 @@ interface NotificationOptions {
 
 export async function createNotification(options: NotificationOptions): Promise<void> {
   try {
-    const notification: AttendanceNotification = {
-      id: '', // Will be set by Firestore
+    const notification = {
+      // Don't include id field - Firestore will auto-generate it
       type: options.type,
-      title: options.title,
+      employeeId: options.employeeId,
       message: options.message,
       severity: options.severity,
-      employeeId: options.employeeId,
-      data: options.data,
       read: false,
       createdAt: new Date(),
-      updatedAt: new Date()
+      updatedAt: new Date(),
+      data: options.data || null // Ensure data is never undefined
     }
 
     await addDoc(collection(db, 'notifications'), notification)
@@ -50,9 +50,11 @@ export function subscribeToNotifications(
   onNotification: (notification: AttendanceNotification) => void
 ) {
   const notificationsRef = collection(db, 'notifications')
+  
+  // Query for notifications where user is the employee (since we only use employeeId)
   const q = query(
     notificationsRef,
-    where('managerId', '==', userId),
+    where('employeeId', '==', userId),
     orderBy('createdAt', 'desc')
   )
 
@@ -71,6 +73,10 @@ export function subscribeToNotifications(
 
 export async function markNotificationAsRead(notificationId: string): Promise<void> {
   try {
+    if (!notificationId || notificationId.trim() === '') {
+      throw new Error('Invalid notification ID: ID cannot be empty')
+    }
+    
     const notificationRef = doc(db, 'notifications', notificationId)
     await updateDoc(notificationRef, {
       read: true,
@@ -86,11 +92,18 @@ export async function getUnreadNotifications(employeeId: string): Promise<Attend
   try {
     const q = query(
       collection(db, 'notifications'),
-      where('employeeId', '==', employeeId),
-      where('read', '==', false)
+      and(
+        where('employeeId', '==', employeeId),
+        where('read', '==', false)
+      ),
+      orderBy('createdAt', 'desc')
     )
     const snapshot = await getDocs(q)
-    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as AttendanceNotification))
+    return snapshot.docs.map(doc => ({ 
+      id: doc.id, 
+      ...doc.data(),
+      createdAt: doc.data().createdAt?.toDate() || new Date()
+    } as AttendanceNotification))
   } catch (error) {
     console.error('Error fetching notifications:', error)
     throw error
@@ -113,8 +126,7 @@ export async function scheduleBreakReminder(employeeId: string, settings: Attend
   if (now >= startTime && now <= endTime) {
     await createNotification({
       type: 'break',
-      title: 'Break Time Reminder',
-      message: 'It\'s time for your scheduled break. Taking regular breaks helps maintain productivity.',
+      message: 'Break Time Reminder: It\'s time for your scheduled break. Taking regular breaks helps maintain productivity.',
       severity: 'info',
       employeeId
     })
@@ -125,8 +137,7 @@ export async function scheduleBreakReminder(employeeId: string, settings: Attend
 export async function sendMeetingNotification(employeeId: string, meetingData: any): Promise<void> {
   await createNotification({
     type: 'meeting',
-    title: 'Upcoming Meeting',
-    message: `You have a meeting scheduled: ${meetingData.title} at ${new Date(meetingData.startTime).toLocaleTimeString()}`,
+    message: `Upcoming Meeting: You have a meeting scheduled: ${meetingData.title} at ${new Date(meetingData.startTime).toLocaleTimeString()}`,
     severity: 'info',
     employeeId,
     data: meetingData
@@ -138,8 +149,7 @@ export async function sendIdleWarning(employeeId: string, idleTime: number, sett
   if (idleTime >= settings.idleThreshold) {
     await createNotification({
       type: 'idle',
-      title: 'Idle Time Warning',
-      message: `You've been idle for ${idleTime} minutes. Consider taking a break or resuming work.`,
+      message: `Idle Time Warning: You've been idle for ${idleTime} minutes. Consider taking a break or resuming work.`,
       severity: 'warning',
       employeeId,
       data: { idleTime }
@@ -157,8 +167,7 @@ export async function sendLateArrivalNotification(employeeId: string, checkInTim
   if (lateMinutes > settings.allowedLateMinutes) {
     await createNotification({
       type: 'late',
-      title: 'Late Arrival',
-      message: `You arrived ${lateMinutes} minutes late. Please ensure timely arrival.`,
+      message: `Late Arrival: You arrived ${lateMinutes} minutes late. Please ensure timely arrival.`,
       severity: 'warning',
       employeeId,
       data: { lateMinutes, checkInTime }
@@ -176,8 +185,7 @@ export async function sendEarlyDepartureNotification(employeeId: string, checkOu
     const earlyMinutes = Math.floor((endTime.getTime() - checkOutTime.getTime()) / (1000 * 60))
     await createNotification({
       type: 'early',
-      title: 'Early Departure',
-      message: `You left ${earlyMinutes} minutes early. Please ensure you complete your working hours.`,
+      message: `Early Departure: You left ${earlyMinutes} minutes early. Please ensure you complete your working hours.`,
       severity: 'warning',
       employeeId,
       data: { earlyMinutes, checkOutTime }
@@ -189,9 +197,277 @@ export async function sendEarlyDepartureNotification(employeeId: string, checkOu
 export async function sendCustomNotification(employeeId: string, title: string, message: string, severity: 'info' | 'warning' | 'error' = 'info'): Promise<void> {
   await createNotification({
     type: 'custom',
-    title,
-    message,
+    message: `${title}: ${message}`,
     severity,
     employeeId
+  })
+}
+
+// Productivity-based notifications
+export async function sendProductivityNotification(
+  employeeId: string, 
+  type: 'low_productivity' | 'high_productivity' | 'idle_warning' | 'focus_reminder',
+  data?: any
+): Promise<void> {
+  const notificationMessages = {
+    low_productivity: {
+      title: 'Low Productivity Alert',
+      message: 'Your productivity has been below average today. Consider taking a break or focusing on priority tasks.',
+      severity: 'warning' as const
+    },
+    high_productivity: {
+      title: 'Great Work!',
+      message: 'You\'re having a highly productive day! Keep up the excellent work.',
+      severity: 'info' as const
+    },
+    idle_warning: {
+      title: 'Idle Time Warning',
+      message: `You've been inactive for ${data?.idleTime || 'a while'}. Consider resuming work or taking a scheduled break.`,
+      severity: 'warning' as const
+    },
+    focus_reminder: {
+      title: 'Focus Reminder',
+      message: 'It\'s time for a focused work session. Minimize distractions and concentrate on your tasks.',
+      severity: 'info' as const
+    }
+  }
+
+  const config = notificationMessages[type]
+  
+  await createNotification({
+    type: 'custom',
+    message: `${config.title}: ${config.message}`,
+    severity: config.severity,
+    employeeId,
+    data
+  })
+}
+
+// Meeting reminder notifications
+export async function sendMeetingReminder(
+  employeeId: string,
+  meetingData: {
+    title: string
+    startTime: Date
+    duration: number
+  }
+): Promise<void> {
+  const minutesUntilMeeting = Math.floor(
+    (meetingData.startTime.getTime() - new Date().getTime()) / (1000 * 60)
+  )
+
+  await createNotification({
+    type: 'meeting',
+    message: `Meeting Reminder: Your meeting "${meetingData.title}" starts in ${minutesUntilMeeting} minutes.`,
+    severity: 'info',
+    employeeId,
+    data: meetingData
+  })
+}
+
+// Break time notifications
+export async function sendBreakReminder(
+  employeeId: string,
+  breakType: 'morning' | 'lunch' | 'afternoon' | 'end_of_day'
+): Promise<void> {
+  const breakMessages = {
+    morning: 'Time for your morning break. Take a short rest to maintain productivity.',
+    lunch: 'It\'s lunch time! Take a proper break to recharge.',
+    afternoon: 'Time for your afternoon break. A short rest will help maintain focus.',
+    end_of_day: 'Great work today! Consider wrapping up your tasks and preparing for tomorrow.'
+  }
+
+  await createNotification({
+    type: 'break',
+    message: `Break Time: ${breakMessages[breakType]}`,
+    severity: 'info',
+    employeeId,
+    data: { breakType }
+  })
+}
+
+// Task assignment notifications
+export async function sendTaskAssignmentNotification(
+  employeeId: string,
+  taskData: {
+    title: string
+    description: string
+    assignedBy: string
+    priority: 'low' | 'medium' | 'high'
+  }
+): Promise<void> {
+  await createNotification({
+    type: 'custom',
+    message: `New Task Assigned: ${taskData.title} - ${taskData.description} (Assigned by: ${taskData.assignedBy})`,
+    severity: taskData.priority === 'high' ? 'warning' : 'info',
+    employeeId,
+    data: taskData
+  })
+}
+
+// Task completion notifications with feedback
+export async function sendTaskCompletionNotification(
+  employeeId: string,
+  taskData: {
+    title: string
+    completedAt: Date
+    priority: 'low' | 'medium' | 'high'
+  }
+): Promise<void> {
+  await createNotification({
+    type: 'custom',
+    message: `Task Completed: Great job! You've completed "${taskData.title}".`,
+    severity: 'info',
+    employeeId,
+    data: taskData
+  })
+}
+
+// Task completion feedback to manager
+export async function sendTaskCompletionFeedbackToManager(
+  managerId: string,
+  taskData: {
+    title: string
+    employeeName: string
+    completedAt: Date
+    quality?: number
+    feedback?: string
+  }
+): Promise<void> {
+  await createNotification({
+    type: 'custom',
+    message: `Task Completed by ${taskData.employeeName}: "${taskData.title}" has been completed successfully.`,
+    severity: 'info',
+    employeeId: managerId,
+    data: taskData
+  })
+}
+
+// Congratulations notifications
+export async function sendCongratulationsNotification(
+  employeeId: string,
+  message: string
+): Promise<void> {
+  await createNotification({
+    type: 'custom',
+    message: `Congratulations! ${message}`,
+    severity: 'info',
+    employeeId,
+    data: { type: 'congratulations' }
+  })
+}
+
+// Document update notifications
+export async function sendDocumentUpdateNotification(
+  employeeId: string,
+  documentData: {
+    title: string
+    updatedBy: string
+    updateType: 'created' | 'modified' | 'deleted'
+  }
+): Promise<void> {
+  const actionText = documentData.updateType === 'created' ? 'created' :
+                   documentData.updateType === 'modified' ? 'updated' : 'deleted'
+  
+  await createNotification({
+    type: 'custom',
+    message: `Document ${actionText}: "${documentData.title}" has been ${actionText} by ${documentData.updatedBy}.`,
+    severity: 'info',
+    employeeId,
+    data: documentData
+  })
+}
+
+// System-wide announcements
+export async function sendSystemAnnouncement(
+  employeeIds: string[],
+  announcement: {
+    title: string
+    message: string
+    priority: 'low' | 'medium' | 'high'
+  }
+): Promise<void> {
+  for (const employeeId of employeeIds) {
+    await createNotification({
+      type: 'custom',
+      message: `System Announcement: ${announcement.title} - ${announcement.message}`,
+      severity: announcement.priority === 'high' ? 'warning' : 'info',
+      employeeId,
+      data: { type: 'system_announcement', ...announcement }
+    })
+  }
+}
+
+// Department-wide notifications
+export async function sendDepartmentNotification(
+  departmentName: string,
+  notification: {
+    title: string
+    message: string
+    sentBy: string
+  }
+): Promise<void> {
+  // Get all employees in the department
+  const employeesRef = collection(db, 'employees')
+  const q = query(employeesRef, where('department', '==', departmentName))
+  const employeesSnapshot = await getDocs(q)
+  
+  const employeeIds = employeesSnapshot.docs.map(doc => doc.data().uid || doc.id)
+  
+  for (const employeeId of employeeIds) {
+    await createNotification({
+      type: 'custom',
+      message: `Department Notification: ${notification.title} - ${notification.message} (From: ${notification.sentBy})`,
+      severity: 'info',
+      employeeId,
+      data: { type: 'department_notification', ...notification }
+    })
+  }
+}
+
+// Performance milestone notifications
+export async function sendPerformanceMilestoneNotification(
+  employeeId: string,
+  milestone: {
+    type: 'productivity_streak' | 'attendance_perfect' | 'task_completion' | 'focus_time'
+    value: number
+    period: string
+  }
+): Promise<void> {
+  const milestoneMessages = {
+    productivity_streak: `Congratulations! You've maintained high productivity for ${milestone.value} ${milestone.period}.`,
+    attendance_perfect: `Perfect attendance! You've been on time for ${milestone.value} ${milestone.period}.`,
+    task_completion: `Excellent work! You've completed ${milestone.value} tasks this ${milestone.period}.`,
+    focus_time: `Great focus! You've achieved ${milestone.value} hours of focused work this ${milestone.period}.`
+  }
+
+  await createNotification({
+    type: 'custom',
+    message: `Performance Milestone: ${milestoneMessages[milestone.type]}`,
+    severity: 'info',
+    employeeId,
+    data: milestone
+  })
+}
+
+// Manager notifications for team events
+export async function sendManagerNotification(
+  managerId: string,
+  type: 'team_late' | 'team_absent' | 'team_productivity' | 'approval_required',
+  data: any
+): Promise<void> {
+  const managerMessages = {
+    team_late: `${data.employeeName} arrived ${data.lateMinutes} minutes late today.`,
+    team_absent: `${data.employeeName} is absent today.`,
+    team_productivity: `${data.employeeName}'s productivity is ${data.productivityScore}% today.`,
+    approval_required: `${data.employeeName} requires approval for their attendance record.`
+  }
+
+  await createNotification({
+    type: 'custom',
+    message: `Team Update: ${managerMessages[type]}`,
+    severity: type === 'approval_required' ? 'warning' : 'info',
+    employeeId: managerId, // For managers, we use their ID as employeeId
+    data
   })
 } 

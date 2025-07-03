@@ -5,7 +5,7 @@ import { Filter, Clock, MapPin, User, AlertCircle } from "lucide-react"
 import { AttendanceRecord, AttendanceStats, AttendanceFilters, AttendanceNotification } from "@/types/attendance"
 import { useNewAuth } from "@/contexts/new-auth-context"
 import { db } from "@/lib/firebase"
-import { collection, query, where, getDocs, addDoc, updateDoc, doc, Timestamp, orderBy, onSnapshot } from "firebase/firestore"
+import { collection, query, where, getDocs, addDoc, updateDoc, doc, Timestamp, orderBy, onSnapshot, and } from "firebase/firestore"
 import { toast } from "react-hot-toast"
 import { detectIdleTime, calculateAttendanceStats, startIdleTimeTracking } from "@/lib/attendance"
 import { AttendanceDetails } from "@/components/attendance-details"
@@ -92,13 +92,26 @@ export default function AttendancePage() {
       return
     }
 
-    let q = query(
-      collection(db, "attendance"),
-      orderBy("date", "desc")
-    )
+    // Build filters array
+    const filtersArray = []
+    
+    if (user?.role !== 'admin') {
+      filtersArray.push(where("employeeId", "==", firebaseUser.uid))
+    }
 
-    if (user && user.role !== 'admin') {
-      q = query(q, where("employeeId", "==", firebaseUser.uid))
+    // Build query with proper structure
+    let q
+    if (filtersArray.length > 0) {
+      q = query(
+        collection(db, "attendance"),
+        and(...filtersArray),
+        orderBy("date", "desc")
+      )
+    } else {
+      q = query(
+        collection(db, "attendance"),
+        orderBy("date", "desc")
+      )
     }
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -284,20 +297,31 @@ export default function AttendancePage() {
     }
 
     try {
-      let q = query(collection(db, 'attendance'))
+      const attendanceRef = collection(db, 'attendance')
       
-      if (user && user.role === 'employee') {
-        q = query(q, where('employeeId', '==', firebaseUser.uid))
-      } else if (user && user.role === 'manager') {
-        q = query(q, where('managerId', '==', firebaseUser.uid))
+      // Build filters array
+      const filtersArray = []
+      
+      if (user?.role === 'employee') {
+        filtersArray.push(where('employeeId', '==', firebaseUser.uid))
+      } else if (user?.role === 'manager') {
+        filtersArray.push(where('managerId', '==', firebaseUser.uid))
       }
       
       if (filters.startDate) {
-        q = query(q, where('date', '>=', Timestamp.fromDate(filters.startDate)))
+        filtersArray.push(where('date', '>=', Timestamp.fromDate(filters.startDate)))
       }
       
       if (filters.endDate) {
-        q = query(q, where('date', '<=', Timestamp.fromDate(filters.endDate)))
+        filtersArray.push(where('date', '<=', Timestamp.fromDate(filters.endDate)))
+      }
+
+      // Build query with proper structure
+      let q
+      if (filtersArray.length > 0) {
+        q = query(attendanceRef, and(...filtersArray))
+      } else {
+        q = query(attendanceRef)
       }
 
       const querySnapshot = await getDocs(q)
@@ -536,10 +560,10 @@ export default function AttendancePage() {
             <div>
               <h3 className="text-sm font-medium text-yellow-800">Extension Not Installed</h3>
               <p className="text-sm text-yellow-700 mt-1">
-                Install the StyleTry Attendance Extension to enable activity tracking.
+                                    Install the KaystoneHR Attendance Extension to enable activity tracking.
               </p>
               <a
-                href="https://chrome.google.com/webstore/detail/styletry-attendance/your-extension-id"
+                                    href="https://chrome.google.com/webstore/detail/kaystonehr-attendance/your-extension-id"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-sm text-yellow-800 underline mt-2 inline-block"

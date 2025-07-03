@@ -171,22 +171,29 @@ export default function DepartmentsPage() {
                 <h3 className="font-semibold text-lg">{department.name}</h3>
                 <p className="text-sm text-muted-foreground">{department.description}</p>
               </div>
-              <div className="flex space-x-2">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setEditingDepartment(department)}
-                >
-                  <Pencil className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => handleDelete(department.id)}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
+                          <div className="flex space-x-2">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => window.location.href = `/departments/${department.id}`}
+              >
+                <Users className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setEditingDepartment(department)}
+              >
+                <Pencil className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => handleDelete(department.id)}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
             </div>
 
             <div className="flex items-center space-x-4 text-sm text-muted-foreground">

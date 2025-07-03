@@ -7,6 +7,9 @@ import { collection, addDoc, query, where, getDocs } from 'firebase/firestore'
 import { toast } from 'react-hot-toast'
 import { Clock, MapPin, Smartphone, CheckCircle, XCircle } from 'lucide-react'
 import { LocationService } from '@/lib/location-service'
+import { AttendanceSettings, AttendanceRecord } from '@/types/attendance'
+import { LocationSettings } from '@/types/settings'
+import { sendLateArrivalNotification } from '@/lib/notifications'
 
 interface Location {
   latitude: number
@@ -39,6 +42,34 @@ const GHANA_BOUNDS = {
 
 export function AttendanceCheckIn({ location: initialLocation, onSuccess }: AttendanceCheckInProps) {
   const { user } = useNewAuth()
+  
+  // Placeholder settings (replace with real settings as needed)
+  const defaultAttendanceSettings: AttendanceSettings = {
+    workingHours: { start: '09:00', end: '18:00' },
+    idleThreshold: 15,
+    maxIdlePeriods: 3,
+    allowedLateMinutes: 10,
+    locationRadius: 100,
+    requiredCheckInDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+    requireManagerApproval: false,
+    autoApproveThreshold: 5,
+  }
+  
+  const defaultLocationSettings: LocationSettings = {
+    allowedCountries: ['GH'],
+    defaultCountry: 'GH',
+    requireLocationValidation: false,
+    allowRemoteWork: true,
+    officeLocations: [],
+    locationValidationRules: {
+      requireExactLocation: false,
+      allowApproximateLocation: true,
+      minimumAccuracy: 100,
+      validateOnCheckIn: false,
+      validateOnCheckOut: false,
+    },
+  }
+  
   const [loading, setLoading] = useState(false)
   const [location, setLocation] = useState<Location | null>(initialLocation ? {
     ...initialLocation,
@@ -46,15 +77,14 @@ export function AttendanceCheckIn({ location: initialLocation, onSuccess }: Atte
   } : null)
   const [error, setError] = useState<string | null>(null)
   const [deviceInfo, setDeviceInfo] = useState({
-    userAgent: navigator.userAgent,
-    platform: navigator.platform,
-    language: navigator.language,
-    screenResolution: `${window.screen.width}x${window.screen.height}`
+    browser: navigator.userAgent,
+    os: navigator.platform,
+    // ip: '' // Optionally add IP if available
   })
   const [officeLocations, setOfficeLocations] = useState<OfficeLocation[]>([])
   const [nearestOffice, setNearestOffice] = useState<OfficeLocation | null>(null)
   const [locationPermission, setLocationPermission] = useState<PermissionState>('prompt')
-  const [locationService] = useState(() => new LocationService())
+  const [locationService] = useState(() => LocationService.getInstance(defaultAttendanceSettings, defaultLocationSettings))
   const [isTracking, setIsTracking] = useState(false)
 
   // Get current location
@@ -238,7 +268,7 @@ export function AttendanceCheckIn({ location: initialLocation, onSuccess }: Atte
       today.setHours(0, 0, 0, 0)
       const checkInQuery = query(
         collection(db, 'attendance'),
-        where('employeeId', '==', user.uid),
+        where('employeeId', '==', user.id),
         where('date', '>=', today)
       )
       const existingCheckIn = await getDocs(checkInQuery)
@@ -250,8 +280,8 @@ export function AttendanceCheckIn({ location: initialLocation, onSuccess }: Atte
 
       // Create attendance record
       const attendanceData = {
-        employeeId: user.uid,
-        employeeName: user.displayName || user.email,
+        employeeId: user.id,
+        employeeName: user.name || user.email,
         department: user.department || 'Unknown',
         date: new Date(),
         checkIn: {
@@ -261,7 +291,7 @@ export function AttendanceCheckIn({ location: initialLocation, onSuccess }: Atte
             longitude: currentLocation.longitude,
             accuracy: currentLocation.accuracy
           },
-          deviceInfo
+          deviceInfo: deviceInfo,
         },
         status: 'present',
         approvalStatus: 'pending',
@@ -279,6 +309,14 @@ export function AttendanceCheckIn({ location: initialLocation, onSuccess }: Atte
       
       await locationService.startTracking(record)
       setIsTracking(true)
+
+      // Send notification for late arrival if applicable
+      try {
+        await sendLateArrivalNotification(user.id, new Date(), defaultAttendanceSettings)
+      } catch (notificationError) {
+        console.error('Error sending late arrival notification:', notificationError)
+        // Don't fail the check-in if notification fails
+      }
 
       toast.success('Check-in successful!')
       onSuccess()

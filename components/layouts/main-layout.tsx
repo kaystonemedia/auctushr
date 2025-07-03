@@ -11,6 +11,7 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useNewAuth()
   const pathname = usePathname()
   const isAuthPage = pathname.startsWith('/auth')
+  const isTestPage = pathname === '/test-auth'
 
   if (isLoading) {
     return (
@@ -27,6 +28,17 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
   // If no user, don't render the layout
   if (!user) {
     return null
+  }
+
+  // For test pages, render without sidebar/header
+  if (isTestPage) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <main className="p-6">
+          {children}
+        </main>
+      </div>
+    )
   }
 
   return (

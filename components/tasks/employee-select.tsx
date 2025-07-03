@@ -36,10 +36,10 @@ export function EmployeeSelect({ value, onChange, disabled, className }: Employe
 
   useEffect(() => {
     fetchEmployees()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user])
 
   useEffect(() => {
-    // Set selected employee when value changes
     if (value && employees.length > 0) {
       const selected = employees.find(emp => emp.id === value)
       if (selected) {
@@ -49,29 +49,30 @@ export function EmployeeSelect({ value, onChange, disabled, className }: Employe
   }, [value, employees])
 
   const fetchEmployees = async () => {
-    if (!user) return
-
+    if (!user) {
+      setLoading(false)
+      return
+    }
     try {
       setLoading(true)
       let employeesQuery = query(collection(db, 'employees'))
-
-      // If user is a manager, only show their team members
       if (user.role === 'manager') {
         employeesQuery = query(
           employeesQuery,
           where('managerId', '==', user.id)
         )
       }
-
       const snapshot = await getDocs(employeesQuery)
-      const employeesData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        name: `${doc.data().firstName} ${doc.data().lastName}`.trim(),
-        email: doc.data().email,
-        role: doc.data().role,
-        department: doc.data().department
-      }))
-
+      const employeesData = snapshot.docs.map(doc => {
+        const data = doc.data()
+        return {
+          id: doc.id,
+          name: data.name || `${data.firstName || ''} ${data.lastName || ''}`.trim(),
+          email: data.email,
+          role: data.role,
+          department: data.department
+        }
+      })
       setEmployees(employeesData)
     } catch (error) {
       console.error('Error fetching employees:', error)
@@ -85,6 +86,15 @@ export function EmployeeSelect({ value, onChange, disabled, className }: Employe
     employee.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     employee.email.toLowerCase().includes(searchQuery.toLowerCase())
   )
+
+  // If user is not available, show a warning and disable the dropdown
+  if (!user) {
+    return (
+      <div className="text-red-500 text-sm p-2 border border-red-300 rounded bg-red-50">
+        No user context available. Please sign in again.
+      </div>
+    )
+  }
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -132,6 +142,7 @@ export function EmployeeSelect({ value, onChange, disabled, className }: Employe
                 }}
                 value={employee.id}
                 className="cursor-pointer"
+                disabled={false}
               >
                 <Check
                   className={cn(

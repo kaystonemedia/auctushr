@@ -8,9 +8,9 @@ import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { format } from 'date-fns'
 import { useToast } from '@/components/ui/use-toast'
-import { doc, updateDoc, arrayUnion, Timestamp } from 'firebase/firestore'
+import { doc, updateDoc, arrayUnion } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
-import { useAuth } from '@/contexts/auth-context'
+import { useNewAuth } from '@/contexts/new-auth-context'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 
@@ -22,10 +22,33 @@ interface TaskDetailsModalProps {
 }
 
 export function TaskDetailsModal({ task, isOpen, onClose, onTaskUpdate }: TaskDetailsModalProps) {
-  const { user } = useAuth()
+  const { user } = useNewAuth()
   const { toast } = useToast()
   const [loading, setLoading] = useState(false)
   const [comment, setComment] = useState('')
+
+  // Helper function to get assignee display text
+  const getAssigneeDisplay = () => {
+    if (!task.assignees || task.assignees.length === 0) {
+      return 'Unassigned'
+    }
+    
+    if (task.assignees.length === 1) {
+      return task.assignees[0].name
+    }
+    
+    // Multiple assignees
+    return task.assignees.map(assignee => assignee.name).join(', ')
+  }
+
+  // Helper function to format due date safely
+  const formatDueDate = (date: Date) => {
+    try {
+      return format(date instanceof Date ? date : new Date(date), 'PPP')
+    } catch (error) {
+      return 'Invalid date'
+    }
+  }
 
   const handleAddComment = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -36,8 +59,8 @@ export function TaskDetailsModal({ task, isOpen, onClose, onTaskUpdate }: TaskDe
 
       const newComment: TaskComment = {
         id: crypto.randomUUID(),
-        userId: user.uid,
-        userName: user.displayName || user.email || 'Unknown User',
+        userId: user.id,
+        userName: user.name || user.email || 'Unknown User',
         content: comment.trim(),
         createdAt: new Date()
       }
@@ -107,12 +130,12 @@ export function TaskDetailsModal({ task, isOpen, onClose, onTaskUpdate }: TaskDe
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <h4 className="text-sm font-medium text-muted-foreground">Assignee</h4>
-              <p className="mt-1">{task.assigneeName}</p>
+              <h4 className="text-sm font-medium text-muted-foreground">Assignee{task.assignees && task.assignees.length > 1 ? 's' : ''}</h4>
+              <p className="mt-1">{getAssigneeDisplay()}</p>
             </div>
             <div>
               <h4 className="text-sm font-medium text-muted-foreground">Assigned By</h4>
-              <p className="mt-1">{task.assignerName}</p>
+              <p className="mt-1">{task.assignerName || 'Unknown'}</p>
             </div>
             <div>
               <h4 className="text-sm font-medium text-muted-foreground">Status</h4>
@@ -134,7 +157,7 @@ export function TaskDetailsModal({ task, isOpen, onClose, onTaskUpdate }: TaskDe
             </div>
             <div>
               <h4 className="text-sm font-medium text-muted-foreground">Due Date</h4>
-              <p className="mt-1">{format(task.dueDate, 'PPP')}</p>
+              <p className="mt-1">{formatDueDate(task.dueDate)}</p>
             </div>
             {task.estimatedHours && (
               <div>

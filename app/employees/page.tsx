@@ -121,7 +121,7 @@ export default function EmployeesPage() {
 
       // Update local state
       const newEmployee = {
-        id: user.uid,
+        id: user.uid || '',
         uid: user.uid,
         ...data,
         hireDate: data.hireDate instanceof Date ? data.hireDate : new Date(data.hireDate),

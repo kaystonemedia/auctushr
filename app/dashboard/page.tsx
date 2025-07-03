@@ -10,6 +10,7 @@ import { collection, getDocs, query, where } from 'firebase/firestore'
 import { payrollService } from '@/lib/payroll'
 import { SettingsService } from '@/lib/settings'
 import { ProductivityService } from '@/lib/productivity-service'
+import type { ProductivitySettings } from '@/types/productivity'
 
 export default function Dashboard() {
   const { user, isLoading } = useNewAuth()
@@ -79,8 +80,55 @@ export default function Dashboard() {
         const settings = await settingsService.getSettings()
         const defaultProductivitySettings = settingsService['defaultSettings']?.productivity || {}
         const loadedProductivitySettings = settings?.productivity || {}
-        const mergedProductivitySettings = { ...defaultProductivitySettings, ...loadedProductivitySettings }
-        console.log('Merged Productivity Settings:', mergedProductivitySettings)
+        // Define a complete fallback for ProductivitySettings
+        const fallbackProductivitySettings: ProductivitySettings = {
+          trackingEnabled: true,
+          idleThreshold: 15,
+          syncInterval: 5,
+          collectUrls: true,
+          collectTitles: true,
+          retentionPeriod: 30,
+          productiveDomains: [],
+          productiveSites: [],
+          unproductiveSites: [],
+          workingHours: { start: '09:00', end: '17:00' },
+          breakDuration: 5,
+          targetProductiveHours: 6,
+          focusSessionDuration: 25,
+          maxFocusSessionsPerDay: 8,
+          minFocusTimePercentage: 60,
+          maxMeetingTimePercentage: 30,
+          productivityThresholds: { low: 40, medium: 70, high: 90 },
+          notificationPreferences: {
+            focusReminders: true,
+            breakReminders: true,
+            productivityAlerts: true,
+            meetingReminders: true
+          }
+        }
+        const mergedProductivitySettings: ProductivitySettings = {
+          ...fallbackProductivitySettings,
+          ...(defaultProductivitySettings as Partial<ProductivitySettings>),
+          ...(loadedProductivitySettings as Partial<ProductivitySettings>),
+          workingHours: {
+            ...fallbackProductivitySettings.workingHours,
+            ...((defaultProductivitySettings as Partial<ProductivitySettings>).workingHours || {}),
+            ...((loadedProductivitySettings as Partial<ProductivitySettings>).workingHours || {})
+          },
+          productivityThresholds: {
+            ...fallbackProductivitySettings.productivityThresholds,
+            ...((defaultProductivitySettings as Partial<ProductivitySettings>).productivityThresholds || {}),
+            ...((loadedProductivitySettings as Partial<ProductivitySettings>).productivityThresholds || {})
+          },
+          notificationPreferences: {
+            ...fallbackProductivitySettings.notificationPreferences,
+            ...((defaultProductivitySettings as Partial<ProductivitySettings>).notificationPreferences || {}),
+            ...((loadedProductivitySettings as Partial<ProductivitySettings>).notificationPreferences || {})
+          },
+          productiveDomains: (loadedProductivitySettings as Partial<ProductivitySettings>).productiveDomains || (defaultProductivitySettings as Partial<ProductivitySettings>).productiveDomains || fallbackProductivitySettings.productiveDomains,
+          productiveSites: (loadedProductivitySettings as Partial<ProductivitySettings>).productiveSites || (defaultProductivitySettings as Partial<ProductivitySettings>).productiveSites || fallbackProductivitySettings.productiveSites,
+          unproductiveSites: (loadedProductivitySettings as Partial<ProductivitySettings>).unproductiveSites || (defaultProductivitySettings as Partial<ProductivitySettings>).unproductiveSites || fallbackProductivitySettings.unproductiveSites,
+        }
         const productivityService = ProductivityService.getInstance(mergedProductivitySettings)
         const allEmployees = employeesSnapshot.docs.map(doc => doc.data())
         
@@ -129,11 +177,11 @@ export default function Dashboard() {
       let pendingTeamApprovals = 0
       let teamProjects = 0
 
-      if (user.role === 'manager') {
+      if (user && user.role === 'manager') {
         // For managers, get their team stats
         const teamQuery = query(
           collection(db, 'employees'),
-          where('managerId', '==', user.uid)
+          where('managerId', '==', user.id)
         )
         const teamSnapshot = await getDocs(teamQuery)
         teamSize = teamSnapshot.size
@@ -194,7 +242,7 @@ export default function Dashboard() {
     <div className="p-6 max-w-7xl mx-auto">
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900">
-          Welcome back, {user.firstName || user.email}!
+          Welcome back, {user.name || user.email}!
         </h1>
         <p className="text-gray-600 mt-2">
           Here's what's happening in your organization today.
@@ -302,7 +350,7 @@ export default function Dashboard() {
                 <div>
                   <p className="text-sm font-medium text-gray-600">Leave Balance</p>
                   <p className="text-2xl font-bold text-green-600">
-                    {user.leaveBalance || 20}
+                    20
                   </p>
                 </div>
                 <FileText className="h-8 w-8 text-green-500" />

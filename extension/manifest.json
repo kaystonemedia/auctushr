@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "StyleTry Attendance",
+  "name": "KaystoneHR Attendance",
   "version": "1.0.0",
-  "description": "Track attendance and productivity for StyleTry employees",
+  "description": "Track attendance and productivity for KaystoneHR employees",
   "permissions": [
     "storage",
     "idle",
@@ -13,7 +13,7 @@
     "alarms"
   ],
   "host_permissions": [
-    "https://styletry.com/*",
+            "https://kaystonehr.com/*",
     "https://www.googleapis.com/*"
   ],
   "background": {

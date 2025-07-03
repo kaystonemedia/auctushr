@@ -11,7 +11,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Check, ChevronsUpDown, Users, Plus } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { toast } from "react-hot-toast"
-import { collection, query, where, getDocs, addDoc, updateDoc, doc, orderBy, limit } from 'firebase/firestore'
+import { collection, query, where, getDocs, addDoc, updateDoc, doc, orderBy, limit, getDoc } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { useNewAuth } from '@/contexts/new-auth-context'
 import { Badge } from "@/components/ui/badge"
@@ -123,8 +123,22 @@ interface Employee {
 }
 
 const DEFAULT_SETTINGS: ProductivitySettings = {
-  focusSessionDuration: 25, // minutes
+  trackingEnabled: true,
+  idleThreshold: 300, // 5 minutes in seconds
+  syncInterval: 60000, // 1 minute in milliseconds
+  collectUrls: true,
+  collectTitles: true,
+  retentionPeriod: 90, // days
+  productiveDomains: ['github.com', 'stackoverflow.com', 'docs.google.com', 'notion.so'],
+  productiveSites: ['github.com', 'stackoverflow.com', 'docs.google.com', 'notion.so'],
+  unproductiveSites: ['facebook.com', 'twitter.com', 'instagram.com', 'youtube.com'],
+  workingHours: {
+    start: '09:00',
+    end: '17:00'
+  },
   breakDuration: 5, // minutes
+  targetProductiveHours: 6, // hours
+  focusSessionDuration: 25, // minutes
   maxFocusSessionsPerDay: 8,
   minFocusTimePercentage: 60, // 60%
   maxMeetingTimePercentage: 30, // 30%
@@ -164,7 +178,7 @@ export function ProductivityDashboard() {
   const [employeeTasks, setEmployeeTasks] = useState([])
 
   useEffect(() => {
-    if (!user?.uid) {
+    if (!(user as any)?.uid) {
       setLoading(false)
       return
     }
@@ -172,7 +186,7 @@ export function ProductivityDashboard() {
   }, [user, dateRange])
 
   const fetchAnalytics = async () => {
-    if (!user?.uid) {
+    if (!(user as any)?.uid) {
       console.error('User ID is required')
       return
     }
@@ -181,7 +195,7 @@ export function ProductivityDashboard() {
       setLoading(true)
       const service = ProductivityService.getInstance(DEFAULT_SETTINGS, DEFAULT_SETTINGS)
       const data = await service.calculateProductivityAnalytics(
-        user.uid,
+        (user as any).uid,
         dateRange.from,
         dateRange.to
       )
@@ -215,38 +229,38 @@ export function ProductivityDashboard() {
       // Calculate stats
       const stats = {
         totalIssued: tasks.length,
-        completed: tasks.filter(t => t.status === 'completed').length,
-        accepted: tasks.filter(t => t.status === 'accepted').length,
-        pending: tasks.filter(t => t.status === 'pending').length,
+        completed: tasks.filter(t => (t as any).status === 'completed').length,
+        accepted: tasks.filter(t => (t as any).status === 'accepted').length,
+        pending: tasks.filter(t => (t as any).status === 'pending').length,
       }
       setTaskStats(stats)
 
       // Get employee tasks for the progress list
       const employeeTasksData = await Promise.all(
         tasks
-          .filter(t => t.status !== 'completed')
+          .filter(t => (t as any).status !== 'completed')
           .map(async (task) => {
-            const userSnap = await getDoc(doc(db, 'users', task.assignedTo))
+            const userSnap = await getDoc(doc(db, 'users', (task as any).assignedTo))
             const userData = userSnap.data()
             return {
-              id: task.assignedTo,
+              id: (task as any).assignedTo,
               name: userData?.name || 'Unknown User',
               avatar: userData?.avatar,
-              taskTitle: task.title,
-              status: task.status,
-              progress: task.progress || 0,
+              taskTitle: (task as any).title,
+              status: (task as any).status,
+              progress: (task as any).progress || 0,
             }
           })
       )
-      setEmployeeTasks(employeeTasksData)
+      setEmployeeTasks(employeeTasksData as any)
 
       // Update the tasks state for the TaskList component
       setTasks(tasks.map(task => ({
         ...task,
-        dueDate: task.dueDate?.toDate(),
-        createdAt: task.createdAt?.toDate(),
-        updatedAt: task.updatedAt?.toDate(),
-        completedAt: task.completedAt?.toDate() || null
+        dueDate: (task as any).dueDate?.toDate(),
+        createdAt: (task as any).createdAt?.toDate(),
+        updatedAt: (task as any).updatedAt?.toDate(),
+        completedAt: (task as any).completedAt?.toDate() || null
       })) as Task[])
     } catch (error) {
       console.error('Error fetching task stats:', error)
@@ -256,21 +270,21 @@ export function ProductivityDashboard() {
 
   const handleTaskCreated = (task: Task) => {
     setTasks(prev => [...prev, task])
-    if (user?.uid) {
+    if ((user as any)?.uid) {
       fetchAnalytics() // Only refresh analytics if user is available
     }
   }
 
   const handleTaskUpdated = (updatedTask: Task) => {
     setTasks(prev => prev.map(task => task.id === updatedTask.id ? updatedTask : task))
-    if (user?.uid) {
+    if ((user as any)?.uid) {
       fetchAnalytics() // Only refresh analytics if user is available
     }
   }
 
   const handleTaskDeleted = (taskId: string) => {
     setTasks(prev => prev.filter(task => task.id !== taskId))
-    if (user?.uid) {
+    if ((user as any)?.uid) {
       fetchAnalytics() // Only refresh analytics if user is available
     }
   }
@@ -289,17 +303,19 @@ export function ProductivityDashboard() {
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-4">
           <Calendar
-            mode="range"
-            selected={{
-              from: dateRange.from,
-              to: dateRange.to
-            }}
-            onSelect={(range) => {
-              if (range?.from && range?.to) {
-                setDateRange({ from: range.from, to: range.to })
-              }
-            }}
-            className="rounded-md border"
+            {...({
+              mode: "range",
+              selected: {
+                from: dateRange.from,
+                to: dateRange.to
+              },
+              onSelect: (range: any) => {
+                if (range?.from && range?.to) {
+                  setDateRange({ from: range.from, to: range.to })
+                }
+              },
+              className: "rounded-md border"
+            } as any)}
           />
           <Button
             variant="outline"
@@ -374,7 +390,7 @@ export function ProductivityDashboard() {
                   <CardContent>
                     <div className="text-2xl font-bold">{analytics.overview.taskCompletionRate}%</div>
                     <div className="text-xs text-muted-foreground mt-1">
-                      {analytics.overview.totalTasksCompleted} of {analytics.overview.totalTasks} tasks completed
+                      {analytics.overview.totalTasksCompleted} of {(analytics.overview as any).totalTasks || 0} tasks completed
                     </div>
                     <Button
                       variant="link"
@@ -703,7 +719,7 @@ export function ProductivityDashboard() {
                   <div className="p-4 bg-blue-50 rounded-lg">
                     <h3 className="font-medium text-blue-700">Pending Tasks</h3>
                     <p className="text-2xl font-bold text-blue-900">
-                      {analytics.overview.totalTasks - analytics.overview.totalTasksCompleted}
+                      {((analytics.overview as any).totalTasks || 0) - analytics.overview.totalTasksCompleted}
                     </p>
                   </div>
                   <div className="p-4 bg-green-50 rounded-lg">

@@ -19,7 +19,7 @@ import {
 import { StatsCard } from '@/components/ui/stats-card'
 import { DepartmentChart } from '@/components/ui/department-chart'
 import { QuickActionCard } from '@/components/ui/quick-action-card'
-import { Users, Building2, BarChart3, Settings, BarChart, Clock, FileText, UserCheck, UserX, AlertCircle, Calendar, TrendingUp, Activity, Target, Award } from 'lucide-react'
+import { Users, Building2, BarChart3, Settings, BarChart, Clock, FileText, UserCheck, UserX, AlertCircle, Calendar, TrendingUp, Activity, Target, Award, Wallet } from 'lucide-react'
 import { format } from 'date-fns'
 import { useRouter } from 'next/navigation'
 import { Card } from '@/components/ui/card'
@@ -439,7 +439,7 @@ export default function AdminDashboard() {
         <div className="lg:col-span-2">
           <Card className="p-6">
             <h2 className="text-xl font-semibold mb-4">Department Distribution</h2>
-            <DepartmentChart data={departmentData} />
+            <DepartmentChart data={departmentData} title="Department Distribution" />
           </Card>
         </div>
 

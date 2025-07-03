@@ -64,7 +64,7 @@ export async function POST(request: Request) {
 
       // Handle check-out
       if (isCheckOut) {
-        const checkOutActivity = activities?.find((a: any) => a.type === 'check_out')
+        const checkOutActivity = activities?.find((a: { type: string; time: string; location?: any; deviceInfo?: any }) => a.type === 'check_out')
         if (checkOutActivity) {
           updateData.checkOut = {
             time: new Date(checkOutActivity.time),

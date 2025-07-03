@@ -61,9 +61,14 @@ export function CreateTaskModal({ isOpen, onClose, onSuccess }: CreateTaskModalP
       const newTask: Task = {
         id: taskRef.id,
         ...formData,
+        assignees: [{
+          id: formData.assigneeId,
+          name: formData.assigneeName,
+          type: 'user' as const
+        }],
         createdAt: new Date(),
         updatedAt: new Date(),
-        completedAt: null
+        completedAt: undefined
       }
 
       onSuccess(newTask)

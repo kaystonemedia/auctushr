@@ -22,38 +22,54 @@ export interface SystemSettings {
 }
 
 export interface PayrollSettings {
-  currency: {
-    code: string
-    symbol: string
-    exchangeRate: number
-    lastUpdated: Date
+  currency: string
+  taxRate: number // percentage
+  insuranceRate: number // percentage
+  pensionRate: number // percentage
+  bonusStructure: {
+    productivity: {
+      enabled: boolean
+      tiers: ProductivityBonusTier[]
+    }
+    attendance: {
+      enabled: boolean
+      tiers: AttendanceBonusTier[]
+    }
+    overtime: {
+      enabled: boolean
+      rate: number // multiplier (e.g., 1.5 for time and a half)
+      maxHours: number
+    }
+    project: {
+      enabled: boolean
+      completionBonus: number // percentage of base salary
+      qualityBonus: number // percentage of base salary
+    }
   }
   deductions: {
     tax: {
       enabled: boolean
-      percentage: number
+      rate: number // percentage
+      minThreshold: number // minimum salary for tax
     }
     insurance: {
       enabled: boolean
-      percentage: number
+      rate: number // percentage
+      types: string[] // health, dental, vision, etc.
+    }
+    pension: {
+      enabled: boolean
+      rate: number // percentage
+      employerMatch: number // percentage
     }
     other: {
       enabled: boolean
       items: Array<{
         name: string
-        percentage: number
+        rate: number
+        description: string
       }>
     }
-  }
-  hourlyRate: {
-    enabled: boolean
-    baseRate: number
-    overtimeMultiplier: number
-  }
-  idleTime: {
-    enabled: boolean
-    threshold: number // minutes
-    deductionPercentage: number
   }
 }
 
@@ -197,71 +213,23 @@ export interface Settings {
   }
 }
 
+export interface ProductivityBonusTier {
+  minScore: number
+  maxScore: number
+  bonusPercentage: number
+  description: string
+}
+
+export interface AttendanceBonusTier {
+  minRate: number
+  maxRate: number
+  bonusPercentage: number
+  description: string
+}
+
 export interface BonusTier {
   minValue: number
   maxValue: number
   bonusPercentage: number
   description: string
-}
-
-export interface PayrollSettings {
-  currency: string
-  taxRate: number // percentage
-  insuranceRate: number // percentage
-  pensionRate: number // percentage
-  bonusStructure: {
-    productivity: {
-      enabled: boolean
-      tiers: Array<{
-        minScore: number
-        maxScore: number
-        bonusPercentage: number
-        description: string
-      }>
-    }
-    attendance: {
-      enabled: boolean
-      tiers: Array<{
-        minRate: number
-        maxRate: number
-        bonusPercentage: number
-        description: string
-      }>
-    }
-    overtime: {
-      enabled: boolean
-      rate: number // multiplier (e.g., 1.5 for time and a half)
-      maxHours: number
-    }
-    project: {
-      enabled: boolean
-      completionBonus: number // percentage of base salary
-      qualityBonus: number // percentage of base salary
-    }
-  }
-  deductions: {
-    tax: {
-      enabled: boolean
-      rate: number // percentage
-      minThreshold: number // minimum salary for tax
-    }
-    insurance: {
-      enabled: boolean
-      rate: number // percentage
-      types: string[] // health, dental, vision, etc.
-    }
-    pension: {
-      enabled: boolean
-      rate: number // percentage
-      employerMatch: number // percentage
-    }
-    other: {
-      enabled: boolean
-      items: Array<{
-        name: string
-        rate: number
-        description: string
-      }>
-    }
-  }
 } 

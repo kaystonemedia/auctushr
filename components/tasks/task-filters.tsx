@@ -3,12 +3,6 @@
 import { TaskFilter, TaskStatus, TaskPriority } from '@/types/task'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Button } from '@/components/ui/button'
-import { Calendar } from '@/components/ui/calendar'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { format } from 'date-fns'
-import { CalendarIcon, Search } from 'lucide-react'
-import { cn } from '@/lib/utils'
 
 interface TaskFiltersProps {
   filters: TaskFilter
@@ -26,7 +20,6 @@ export function TaskFilters({ filters, dateRange, onFilterChange, onDateRangeCha
           value={filters.search || ''}
           onChange={(e) => onFilterChange({ ...filters, search: e.target.value })}
           className="w-full"
-          icon={<Search className="h-4 w-4" />}
         />
       </div>
       <div className="flex gap-2">
@@ -67,42 +60,6 @@ export function TaskFilters({ filters, dateRange, onFilterChange, onDateRangeCha
             <SelectItem value="urgent">Urgent</SelectItem>
           </SelectContent>
         </Select>
-
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button
-              variant="outline"
-              className={cn(
-                "w-[240px] justify-start text-left font-normal",
-                !dateRange.from && "text-muted-foreground"
-              )}
-            >
-              <CalendarIcon className="mr-2 h-4 w-4" />
-              {dateRange.from ? (
-                dateRange.to ? (
-                  <>
-                    {format(dateRange.from, "LLL dd, y")} -{" "}
-                    {format(dateRange.to, "LLL dd, y")}
-                  </>
-                ) : (
-                  format(dateRange.from, "LLL dd, y")
-                )
-              ) : (
-                <span>Pick a date range</span>
-              )}
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-auto p-0" align="start">
-            <Calendar
-              initialFocus
-              mode="range"
-              defaultMonth={dateRange.from}
-              selected={dateRange}
-              onSelect={onDateRangeChange}
-              numberOfMonths={2}
-            />
-          </PopoverContent>
-        </Popover>
       </div>
     </div>
   )

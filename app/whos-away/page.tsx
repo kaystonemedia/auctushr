@@ -64,10 +64,16 @@ export default function WhosAwayPage() {
 
       // Get employees
       const employeesSnapshot = await getDocs(collection(db, 'employees'))
-      const employeesData = employeesSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }))
+      const employeesData = employeesSnapshot.docs.map(doc => {
+        const data = doc.data() as any
+        return {
+          id: doc.id,
+          firstName: data.firstName || '',
+          lastName: data.lastName || '',
+          position: data.position || '',
+          photoURL: data.photoURL || '',
+        }
+      })
 
       // Process leave requests
       const employeeAbsences = new Map<string, Employee>()
@@ -287,7 +293,22 @@ export default function WhosAwayPage() {
               </button>
             </div>
 
-            <CalendarView month={getMonthName(currentMonth)} days={days} employees={employees} />
+            <CalendarView 
+              month={getMonthName(currentMonth)} 
+              days={days} 
+              employees={employees.map(emp => ({
+                name: emp.name,
+                position: emp.position,
+                avatar: emp.avatar,
+                absences: emp.absences
+                  .filter(abs => abs.type === 'Away' || abs.type === 'Public Holiday')
+                  .map(({ type, startDay, endDay }) => ({
+                    type: type as 'Away' | 'Public Holiday',
+                    startDay,
+                    endDay
+                  }))
+              }))}
+            />
           </div>
         </main>
       </div>

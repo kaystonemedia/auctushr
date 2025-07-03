@@ -6,6 +6,10 @@ import { db } from '@/lib/firebase'
 import { collection, query, where, getDocs, updateDoc, doc } from 'firebase/firestore'
 import { toast } from 'react-hot-toast'
 import { Clock, MapPin, Smartphone, CheckCircle, XCircle } from 'lucide-react'
+import { LocationService } from '@/lib/location-service'
+import { AttendanceSettings, AttendanceRecord } from '@/types/attendance'
+import { LocationSettings } from '@/types/settings'
+import { sendEarlyDepartureNotification } from '@/lib/notifications'
 
 interface Location {
   latitude: number
@@ -34,6 +38,18 @@ const GHANA_BOUNDS = {
   south: 4.74,  // Southernmost point
   east: 1.19,   // Easternmost point
   west: -3.25   // Westernmost point
+}
+
+// Placeholder settings (replace with real settings as needed)
+const defaultAttendanceSettings: AttendanceSettings = {
+  workingHours: { start: '09:00', end: '18:00' },
+  idleThreshold: 15,
+  maxIdlePeriods: 3,
+  allowedLateMinutes: 10,
+  locationRadius: 100,
+  requiredCheckInDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+  requireManagerApproval: false,
+  autoApproveThreshold: 5,
 }
 
 export function AttendanceCheckOut({ record, onSuccess }: AttendanceCheckOutProps) {
@@ -246,6 +262,14 @@ export function AttendanceCheckOut({ record, onSuccess }: AttendanceCheckOutProp
         status,
         updatedAt: new Date()
       })
+
+      // Send notification for early departure if applicable
+      try {
+        await sendEarlyDepartureNotification(user.id, new Date(), defaultAttendanceSettings)
+      } catch (notificationError) {
+        console.error('Error sending early departure notification:', notificationError)
+        // Don't fail the check-out if notification fails
+      }
 
       toast.success('Check-out successful!')
       onSuccess()

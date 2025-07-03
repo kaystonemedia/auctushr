@@ -15,7 +15,11 @@ service cloud.firestore {
     function getUserRole() {
       let userDoc = get(/databases/$(database)/documents/users/$(request.auth.uid));
       let employeeDoc = get(/databases/$(database)/documents/employees/$(request.auth.uid));
-      return userDoc != null ? userDoc.data.role : (employeeDoc != null ? employeeDoc.data.role : null);
+      let managerDoc = get(/databases/$(database)/documents/managers/$(request.auth.uid));
+      
+      return userDoc != null && userDoc.data.role != null ? userDoc.data.role :
+             (employeeDoc != null && employeeDoc.data.role != null ? employeeDoc.data.role :
+             (managerDoc != null && managerDoc.data.role != null ? managerDoc.data.role : null));
     }
 
     function isAdmin() {
@@ -341,7 +345,7 @@ service cloud.firestore {
     // Settings collection rules
     match /settings/{settingId} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated() && (isAdmin() || isManager());
+      allow write: if isAuthenticated() && isAdmin();
     }
 
     // Managers collection rules
@@ -487,10 +491,106 @@ service cloud.firestore {
       );
     }
 
-    // Default deny all other collections
+    // Notifications collection rules
+    match /notifications/{notificationId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() || 
+        resource.data.userId == request.auth.uid ||
+        (isManager() && resource.data.userId in get(/databases/$(database)/documents/employees/$(request.auth.uid)).data.managedEmployees)
+      );
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && (
+        isAdmin() || 
+        resource.data.userId == request.auth.uid
+      );
+      allow delete: if isAuthenticated() && isAdmin();
+    }
+
+    // Productivity collection rules
+    match /productivity/{recordId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() || 
+        resource.data.userId == request.auth.uid ||
+        (isManager() && resource.data.userId in get(/databases/$(database)/documents/employees/$(request.auth.uid)).data.managedEmployees)
+      );
+      allow create: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow update: if isAuthenticated() && (
+        isAdmin() || 
+        resource.data.userId == request.auth.uid
+      );
+      allow delete: if isAuthenticated() && isAdmin();
+    }
+
+    // Payroll collection rules
+    match /payroll/{recordId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() || 
+        resource.data.employeeId == request.auth.uid ||
+        (isManager() && resource.data.employeeId in get(/databases/$(database)/documents/employees/$(request.auth.uid)).data.managedEmployees)
+      );
+      allow create, update, delete: if isAuthenticated() && isAdmin();
+    }
+
+    // Departments collection rules
+    match /departments/{departmentId} {
+      allow read: if isAuthenticated();
+      allow create, update, delete: if isAuthenticated() && isAdmin();
+    }
+
+    // Documents collection rules
+    match /documents/{documentId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() || 
+        resource.data.ownerId == request.auth.uid ||
+        (isManager() && resource.data.ownerId in get(/databases/$(database)/documents/employees/$(request.auth.uid)).data.managedEmployees) ||
+        (resource.data.sharedWith != null && request.auth.uid in resource.data.sharedWith)
+      );
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && (
+        isAdmin() || 
+        resource.data.ownerId == request.auth.uid
+      );
+      allow delete: if isAuthenticated() && (
+        isAdmin() || 
+        resource.data.ownerId == request.auth.uid
+      );
+    }
+
+    // Performance collection rules
+    match /performance/{recordId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() || 
+        resource.data.employeeId == request.auth.uid ||
+        (isManager() && resource.data.employeeId in get(/databases/$(database)/documents/employees/$(request.auth.uid)).data.managedEmployees)
+      );
+      allow create, update: if isAuthenticated() && (
+        isAdmin() || 
+        (isManager() && resource.data.employeeId in get(/databases/$(database)/documents/employees/$(request.auth.uid)).data.managedEmployees)
+      );
+      allow delete: if isAuthenticated() && isAdmin();
+    }
+
+    // Reports collection rules
+    match /reports/{reportId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() || 
+        resource.data.createdBy == request.auth.uid ||
+        (isManager() && resource.data.department == get(/databases/$(database)/documents/employees/$(request.auth.uid)).data.department)
+      );
+      allow create: if isAuthenticated() && (
+        isAdmin() || 
+        isManager()
+      );
+      allow update, delete: if isAuthenticated() && (
+        isAdmin() || 
+        resource.data.createdBy == request.auth.uid
+      );
+    }
+
+    // Default rule for other collections - allow authenticated users to read, but restrict writes
     match /{document=**} {
       allow read: if isAuthenticated();
-      allow write: if false;
+      allow write: if isAuthenticated() && (isAdmin() || isManager());
     }
   }
 } 

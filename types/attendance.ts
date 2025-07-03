@@ -111,15 +111,17 @@ export interface AttendanceSettings {
 
 export interface AttendanceNotification {
   id: string;
-  type: 'late_check_in' | 'absent' | 'flag_raised' | 'approval_required' | 'approved' | 'rejected';
+  type: 'late_check_in' | 'absent' | 'flag_raised' | 'approval_required' | 'approved' | 'rejected' | 'idle_time' | 'location_mismatch' | 'break' | 'meeting' | 'idle' | 'late' | 'early' | 'custom';
   employeeId: string;
-  employeeName: string;
+  employeeName?: string;
   managerId?: string;
-  attendanceId: string;
+  attendanceId?: string;
   message: string;
-  severity: 'low' | 'medium' | 'high';
+  severity: 'low' | 'medium' | 'high' | 'info' | 'warning' | 'error';
   read: boolean;
   createdAt: Date;
+  updatedAt?: Date;
+  data?: any;
 }
 
 export interface BreakTime {

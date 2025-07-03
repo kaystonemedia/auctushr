@@ -54,11 +54,13 @@ export class ProductivityService {
   // Focus Session Management
   async startFocusSession(taskId: string, employeeId: string): Promise<FocusSession> {
     const session: Omit<FocusSession, 'id' | 'createdAt' | 'updatedAt'> = {
-      taskId,
+      userId: employeeId,
       startTime: new Date(),
-      status: 'active',
-      interruptions: [],
-      productivityScore: 0
+      endTime: new Date(), // Will be updated when session ends
+      duration: 0, // Will be calculated when session ends
+      completed: false,
+      interruptions: 0,
+      notes: `Task: ${taskId}`
     }
 
     const docRef = await addDoc(collection(db, 'focusSessions'), {
@@ -69,7 +71,9 @@ export class ProductivityService {
 
     return {
       id: docRef.id,
-      ...session
+      ...session,
+      createdAt: session.startTime,
+      updatedAt: session.startTime
     }
   }
 
@@ -207,7 +211,7 @@ export class ProductivityService {
     return analytics
   }
 
-  private async getTasks(employeeId: string, startDate: Date, endDate: Date): Promise<TaskRecord[]> {
+  public async getTasks(employeeId: string, startDate: Date, endDate: Date): Promise<TaskRecord[]> {
     const q = query(
       collection(db, 'tasks'),
       where('assignedTo', '==', employeeId),
@@ -219,10 +223,10 @@ export class ProductivityService {
     return snapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data(),
-      startTime: doc.data().startTime.toDate(),
+      startTime: doc.data().startTime?.toDate() || new Date(),
       endTime: doc.data().endTime?.toDate(),
-      createdAt: doc.data().createdAt.toDate(),
-      updatedAt: doc.data().updatedAt.toDate()
+      createdAt: doc.data().createdAt?.toDate() || new Date(),
+      updatedAt: doc.data().updatedAt?.toDate() || new Date()
     })) as TaskRecord[]
   }
 

@@ -28,7 +28,7 @@ export default function EmployeeLayout({
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <Header user={user} />
+      <Header />
       <div className="flex">
         <Sidebar activePath={pathname} />
         <main className="flex-1 p-8">

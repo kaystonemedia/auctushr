@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { createTestUser, signIn, signOut } from '@/lib/firebase';
+import { TestNotifications } from '@/components/test-notifications'
 
 export default function TestAuthPage() {
   const [loading, setLoading] = useState(false);
@@ -44,8 +45,9 @@ export default function TestAuthPage() {
   };
 
   return (
-    <div className="container mx-auto p-6">
-      <h1 className="text-2xl font-bold mb-4">Test Auth</h1>
+    <div className="container mx-auto p-6 space-y-6">
+      <h1 className="text-2xl font-bold">Test Page</h1>
+      
       <div className="space-y-4">
         <button
           onClick={handleCreateTestUser}
@@ -70,6 +72,10 @@ export default function TestAuthPage() {
         </button>
         {loading && <div>Loading...</div>}
         {result && <div className="mt-4 p-4 bg-gray-100 rounded">{result}</div>}
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <TestNotifications />
       </div>
     </div>
   );

@@ -1,5 +1,5 @@
 {
-  "name": "styletry",
+  "name": "kaystonehr",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -56,6 +56,7 @@
     "react-hook-form": "^7.56.4",
     "react-hot-toast": "^2.5.2",
     "recharts": "^2.15.2",
+    "sonner": "^2.0.5",
     "tailwind-merge": "^3.3.0",
     "url": "^0.11.4",
     "util": "^0.12.5",

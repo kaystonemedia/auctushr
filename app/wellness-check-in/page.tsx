@@ -9,11 +9,12 @@ import { Header } from "@/components/header"
 import { Sidebar } from "@/components/sidebar"
 import { WellnessChart } from "@/components/wellness-chart"
 import { Loader2 } from "lucide-react"
+import { Employee } from '@/types/employee'
 
 interface WellnessData {
   id: string
   employeeId: string
-  employeeName: string
+  name: string
   position: string
   avatar: string
   score: number
@@ -62,10 +63,30 @@ export default function WellnessCheckInPage() {
 
       // Get employees for reference
       const employeesSnapshot = await getDocs(collection(db, 'employees'))
-      const employeesData = employeesSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }))
+      const employeesData: Employee[] = employeesSnapshot.docs.map(doc => {
+        const data = doc.data() as Partial<Employee>
+        return {
+          id: doc.id,
+          firstName: data.firstName || '',
+          lastName: data.lastName || '',
+          email: data.email || '',
+          phone: data.phone || '',
+          department: data.department || '',
+          position: data.position || '',
+          role: data.role as 'admin' | 'manager' | 'employee' || 'employee',
+          managerId: data.managerId || null,
+          hasPassword: data.hasPassword ?? false,
+          hireDate: data.hireDate ? new Date(data.hireDate as any) : new Date(),
+          salary: data.salary || 0,
+          status: data.status as 'active' | 'inactive' | 'on_leave' || 'active',
+          photoURL: data.photoURL || '',
+          address: data.address || undefined,
+          emergencyContact: data.emergencyContact || undefined,
+          documents: data.documents || undefined,
+          createdAt: data.createdAt ? new Date(data.createdAt as any) : new Date(),
+          updatedAt: data.updatedAt ? new Date(data.updatedAt as any) : new Date(),
+        }
+      })
 
       // Process wellness data
       const wellnessData: WellnessData[] = []
@@ -83,7 +104,7 @@ export default function WellnessCheckInPage() {
         wellnessData.push({
           id: doc.id,
           employeeId: wellness.employeeId,
-          employeeName: `${employee.firstName} ${employee.lastName}`,
+          name: `${employee.firstName} ${employee.lastName}`,
           position: employee.position,
           avatar: employee.photoURL || `/placeholder.svg?height=40&width=40`,
           score,

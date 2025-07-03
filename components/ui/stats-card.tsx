@@ -6,6 +6,8 @@ interface StatsCardProps {
   valueColor?: string
   icon?: React.ReactNode
   subtitle?: string
+  trend?: string | number
+  trendColor?: string
 }
 
 export function StatsCard({ 
@@ -13,7 +15,9 @@ export function StatsCard({
   value, 
   valueColor = 'text-gray-900',
   icon,
-  subtitle 
+  subtitle,
+  trend,
+  trendColor
 }: StatsCardProps) {
   return (
     <Card>
@@ -23,9 +27,16 @@ export function StatsCard({
       </CardHeader>
       <CardContent>
         <div className={`text-2xl font-bold ${valueColor}`}>{value}</div>
-        {subtitle && (
-          <p className="text-xs text-muted-foreground mt-1">{subtitle}</p>
-        )}
+        <div className="flex items-center justify-between">
+          {subtitle && (
+            <p className="text-xs text-muted-foreground mt-1">{subtitle}</p>
+          )}
+          {trend && (
+            <p className={`text-xs font-medium ${trendColor || 'text-gray-500'}`}>
+              {trend}
+            </p>
+          )}
+        </div>
       </CardContent>
     </Card>
   )

@@ -53,6 +53,7 @@ export async function GET(request: Request) {
       const employee = {
         id: doc.id,
         ...data,
+        email: data.email || '',
         hireDate: data.hireDate?.toDate() || new Date(),
         createdAt: data.createdAt?.toDate() || new Date(),
         updatedAt: data.updatedAt?.toDate() || new Date(),
@@ -69,7 +70,7 @@ export async function GET(request: Request) {
         emergencyContact: data.emergencyContact || null
       }
       
-      console.log('Processed employee:', employee.id, data.email || 'No email')
+      console.log('Processed employee:', employee.id, employee.email || 'No email')
       return employee
     })
 

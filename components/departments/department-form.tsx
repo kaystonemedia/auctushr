@@ -103,8 +103,11 @@ export function DepartmentForm({ department, onSuccess, onCancel }: DepartmentFo
         toast.success('Department updated successfully')
       } else {
         // Create new department
-        departmentData.createdAt = new Date()
-        await addDoc(collection(db, 'departments'), departmentData)
+        const newDepartmentData = {
+          ...departmentData,
+          createdAt: new Date(),
+        }
+        await addDoc(collection(db, 'departments'), newDepartmentData)
         toast.success('Department created successfully')
       }
 

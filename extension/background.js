@@ -1,7 +1,7 @@
 // Constants
 const IDLE_THRESHOLD = 5 * 60; // 5 minutes in seconds
 const SYNC_INTERVAL = 5 * 60 * 1000; // 5 minutes in milliseconds
-const API_BASE_URL = 'https://styletry.com/api';
+const API_BASE_URL = 'https://kaystonehr.com/api';
 
 // Web activity tracking
 const WEB_ACTIVITY_TYPES = {
@@ -711,5 +711,71 @@ async function updateSettings(newSettings) {
   await chrome.alarms.clear('syncActivity');
   await chrome.alarms.create('syncActivity', { periodInMinutes: newSettings.syncInterval });
 }
+
+// Send productivity notification to API
+async function sendProductivityNotification(type, data = {}) {
+  try {
+    const response = await fetch(`${API_BASE_URL}/notifications/productivity`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${await auth.currentUser.getIdToken()}`
+      },
+      body: JSON.stringify({
+        type,
+        data,
+        timestamp: new Date().toISOString()
+      })
+    })
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.statusText}`)
+    }
+  } catch (error) {
+    console.error('Error sending productivity notification:', error)
+  }
+}
+
+// Check productivity and send notifications
+function checkProductivityAndNotify() {
+  if (!state.isCheckedIn || !state.currentSession.startTime) return
+
+  const now = Date.now()
+  const sessionDuration = now - state.currentSession.startTime
+  const sessionHours = sessionDuration / (1000 * 60 * 60)
+  
+  // Calculate productivity score
+  const activeTime = state.productivityStats.focusTime + state.productivityStats.meetingTime
+  const productivityScore = sessionHours > 0 ? (activeTime / (sessionHours * 60 * 60 * 1000)) * 100 : 0
+
+  // Send notifications based on productivity
+  if (productivityScore < 50 && sessionHours > 2) {
+    sendProductivityNotification('low_productivity', { 
+      productivityScore: Math.round(productivityScore),
+      sessionHours: Math.round(sessionHours * 10) / 10
+    })
+  } else if (productivityScore > 80 && sessionHours > 1) {
+    sendProductivityNotification('high_productivity', { 
+      productivityScore: Math.round(productivityScore),
+      sessionHours: Math.round(sessionHours * 10) / 10
+    })
+  }
+
+  // Check for idle time warnings
+  if (state.productivityStats.idleTime > 30 * 60 * 1000) { // 30 minutes
+    sendProductivityNotification('idle_warning', { 
+      idleTime: Math.round(state.productivityStats.idleTime / (1000 * 60))
+    })
+  }
+}
+
+// Set up periodic productivity checks
+chrome.alarms.create('productivityCheck', { periodInMinutes: 15 })
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === 'productivityCheck') {
+    checkProductivityAndNotify()
+  }
+})
 
 // ... rest of the existing code ... 

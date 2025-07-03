@@ -18,7 +18,7 @@ export function PayrollSummary({ report }: PayrollSummaryProps) {
           <CardTitle className="text-sm font-medium">Total Employees</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">{report.summary.totalEmployees}</div>
+          <div className="text-2xl font-bold">{(report.summary as any).totalEmployees || 0}</div>
         </CardContent>
       </Card>
 
@@ -31,7 +31,7 @@ export function PayrollSummary({ report }: PayrollSummaryProps) {
             {new Intl.NumberFormat('en-US', {
               style: 'currency',
               currency: 'USD'
-            }).format(report.summary.totalGrossSalary)}
+            }).format((report.summary as any).totalGrossSalary || 0)}
           </div>
         </CardContent>
       </Card>
@@ -45,7 +45,7 @@ export function PayrollSummary({ report }: PayrollSummaryProps) {
             {new Intl.NumberFormat('en-US', {
               style: 'currency',
               currency: 'USD'
-            }).format(report.summary.totalNetSalary)}
+            }).format((report.summary as any).totalNetSalary || 0)}
           </div>
         </CardContent>
       </Card>
@@ -59,7 +59,7 @@ export function PayrollSummary({ report }: PayrollSummaryProps) {
             {new Intl.NumberFormat('en-US', {
               style: 'currency',
               currency: 'USD'
-            }).format(report.summary.totalDeductions)}
+            }).format((report.summary as any).totalDeductions || 0)}
           </div>
         </CardContent>
       </Card>
@@ -71,16 +71,16 @@ export function PayrollSummary({ report }: PayrollSummaryProps) {
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {report.summary.byDepartment.map((dept) => (
-                <Card key={dept.department} className="border-primary/10">
+              {Object.entries(report.summary.byDepartment).map(([department, dept]) => (
+                <Card key={department} className="border-primary/10">
                   <CardHeader>
-                    <CardTitle className="text-lg">{dept.department}</CardTitle>
+                    <CardTitle className="text-lg">{department}</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-4">
                       <div className="flex justify-between items-center">
                         <span className="text-sm text-gray-500">Employees</span>
-                        <span className="font-medium">{dept.count}</span>
+                        <span className="font-medium">{(dept as any).count || 0}</span>
                       </div>
                       <div className="flex justify-between items-center">
                         <span className="text-sm text-gray-500">Gross Salary</span>
@@ -105,9 +105,9 @@ export function PayrollSummary({ report }: PayrollSummaryProps) {
                           <span className="text-sm text-gray-500">Status</span>
                           <div className="flex gap-2">
                             <span className={`px-2 py-1 rounded-full text-xs ${
-                              dept.status.pending > 0 ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'
+                              (dept as any).status?.pending > 0 ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'
                             }`}>
-                              {dept.status.pending > 0 ? 'Pending' : 'Processed'}
+                              {(dept as any).status?.pending > 0 ? 'Pending' : 'Processed'}
                             </span>
                           </div>
                         </div>
@@ -115,13 +115,13 @@ export function PayrollSummary({ report }: PayrollSummaryProps) {
                           <div
                             className="bg-primary h-2 rounded-full"
                             style={{
-                              width: `${(dept.status.processed / dept.status.total) * 100}%`
+                              width: `${((dept as any).status?.processed / (dept as any).status?.total) * 100}%`
                             }}
                           />
                         </div>
                         <div className="flex justify-between text-xs text-gray-500">
-                          <span>{dept.status.processed} processed</span>
-                          <span>{dept.status.pending} pending</span>
+                          <span>{(dept as any).status?.processed || 0} processed</span>
+                          <span>{(dept as any).status?.pending || 0} pending</span>
                         </div>
                       </div>
                     </div>

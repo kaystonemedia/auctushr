@@ -56,6 +56,7 @@ const roleBasedRoutes = {
     '/employees',
     '/attendance',
     '/attendance/reports',
+    '/attendance/settings',
     '/leave',
     '/payroll',
     '/documents',
@@ -65,7 +66,14 @@ const roleBasedRoutes = {
     '/help',
     '/managers',
     '/administrators',
-    '/tasks'
+    '/tasks',
+    '/departments',
+    '/people',
+    '/wellness-check-in',
+    '/whos-away',
+    '/test-auth',
+    '/add-employee',
+    '/todo'
   ],
   manager: [
     '/dashboard',
@@ -80,7 +88,12 @@ const roleBasedRoutes = {
     '/performance',
     '/settings',
     '/help',
-    '/tasks'
+    '/tasks',
+    '/departments',
+    '/people',
+    '/wellness-check-in',
+    '/whos-away',
+    '/test-auth'
   ],
   employee: [
     '/dashboard',
@@ -92,7 +105,9 @@ const roleBasedRoutes = {
     '/performance',
     '/settings',
     '/help',
-    '/tasks'
+    '/tasks',
+    '/wellness-check-in',
+    '/test-auth'
   ]
 }
 
@@ -126,6 +141,11 @@ export function NewAuthProvider({ children }: { children: React.ReactNode }) {
 
       // Check role-based access
       if (user && !pathname?.startsWith('/auth/')) {
+        // Allow test pages for all authenticated users
+        if (pathname === '/test-auth') {
+          return
+        }
+        
         const allowedRoutes = roleBasedRoutes[user.role as keyof typeof roleBasedRoutes]
         if (allowedRoutes && !allowedRoutes.some(route => pathname?.startsWith(route))) {
           console.log('User role does not have access to this route')

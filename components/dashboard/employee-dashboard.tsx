@@ -31,7 +31,7 @@ export function EmployeeDashboard() {
         
         <Card className="p-6">
           <h2 className="text-lg font-medium mb-4">Current Shift</h2>
-          <ShiftScheduler employeeId={user.uid} />
+          <ShiftScheduler employeeId={user.id} />
         </Card>
       </div>
 
@@ -54,12 +54,12 @@ export function EmployeeDashboard() {
         <TabsContent value="attendance">
           <Card className="p-6">
             <h2 className="text-xl font-semibold mb-4">Attendance History</h2>
-            <EmployeeAttendanceHistory employeeId={user.uid} />
+            <EmployeeAttendanceHistory employeeId={user.id} />
           </Card>
         </TabsContent>
 
         <TabsContent value="analytics">
-          <AnalyticsDashboard viewMode="personal" employeeId={user.uid} />
+          <AnalyticsDashboard viewMode="personal" employeeId={user.id} />
         </TabsContent>
 
         <TabsContent value="profile">
