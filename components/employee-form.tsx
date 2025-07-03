@@ -158,16 +158,51 @@ export function EmployeeForm({ isOpen, onClose, onSubmit, initialData }: Employe
     const fetchManagers = async () => {
       try {
         setLoadingManagers(true)
-        const managersQuery = query(
-          collection(db, 'employees'),
-          where('role', '==', 'manager')
-        )
-        const snapshot = await getDocs(managersQuery)
-        const managersData = snapshot.docs.map(doc => ({ 
+        
+        // Fetch managers from all possible collections
+        const [usersSnapshot, employeesSnapshot, managersSnapshot] = await Promise.all([
+          getDocs(query(collection(db, 'users'), where('role', 'in', ['manager', 'admin']))),
+          getDocs(query(collection(db, 'employees'), where('role', '==', 'manager'))),
+          getDocs(query(collection(db, 'managers')))
+        ])
+
+        // Get managers from users collection (admin/manager roles)
+        const managersFromUsers = usersSnapshot.docs.map(doc => ({ 
           id: doc.id, 
           ...doc.data() 
         })) as Employee[]
-        setManagers(managersData)
+
+        // Get managers from employees collection (manager role)
+        const managersFromEmployees = employeesSnapshot.docs.map(doc => ({ 
+          id: doc.id, 
+          ...doc.data() 
+        })) as Employee[]
+
+        // Get managers from managers collection
+        const managersFromManagersCollection = managersSnapshot.docs.map(doc => ({ 
+          id: doc.id, 
+          ...doc.data() 
+        })) as Employee[]
+
+        // Combine all managers and deduplicate
+        const allManagers = [
+          ...managersFromUsers,
+          ...managersFromEmployees,
+          ...managersFromManagersCollection
+        ]
+        const uniqueManagers = allManagers.filter((manager, index, self) => 
+          index === self.findIndex(m => m.id === manager.id)
+        )
+
+        console.log('Fetched managers from all collections:', {
+          fromUsersCollection: managersFromUsers.length,
+          fromEmployeesCollection: managersFromEmployees.length,
+          fromManagersCollection: managersFromManagersCollection.length,
+          totalUnique: uniqueManagers.length,
+          managers: uniqueManagers
+        })
+
+        setManagers(uniqueManagers)
       } catch (error) {
         console.error('Error fetching managers:', error)
         setError('Failed to load managers')
