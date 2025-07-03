@@ -85,6 +85,10 @@ export default function PeopleWithAddPage() {
         ...doc.data()
       })) as Manager[]
 
+      // Debug logging
+      console.log('Fetched managers:', managersData)
+      console.log('Number of managers:', managersData.length)
+
       // Combine and deduplicate employees
       const allEmployees = [...usersData, ...employeesData]
       const uniqueEmployees = allEmployees.filter((emp, index, self) => 
