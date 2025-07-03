@@ -40,11 +40,12 @@ export function AddEmployeeModal({ isOpen, onClose, onSubmit, managers }: AddEmp
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
+      <DialogContent className="max-w-md max-h-[90vh] flex flex-col">
+        <DialogHeader className="flex-shrink-0">
           <DialogTitle>Add New Employee</DialogTitle>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="flex-1 overflow-y-auto pr-2">
+          <form id="add-employee-form" onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label htmlFor="firstName">First Name</Label>
@@ -102,15 +103,33 @@ export function AddEmployeeModal({ isOpen, onClose, onSubmit, managers }: AddEmp
             />
           </div>
 
-          <div className="flex justify-end space-x-2">
-            <Button type="button" variant="outline" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button type="submit">
-              Add Employee
-            </Button>
+          <div>
+            <Label htmlFor="manager">Manager</Label>
+            <Select value={formData.managerId} onValueChange={(value) => setFormData({ ...formData, managerId: value })}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select manager (optional)" />
+              </SelectTrigger>
+              <SelectContent>
+                {managers.map((manager) => (
+                  <SelectItem key={manager.id} value={manager.id}>
+                    {manager.name || `${manager.firstName} ${manager.lastName}`}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
-        </form>
+          </form>
+        </div>
+        
+        {/* Fixed footer with buttons */}
+        <div className="flex-shrink-0 flex justify-end space-x-2 pt-4 border-t">
+          <Button type="button" variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" form="add-employee-form">
+            Add Employee
+          </Button>
+        </div>
       </DialogContent>
     </Dialog>
   )

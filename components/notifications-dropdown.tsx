@@ -33,7 +33,9 @@ export function NotificationsDropdown() {
     const loadNotifications = async () => {
       try {
         setLoading(true)
-        const unreadNotifications = await getUnreadNotifications(user.id)
+        // Use Firestore ID if available, fallback to Firebase Auth UID
+        const userIdForNotifications = user.firestoreId || user.id
+        const unreadNotifications = await getUnreadNotifications(userIdForNotifications)
         
         // Convert AttendanceNotification to Notification format
         const convertedNotifications: Notification[] = unreadNotifications.map(notif => ({
@@ -70,13 +72,15 @@ export function NotificationsDropdown() {
     }
 
     loadNotifications()
-  }, [user?.id])
+  }, [user?.id, user?.firestoreId])
 
   // Set up real-time subscription
   useEffect(() => {
     if (!user?.id) return
 
-    const unsubscribe = subscribeToNotifications(user.id, (newNotification: AttendanceNotification) => {
+    // Use Firestore ID if available, fallback to Firebase Auth UID
+    const userIdForNotifications = user.firestoreId || user.id
+    const unsubscribe = subscribeToNotifications(userIdForNotifications, (newNotification: AttendanceNotification) => {
       // Convert and add new notification
       const convertedNotification: Notification = {
         id: newNotification.id,
@@ -108,7 +112,7 @@ export function NotificationsDropdown() {
     })
 
     return () => unsubscribe()
-  }, [user?.id])
+  }, [user?.id, user?.firestoreId])
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {

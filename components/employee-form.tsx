@@ -373,8 +373,8 @@ export function EmployeeForm({ isOpen, onClose, onSubmit, initialData }: Employe
       <div className="fixed inset-0 bg-black/30" aria-hidden="true" />
       
       <div className="fixed inset-0 flex items-center justify-center p-4">
-        <Dialog.Panel className="mx-auto max-w-2xl w-full bg-white rounded-lg shadow-xl border border-gray-200">
-          <div className="flex items-center justify-between p-6 border-b border-gray-200">
+        <Dialog.Panel className="mx-auto max-w-2xl w-full max-h-[90vh] bg-white rounded-lg shadow-xl border border-gray-200 flex flex-col">
+          <div className="flex items-center justify-between p-6 border-b border-gray-200 flex-shrink-0">
             <Dialog.Title className="text-xl font-semibold text-gray-900">
               {initialData ? 'Edit Employee' : 'Add New Employee'}
             </Dialog.Title>
@@ -386,7 +386,7 @@ export function EmployeeForm({ isOpen, onClose, onSubmit, initialData }: Employe
             </button>
           </div>
 
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-y-auto min-h-0">
             {!initialData && (
               <div className="p-4 bg-blue-50 border-b border-blue-100">
                 <p className="text-sm text-blue-700">

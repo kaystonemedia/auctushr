@@ -19,16 +19,18 @@ export async function exportToExcel(report: AttendanceReport, filename: string) 
     ['Present Days:', report.stats.presentDays],
     ['Absent Days:', report.stats.absentDays],
     ['Late Days:', report.stats.lateDays],
-    ['Early Departures:', report.stats.earlyDepartures],
+    ['Early Departures:', report.stats.earlyLeaveDays],
     ['Average Hours:', report.stats.averageHours.toFixed(2)],
     [''],
     ['Breakdown by Day'],
     ...report.records.map(record => [
       record.date.toLocaleDateString(),
       record.status,
-      record.checkIn ? new Date(record.checkIn).toLocaleTimeString() : 'N/A',
-      record.checkOut ? new Date(record.checkOut).toLocaleTimeString() : 'N/A',
-      record.hoursWorked?.toFixed(2) || 'N/A',
+      record.checkIn ? record.checkIn.time.toLocaleTimeString() : 'N/A',
+      record.checkOut ? record.checkOut.time.toLocaleTimeString() : 'N/A',
+      (record.checkIn && record.checkOut) 
+        ? ((record.checkOut.time.getTime() - record.checkIn.time.getTime()) / (1000 * 60 * 60)).toFixed(2)
+        : 'N/A',
       record.notes || ''
     ])
   ]
@@ -40,12 +42,14 @@ export async function exportToExcel(report: AttendanceReport, filename: string) 
   const detailedData = report.records.map(record => ({
     Date: record.date.toLocaleDateString(),
     Status: record.status,
-    'Check In': record.checkIn ? new Date(record.checkIn).toLocaleTimeString() : 'N/A',
-    'Check Out': record.checkOut ? new Date(record.checkOut).toLocaleTimeString() : 'N/A',
-    'Hours Worked': record.hoursWorked?.toFixed(2) || 'N/A',
-    'Break Duration': record.breakDuration?.toFixed(2) || 'N/A',
-    'Idle Time': record.idleTime?.toFixed(2) || 'N/A',
-    Location: record.location || 'N/A',
+    'Check In': record.checkIn ? record.checkIn.time.toLocaleTimeString() : 'N/A',
+    'Check Out': record.checkOut ? record.checkOut.time.toLocaleTimeString() : 'N/A',
+    'Hours Worked': (record.checkIn && record.checkOut) 
+      ? ((record.checkOut.time.getTime() - record.checkIn.time.getTime()) / (1000 * 60 * 60)).toFixed(2)
+      : 'N/A',
+    'Break Duration': record.breaks?.reduce((total, breakTime) => total + (breakTime.duration || 0), 0)?.toFixed(2) || 'N/A',
+    'Idle Time': record.idleTime?.reduce((total, idle) => total + idle.duration, 0)?.toFixed(2) || 'N/A',
+    Location: record.checkIn?.location?.address || 'N/A',
     Notes: record.notes || ''
   }))
 
@@ -80,7 +84,7 @@ export async function exportToPDF(report: AttendanceReport, filename: string) {
     `Present Days: ${report.stats.presentDays}`,
     `Absent Days: ${report.stats.absentDays}`,
     `Late Days: ${report.stats.lateDays}`,
-    `Early Departures: ${report.stats.earlyDepartures}`,
+    `Early Departures: ${report.stats.earlyLeaveDays}`,
     `Average Hours: ${report.stats.averageHours.toFixed(2)}`
   ], 14, 55)
 
@@ -91,9 +95,11 @@ export async function exportToPDF(report: AttendanceReport, filename: string) {
   const tableData = report.records.map(record => [
     record.date.toLocaleDateString(),
     record.status,
-    record.checkIn ? new Date(record.checkIn).toLocaleTimeString() : 'N/A',
-    record.checkOut ? new Date(record.checkOut).toLocaleTimeString() : 'N/A',
-    record.hoursWorked?.toFixed(2) || 'N/A',
+    record.checkIn ? record.checkIn.time.toLocaleTimeString() : 'N/A',
+    record.checkOut ? record.checkOut.time.toLocaleTimeString() : 'N/A',
+    (record.checkIn && record.checkOut) 
+      ? ((record.checkOut.time.getTime() - record.checkIn.time.getTime()) / (1000 * 60 * 60)).toFixed(2)
+      : 'N/A',
     record.notes || ''
   ])
 

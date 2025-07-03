@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useNewAuth } from '@/contexts/new-auth-context'
 import { collection, query, where, getDocs } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem } from '@/components/ui/command'
+
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Button } from '@/components/ui/button'
 import { Check, ChevronsUpDown, Users } from 'lucide-react'
@@ -66,13 +66,14 @@ export function EmployeeSelect({ value, onChange, disabled, className }: Employe
       const employeesData = snapshot.docs.map(doc => {
         const data = doc.data()
         return {
-          id: doc.id,
+          id: doc.id, // Use Firestore document ID
           name: data.name || `${data.firstName || ''} ${data.lastName || ''}`.trim(),
           email: data.email,
           role: data.role,
           department: data.department
         }
       })
+      
       setEmployees(employeesData)
     } catch (error) {
       console.error('Error fetching employees:', error)
@@ -121,43 +122,45 @@ export function EmployeeSelect({ value, onChange, disabled, className }: Employe
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-full p-0" align="start">
-        <Command>
-          <CommandInput 
-            placeholder="Search employees..." 
-            value={searchQuery}
-            onValueChange={setSearchQuery}
-          />
-          <CommandEmpty>No employees found.</CommandEmpty>
-          <CommandGroup className="max-h-[300px] overflow-y-auto">
-            {filteredEmployees.map((employee) => (
-              <CommandItem
-                key={employee.id}
-                onSelect={(currentValue) => {
-                  const selected = employees.find(emp => emp.id === currentValue)
-                  if (selected) {
-                    setSelectedEmployee(selected)
-                    onChange(selected.id, selected.name)
+        <div className="flex flex-col">
+          <div className="flex items-center border-b px-3">
+            <Users className="mr-2 h-4 w-4 shrink-0 opacity-50" />
+            <input
+              className="flex h-11 w-full rounded-md bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
+              placeholder="Search employees..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
+          <div className="max-h-[300px] overflow-y-auto p-1">
+            {filteredEmployees.length === 0 ? (
+              <div className="py-6 text-center text-sm">No employees found.</div>
+            ) : (
+              filteredEmployees.map((employee) => (
+                <div
+                  key={employee.id}
+                  className="relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground"
+                  onClick={() => {
+                    setSelectedEmployee(employee)
+                    onChange(employee.id, employee.name)
                     setOpen(false)
-                  }
-                }}
-                value={employee.id}
-                className="cursor-pointer"
-                disabled={false}
-              >
-                <Check
-                  className={cn(
-                    "mr-2 h-4 w-4",
-                    selectedEmployee?.id === employee.id ? "opacity-100" : "opacity-0"
-                  )}
-                />
-                <div className="flex flex-col">
-                  <span className="font-medium">{employee.name}</span>
-                  <span className="text-sm text-muted-foreground">{employee.email}</span>
+                  }}
+                >
+                  <Check
+                    className={cn(
+                      "mr-2 h-4 w-4",
+                      selectedEmployee?.id === employee.id ? "opacity-100" : "opacity-0"
+                    )}
+                  />
+                  <div className="flex flex-col">
+                    <span className="font-medium">{employee.name}</span>
+                    <span className="text-sm text-muted-foreground">{employee.email}</span>
+                  </div>
                 </div>
-              </CommandItem>
-            ))}
-          </CommandGroup>
-        </Command>
+              ))
+            )}
+          </div>
+        </div>
       </PopoverContent>
     </Popover>
   )

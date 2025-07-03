@@ -42,7 +42,8 @@ export async function createSessionCookie(idToken: string, expiresIn: number) {
 // Helper function to revoke session cookie
 export async function revokeSessionCookie(sessionCookie: string) {
   try {
-    await adminAuth.revokeRefreshTokens(await adminAuth.verifySessionCookie(sessionCookie))
+    const decodedToken = await adminAuth.verifySessionCookie(sessionCookie)
+    await adminAuth.revokeRefreshTokens(decodedToken.uid)
   } catch (error) {
     console.error('Error revoking session cookie:', error)
     throw error

@@ -58,16 +58,17 @@ export function validatePassword(password: string): string | null {
   if (password.length < PASSWORD_REQUIREMENTS.minLength) {
     return "Password must be at least 8 characters long"
   }
-  if (!PASSWORD_REQUIREMENTS.hasUpperCase.test(password)) {
+  if (PASSWORD_REQUIREMENTS.requireUppercase && !/[A-Z]/.test(password)) {
     return "Password must contain at least one uppercase letter"
   }
-  if (!PASSWORD_REQUIREMENTS.hasLowerCase.test(password)) {
+  if (PASSWORD_REQUIREMENTS.requireLowercase && !/[a-z]/.test(password)) {
     return "Password must contain at least one lowercase letter"
   }
-  if (!PASSWORD_REQUIREMENTS.hasNumber.test(password)) {
+  if (PASSWORD_REQUIREMENTS.requireNumber && !/\d/.test(password)) {
     return "Password must contain at least one number"
   }
-  if (!PASSWORD_REQUIREMENTS.hasSpecialChar.test(password)) {
+  if (PASSWORD_REQUIREMENTS.requireSpecial && 
+      !new RegExp(`[${PASSWORD_REQUIREMENTS.specialChars}]`).test(password)) {
     return "Password must contain at least one special character (!@#$%^&*)"
   }
   return null
@@ -76,10 +77,10 @@ export function validatePassword(password: string): string | null {
 export function checkPasswordStrength(password: string): PasswordStrength {
   const requirements = {
     minLength: password.length >= PASSWORD_REQUIREMENTS.minLength,
-    hasUpperCase: PASSWORD_REQUIREMENTS.hasUpperCase.test(password),
-    hasLowerCase: PASSWORD_REQUIREMENTS.hasLowerCase.test(password),
-    hasNumber: PASSWORD_REQUIREMENTS.hasNumber.test(password),
-    hasSpecialChar: PASSWORD_REQUIREMENTS.hasSpecialChar.test(password)
+    hasUpperCase: /[A-Z]/.test(password),
+    hasLowerCase: /[a-z]/.test(password),
+    hasNumber: /\d/.test(password),
+    hasSpecialChar: new RegExp(`[${PASSWORD_REQUIREMENTS.specialChars}]`).test(password)
   }
 
   const score = Object.values(requirements).filter(Boolean).length

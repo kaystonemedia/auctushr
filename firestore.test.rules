@@ -2,9 +2,51 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Allow all read and write operations for testing
-    match /{document=**} {
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // TEMPORARY TEST RULES - Very permissive for first-time login testing
+    
+    // Users collection - allow all operations for testing
+    match /users/{userId} {
       allow read, write: if true;
+    }
+    
+    // Employees collection - allow all operations for testing
+    match /employees/{employeeId} {
+      allow read, write: if true;
+    }
+    
+    // Managers collection - allow all operations for testing
+    match /managers/{managerId} {
+      allow read, write: if true;
+    }
+
+    // Attendance collection - authenticated users only
+    match /attendance/{recordId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Tasks collection - authenticated users only
+    match /tasks/{taskId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Notifications collection - authenticated users only
+    match /notifications/{notificationId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Settings collection - authenticated users only
+    match /settings/{settingId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Default rule for other collections - allow authenticated users
+    match /{document=**} {
+      allow read, write: if isAuthenticated();
     }
   }
 } 

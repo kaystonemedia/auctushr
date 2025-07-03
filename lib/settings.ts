@@ -1,6 +1,6 @@
 import { db } from './firebase'
 import { doc, getDoc, setDoc, updateDoc, collection, getDocs } from 'firebase/firestore'
-import { Settings, PayrollSettings, BonusTier } from '@/types/settings'
+import { Settings, PayrollSettings, BonusTier, ProductivityBonusTier, AttendanceBonusTier } from '@/types/settings'
 
 export class SettingsService {
   private static instance: SettingsService
@@ -258,7 +258,12 @@ export class SettingsService {
    */
   async getProductivityBonusTiers(): Promise<BonusTier[]> {
     const payrollSettings = await this.getPayrollSettings()
-    return payrollSettings.bonusStructure.productivity.tiers
+    return payrollSettings.bonusStructure.productivity.tiers.map(tier => ({
+      minValue: tier.minScore,
+      maxValue: tier.maxScore,
+      bonusPercentage: tier.bonusPercentage,
+      description: tier.description
+    }))
   }
 
   /**
@@ -266,7 +271,12 @@ export class SettingsService {
    */
   async getAttendanceBonusTiers(): Promise<BonusTier[]> {
     const payrollSettings = await this.getPayrollSettings()
-    return payrollSettings.bonusStructure.attendance.tiers
+    return payrollSettings.bonusStructure.attendance.tiers.map(tier => ({
+      minValue: tier.minRate,
+      maxValue: tier.maxRate,
+      bonusPercentage: tier.bonusPercentage,
+      description: tier.description
+    }))
   }
 
   /**
@@ -287,7 +297,20 @@ export class SettingsService {
 
       const tiers = bonusConfig.tiers
       for (const tier of tiers) {
-        if (value >= tier.minValue && value <= tier.maxValue) {
+        let minValue: number
+        let maxValue: number
+        
+        if (type === 'productivity') {
+          const productivityTier = tier as ProductivityBonusTier
+          minValue = productivityTier.minScore
+          maxValue = productivityTier.maxScore
+        } else {
+          const attendanceTier = tier as AttendanceBonusTier
+          minValue = attendanceTier.minRate
+          maxValue = attendanceTier.maxRate
+        }
+        
+        if (value >= minValue && value <= maxValue) {
           return (baseSalary * tier.bonusPercentage) / 100
         }
       }

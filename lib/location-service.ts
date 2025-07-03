@@ -1,7 +1,7 @@
 import { db } from '@/lib/firebase'
 import { collection, doc, updateDoc, arrayUnion, Timestamp, getDocs, addDoc, query, where } from 'firebase/firestore'
-import { AttendanceRecord, AttendanceSettings, OfficeLocation } from '@/types/attendance'
-import { LocationSettings } from '@/types/settings'
+import { AttendanceRecord, AttendanceSettings } from '@/types/attendance'
+import { LocationSettings, OfficeLocation } from '@/types/settings'
 import { countries } from './countries'
 
 interface LocationData {
@@ -101,8 +101,8 @@ export class LocationService {
       const distance = this.calculateDistance(
         latitude,
         longitude,
-        location.coordinates.lat,
-        location.coordinates.lng
+        location.latitude,
+        location.longitude
       )
 
       if (distance < minDistance) {
@@ -230,8 +230,16 @@ export class LocationService {
       await this.handleLocationMismatch(validation.distance || 0, validation.location || { 
         id: '', 
         name: '', 
-        coordinates: { lat: 0, lng: 0 }, 
-        radius: 0 
+        address: '',
+        city: '',
+        country: '',
+        latitude: 0, 
+        longitude: 0, 
+        radius: 0,
+        workingHours: { start: '09:00', end: '17:00' },
+        isActive: true,
+        createdAt: new Date(),
+        updatedAt: new Date()
       })
     }
 

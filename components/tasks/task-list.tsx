@@ -7,7 +7,7 @@ import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { format } from 'date-fns'
-import { Calendar, Clock, AlertCircle, CheckCircle, MoreVertical, Pencil, Trash } from 'lucide-react'
+import { Calendar, Clock, AlertCircle, CheckCircle, MoreVertical, Pencil, Trash, Play, Pause, ThumbsUp } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -18,6 +18,8 @@ import { toast } from 'react-hot-toast'
 import { doc, updateDoc, deleteDoc } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { EditTaskModal } from './edit-task-modal'
+import { useNewAuth } from '@/contexts/new-auth-context'
+import { sendTaskCompletionNotification, sendCustomNotification } from '@/lib/notifications'
 
 interface TaskListProps {
   tasks: Task[]
@@ -35,22 +37,56 @@ const PRIORITY_COLORS = {
 
 const STATUS_COLORS = {
   pending: 'bg-gray-100 text-gray-800',
+  accepted: 'bg-purple-100 text-purple-800',
   in_progress: 'bg-blue-100 text-blue-800',
   completed: 'bg-green-100 text-green-800',
   cancelled: 'bg-red-100 text-red-800'
 }
 
 export function TaskList({ tasks, loading, onTaskUpdate, onTaskDelete }: TaskListProps) {
+  const { user } = useNewAuth()
   const [editingTask, setEditingTask] = useState<Task | null>(null)
+
+  // Helper function to check if task is assigned to current user (smart matching)
+  const isTaskAssignedToUser = (task: Task): boolean => {
+    if (!user) return false
+    
+    // Direct assignment check (Firebase Auth UID)
+    if ((task as any).assignedTo === user.id) {
+      return true
+    }
+    
+    // Smart matching: Check if assignedTo matches user's Firestore document ID
+    if (user.firestoreId && (task as any).assignedTo === user.firestoreId) {
+      return true
+    }
+    
+    return false
+  }
 
   const handleStatusChange = async (task: Task, newStatus: TaskStatus) => {
     try {
       const taskRef = doc(db, 'tasks', task.id)
-      const updates = {
+      
+      // Build updates object with only defined values
+      const updates: any = {
         status: newStatus,
-        updatedAt: new Date(),
-        completedAt: newStatus === 'completed' ? new Date() : undefined
+        updatedAt: new Date()
       }
+
+      // Only set timestamp fields when transitioning to those states
+      if (newStatus === 'completed') {
+        updates.completedAt = new Date()
+      }
+      
+      if (newStatus === 'accepted' && !((task as any).acceptedAt)) {
+        updates.acceptedAt = new Date()
+      }
+      
+      if (newStatus === 'in_progress' && !((task as any).startedAt)) {
+        updates.startedAt = new Date()
+      }
+
       await updateDoc(taskRef, updates)
       
       onTaskUpdate({
@@ -59,7 +95,40 @@ export function TaskList({ tasks, loading, onTaskUpdate, onTaskDelete }: TaskLis
         completedAt: updates.completedAt
       })
       
-      toast.success('Task status updated')
+      // Send appropriate notifications
+      const statusMessages = {
+        accepted: 'Task accepted successfully',
+        in_progress: 'Task started successfully', 
+        completed: 'Task completed successfully',
+        cancelled: 'Task cancelled',
+        pending: 'Task marked as pending'
+      }
+      
+      toast.success(statusMessages[newStatus] || 'Task status updated')
+      
+      // Send notifications to task assigner when status changes
+      if ((task as any).assignerId && (task as any).assignerId !== user?.id) {
+        try {
+          if (newStatus === 'completed') {
+            await sendTaskCompletionNotification((task as any).assignerId, {
+              title: task.title,
+              completedAt: new Date(),
+              priority: task.priority
+            })
+          } else {
+            await sendCustomNotification(
+              (task as any).assignerId,
+              'Task Status Update',
+              `${user?.name || 'Someone'} has ${statusMessages[newStatus]?.toLowerCase()}: "${task.title}"`,
+              'info'
+            )
+          }
+        } catch (notificationError) {
+          console.error('Failed to send notification:', notificationError)
+          // Don't fail the status update if notification fails
+        }
+      }
+      
     } catch (error) {
       console.error('Error updating task status:', error)
       toast.error('Failed to update task status')
@@ -77,6 +146,52 @@ export function TaskList({ tasks, loading, onTaskUpdate, onTaskDelete }: TaskLis
       console.error('Error deleting task:', error)
       toast.error('Failed to delete task')
     }
+  }
+
+  // Get available status transitions based on current status and user role
+  const getAvailableStatusTransitions = (task: Task) => {
+    const transitions = []
+    
+    // Check if this task is assigned to current user
+    const isAssignedToUser = isTaskAssignedToUser(task)
+    const isAdminOrManager = user?.role === 'admin' || user?.role === 'manager'
+    
+    if (task.status === 'pending') {
+      if (isAssignedToUser) {
+        transitions.push({ status: 'accepted', label: 'Accept Task', icon: ThumbsUp, color: 'text-purple-600' })
+      }
+    }
+    
+    if (task.status === 'accepted') {
+      if (isAssignedToUser) {
+        transitions.push({ status: 'in_progress', label: 'Start Task', icon: Play, color: 'text-blue-600' })
+      }
+    }
+    
+    if (task.status === 'in_progress') {
+      if (isAssignedToUser) {
+        transitions.push({ status: 'completed', label: 'Complete Task', icon: CheckCircle, color: 'text-green-600' })
+      }
+    }
+    
+    // Admins and managers can change any status
+    if (isAdminOrManager) {
+      const allStatuses = [
+        { status: 'pending', label: 'Mark Pending', icon: Clock, color: 'text-gray-600' },
+        { status: 'accepted', label: 'Mark Accepted', icon: ThumbsUp, color: 'text-purple-600' },
+        { status: 'in_progress', label: 'Mark In Progress', icon: Play, color: 'text-blue-600' },
+        { status: 'completed', label: 'Mark Completed', icon: CheckCircle, color: 'text-green-600' },
+        { status: 'cancelled', label: 'Cancel Task', icon: Pause, color: 'text-red-600' }
+      ]
+      return allStatuses.filter(s => s.status !== task.status)
+    }
+    
+    return transitions
+  }
+
+  // Format status for display
+  const formatStatus = (status: TaskStatus) => {
+    return status.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())
   }
 
   if (loading) {
@@ -101,13 +216,6 @@ export function TaskList({ tasks, loading, onTaskUpdate, onTaskDelete }: TaskLis
         <Card key={task.id} className="p-4">
           <div className="flex items-start justify-between">
             <div className="flex items-start space-x-4">
-              <Checkbox
-                checked={task.status === 'completed'}
-                onCheckedChange={(checked) => {
-                  handleStatusChange(task, checked ? 'completed' : 'pending')
-                }}
-                className="mt-1"
-              />
               <div className="space-y-1">
                 <div className="flex items-center space-x-2">
                   <h3 className="font-medium">{task.title}</h3>
@@ -115,7 +223,7 @@ export function TaskList({ tasks, loading, onTaskUpdate, onTaskDelete }: TaskLis
                     {task.priority}
                   </Badge>
                   <Badge className={STATUS_COLORS[task.status]}>
-                    {task.status.replace('_', ' ')}
+                    {formatStatus(task.status)}
                   </Badge>
                 </div>
                 {task.description && (
@@ -133,6 +241,35 @@ export function TaskList({ tasks, loading, onTaskUpdate, onTaskDelete }: TaskLis
                     </div>
                   )}
                 </div>
+                
+                {/* Status Transition Buttons */}
+                <div className="flex items-center space-x-2 mt-2">
+                  {getAvailableStatusTransitions(task).map((transition) => {
+                    const IconComponent = transition.icon
+                    return (
+                      <Button
+                        key={transition.status}
+                        variant="outline"
+                        size="sm"
+                        className={`${transition.color} border-current hover:bg-current hover:bg-opacity-10`}
+                        onClick={() => handleStatusChange(task, transition.status as TaskStatus)}
+                      >
+                        <IconComponent className="h-4 w-4 mr-1" />
+                        {transition.label}
+                      </Button>
+                    )
+                  })}
+                  
+                  {/* Show workflow hint for employees */}
+                  {(isTaskAssignedToUser(task) && user?.role === 'employee') && (
+                    <div className="text-xs text-gray-500 ml-4">
+                      {task.status === 'pending' && 'Accept this task to start working on it'}
+                      {task.status === 'accepted' && 'Start working when you\'re ready'}
+                      {task.status === 'in_progress' && 'Mark as complete when finished'}
+                      {task.status === 'completed' && '✓ Task completed'}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
             <DropdownMenu>
@@ -142,17 +279,23 @@ export function TaskList({ tasks, loading, onTaskUpdate, onTaskDelete }: TaskLis
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => setEditingTask(task)}>
-                  <Pencil className="h-4 w-4 mr-2" />
-                  Edit
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => handleDelete(task.id)}
-                  className="text-red-600"
-                >
-                  <Trash className="h-4 w-4 mr-2" />
-                  Delete
-                </DropdownMenuItem>
+                {/* Edit is allowed for assigned users or admins/managers */}
+                {(isTaskAssignedToUser(task) || user?.role === 'admin' || user?.role === 'manager') && (
+                  <DropdownMenuItem onClick={() => setEditingTask(task)}>
+                    <Pencil className="h-4 w-4 mr-2" />
+                    Edit
+                  </DropdownMenuItem>
+                )}
+                {/* Delete is only allowed for admins/managers */}
+                {(user?.role === 'admin' || user?.role === 'manager') && (
+                  <DropdownMenuItem
+                    onClick={() => handleDelete(task.id)}
+                    className="text-red-600"
+                  >
+                    <Trash className="h-4 w-4 mr-2" />
+                    Delete
+                  </DropdownMenuItem>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
           </div>

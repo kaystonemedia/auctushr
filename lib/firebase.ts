@@ -17,6 +17,7 @@ import {
   doc, 
   setDoc, 
   getDoc, 
+  addDoc,
   Timestamp, 
   collection, 
   query, 
@@ -70,7 +71,7 @@ export const auth = getAuth(app)
 // Initialize Firestore with persistent cache
 export const db = initializeFirestore(app, {
   localCache: persistentLocalCache(
-    /*settings=*/{ tabManager: persistentSingleTabManager() }
+    /*settings=*/{ tabManager: persistentSingleTabManager({}) }
   )
 })
 
@@ -307,10 +308,11 @@ export async function checkUserExists(emailOrUid: string) {
         console.log(`Attempting to query ${collectionName} collection...`);
         const collectionRef = collection(db, collectionName);
         
-        // Directly try the email query
+        // Directly try the email query with limit (required by Firebase rules)
         const emailQuery = query(
           collectionRef,
-          where('email', '==', emailOrUid)
+          where('email', '==', emailOrUid),
+          limit(1)
         );
         
         console.log(`Executing ${collectionName} query...`);
@@ -568,13 +570,21 @@ export async function createRequiredIndexes() {
 // Create employee function updated for delayed auth
 export async function createEmployee(data: EmployeeFormData) {
   try {
-    // Create a new document reference with auto-generated ID
-    const employeeRef = doc(collection(db, 'employees'))
-    const employeeId = employeeRef.id
+    console.log('Creating employee document for email:', data.email);
+    
+    // Check if email already exists in employees collection
+    const existingQuery = query(
+      collection(db, 'employees'),
+      where('email', '==', data.email),
+      limit(1)
+    );
+    const existingSnap = await getDocs(existingQuery);
+    if (!existingSnap.empty) {
+      throw new Error('An employee with this email already exists');
+    }
 
     // Create base user data without Firebase Auth user
     const userData = {
-      id: employeeId,
       email: data.email,
       firstName: data.firstName,
       lastName: data.lastName,
@@ -595,12 +605,13 @@ export async function createEmployee(data: EmployeeFormData) {
       documents: data.documents || []
     }
 
-    // Create the employee document
-    await setDoc(employeeRef, userData)
+    // Use addDoc to ensure auto-generated ID
+    const docRef = await addDoc(collection(db, 'employees'), userData);
+    console.log('Employee document created with ID:', docRef.id);
 
     return {
-      id: employeeId,
-      ...userData
+      ...userData,
+      id: docRef.id
     }
   } catch (error) {
     console.error('Error creating employee:', error)
@@ -752,6 +763,71 @@ export async function createManagerAccount(
   }
 }
 
+// Create admin function with delayed auth
+export async function createAdmin(data: {
+  email: string;
+  firstName: string;
+  lastName: string;
+  department: string;
+  position: string;
+  phone?: string;
+  emergencyContact?: {
+    name: string;
+    relationship: string;
+    phone: string;
+  };
+}) {
+  try {
+    console.log('Creating admin document for email:', data.email);
+    
+    // Check if email already exists in users collection
+    const existingQuery = query(
+      collection(db, 'users'),
+      where('email', '==', data.email),
+      limit(1)
+    );
+    const existingSnap = await getDocs(existingQuery);
+    if (!existingSnap.empty) {
+      throw new Error('A user with this email already exists');
+    }
+
+    // Create base admin data without Firebase Auth user
+    const adminData = {
+      email: data.email,
+      firstName: data.firstName,
+      lastName: data.lastName,
+      phone: data.phone || '',
+      department: data.department,
+      position: data.position,
+      role: 'admin',
+      status: 'active',
+      hasPassword: false, // Will be set to true after first login
+      uid: null, // Will be set after first login
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      emergencyContact: data.emergencyContact || null,
+      permissions: ['admin'],
+      settings: {},
+      metadata: {
+        isFirstLogin: true,
+        createdBy: auth.currentUser?.uid
+      }
+    }
+
+    // Use addDoc to ensure auto-generated ID
+    const docRef = await addDoc(collection(db, 'users'), adminData);
+    console.log('Admin document created with ID:', docRef.id);
+
+    return {
+      ...adminData,
+      id: docRef.id
+    }
+  } catch (error) {
+    console.error('Error creating admin:', error)
+    throw error
+  }
+}
+
 // Create manager function with delayed auth
 export async function createManager(data: {
   email: string;
@@ -767,13 +843,21 @@ export async function createManager(data: {
   };
 }) {
   try {
-    // Create a new document reference with auto-generated ID
-    const managerRef = doc(collection(db, 'managers'))
-    const managerId = managerRef.id
+    console.log('Creating manager document for email:', data.email);
+    
+    // Check if email already exists in managers collection
+    const existingQuery = query(
+      collection(db, 'managers'),
+      where('email', '==', data.email),
+      limit(1)
+    );
+    const existingSnap = await getDocs(existingQuery);
+    if (!existingSnap.empty) {
+      throw new Error('A manager with this email already exists');
+    }
 
     // Create base manager data without Firebase Auth user
     const managerData = {
-      id: managerId,
       email: data.email,
       firstName: data.firstName,
       lastName: data.lastName,
@@ -795,12 +879,13 @@ export async function createManager(data: {
       }
     }
 
-    // Create the manager document
-    await setDoc(managerRef, managerData)
+    // Use addDoc to ensure auto-generated ID
+    const docRef = await addDoc(collection(db, 'managers'), managerData);
+    console.log('Manager document created with ID:', docRef.id);
 
     return {
-      id: managerId,
-      ...managerData
+      ...managerData,
+      id: docRef.id
     }
   } catch (error) {
     console.error('Error creating manager:', error)

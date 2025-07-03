@@ -3,16 +3,18 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import { auth, db } from '@/lib/firebase'
 import { onAuthStateChanged, signOut as firebaseSignOut, User as FirebaseUser } from 'firebase/auth'
-import { doc, getDoc, collection, query, where, limit, getDocs } from 'firebase/firestore'
+import { doc, getDoc, collection, query, where, limit, getDocs, updateDoc } from 'firebase/firestore'
 import { toast } from 'react-hot-toast'
 import { useRouter, usePathname } from 'next/navigation'
 import { signIn } from '@/lib/firebase'
+import { UserRole } from '@/types/user'
 
 interface User {
   id: string
+  firestoreId?: string
   email: string
   name: string
-  role: string
+  role: UserRole
   department?: string
   position?: string
   avatar?: string
@@ -99,14 +101,9 @@ const roleBasedRoutes = {
     '/dashboard',
     '/profile',
     '/attendance',
+    '/my-tasks',
     '/leave',
-    '/documents',
-    '/productivity',
-    '/performance',
-    '/settings',
     '/help',
-    '/tasks',
-    '/wellness-check-in',
     '/test-auth'
   ]
 }
@@ -189,10 +186,26 @@ export function NewAuthProvider({ children }: { children: React.ReactNode }) {
 
           console.log('Session cookie created successfully')
 
-          // Get user data from Firestore
+          // Get user data from Firestore by querying uid field
           console.log('Fetching user data for:', firebaseUser.uid)
-          let userDoc = await getDoc(doc(db, 'users', firebaseUser.uid))
-          let userData: Record<string, unknown> | null = userDoc.exists() ? (userDoc.data() as Record<string, unknown>) : null;
+          let userDoc = null;
+          let userData: Record<string, unknown> | null = null;
+
+          // Try users collection by uid
+          const userQuery = query(
+            collection(db, 'users'),
+            where('uid', '==', firebaseUser.uid),
+            limit(1)
+          );
+          const userSnap = await getDocs(userQuery);
+          if (!userSnap.empty) {
+            userDoc = userSnap.docs[0];
+            userData = userDoc.data() as Record<string, unknown>;
+            if (userData) {
+              userData.name = `${userData.firstName || ''} ${userData.lastName || ''}`.trim();
+              userData.role = userData.role || 'admin';
+            }
+          }
 
           if (!userData) {
             // Try managers collection by uid
@@ -231,16 +244,150 @@ export function NewAuthProvider({ children }: { children: React.ReactNode }) {
           }
 
           if (!userData) {
+            // Try employees collection by email (for first-time login)
+            console.log("Checking for employee document by email for first-time login");
+            const employeeByEmailQuery = query(
+              collection(db, 'employees'),
+              where('email', '==', firebaseUser.email),
+              where('uid', '==', null),
+              where('hasPassword', '==', false),
+              limit(1)
+            );
+            const employeeByEmailSnap = await getDocs(employeeByEmailQuery);
+            if (!employeeByEmailSnap.empty) {
+              console.log("Found employee document for first-time login, updating with UID");
+              userDoc = employeeByEmailSnap.docs[0];
+              userData = userDoc.data() as Record<string, unknown>;
+              
+              // Update the employee document with the Firebase UID
+              await updateDoc(userDoc.ref, {
+                uid: firebaseUser.uid,
+                hasPassword: true,
+                requiresPasswordChange: true,
+                updatedAt: new Date()
+              });
+              
+              if (userData) {
+                userData.name = `${userData.firstName || ''} ${userData.lastName || ''}`.trim();
+                userData.role = 'employee';
+                userData.requiresPasswordChange = true;
+                userData.hasPassword = true;
+                userData.uid = firebaseUser.uid;
+              }
+            }
+          }
+
+          if (!userData) {
+            // Try managers collection by email (for first-time login)
+            console.log("Checking for manager document by email for first-time login");
+            const managerByEmailQuery = query(
+              collection(db, 'managers'),
+              where('email', '==', firebaseUser.email),
+              where('uid', '==', null),
+              where('hasPassword', '==', false),
+              limit(1)
+            );
+            const managerByEmailSnap = await getDocs(managerByEmailQuery);
+            if (!managerByEmailSnap.empty) {
+              console.log("Found manager document for first-time login, updating with UID");
+              userDoc = managerByEmailSnap.docs[0];
+              userData = userDoc.data() as Record<string, unknown>;
+              
+              // Update the manager document with the Firebase UID
+              await updateDoc(userDoc.ref, {
+                uid: firebaseUser.uid,
+                hasPassword: true,
+                requiresPasswordChange: true,
+                updatedAt: new Date()
+              });
+              
+              if (userData) {
+                userData.name = `${userData.firstName || ''} ${userData.lastName || ''}`.trim();
+                userData.role = 'manager';
+                userData.requiresPasswordChange = true;
+                userData.hasPassword = true;
+                userData.uid = firebaseUser.uid;
+              }
+            }
+          }
+
+          if (!userData) {
+            // Try users collection by email (for administrators first-time login)
+            console.log("Checking for user document by email for admin first-time login");
+            console.log("Looking for email:", firebaseUser.email);
+            
+            try {
+              const userByEmailQuery = query(
+                collection(db, 'users'),
+                where('email', '==', firebaseUser.email),
+                where('uid', '==', null),
+                where('hasPassword', '==', false),
+                limit(1)
+              );
+              const userByEmailSnap = await getDocs(userByEmailQuery);
+              console.log("Users collection query results:", userByEmailSnap.docs.length, "documents found");
+              
+              if (!userByEmailSnap.empty) {
+                console.log("Found user document for admin first-time login, updating with UID");
+                userDoc = userByEmailSnap.docs[0];
+                userData = userDoc.data() as Record<string, unknown>;
+                console.log("Admin document data:", userData);
+                
+                // Update the user document with the Firebase UID
+                await updateDoc(userDoc.ref, {
+                  uid: firebaseUser.uid,
+                  hasPassword: true,
+                  requiresPasswordChange: true,
+                  updatedAt: new Date()
+                });
+                
+                if (userData) {
+                  userData.name = `${userData.firstName || ''} ${userData.lastName || ''}`.trim();
+                  userData.role = userData.role || 'admin'; // Use existing role or default to admin
+                  userData.requiresPasswordChange = true;
+                  userData.hasPassword = true;
+                  userData.uid = firebaseUser.uid;
+                }
+              } else {
+                // Let's also try a broader search to see if the document exists at all
+                console.log("No documents found with strict query, trying broader search...");
+                const broadQuery = query(
+                  collection(db, 'users'),
+                  where('email', '==', firebaseUser.email),
+                  limit(1)
+                );
+                const broadSnap = await getDocs(broadQuery);
+                console.log("Broad search results:", broadSnap.docs.length, "documents found");
+                if (!broadSnap.empty) {
+                  const doc = broadSnap.docs[0];
+                  const docData = doc.data();
+                  console.log("Found document with email but different conditions:", {
+                    hasPassword: docData.hasPassword,
+                    uid: docData.uid,
+                    role: docData.role
+                  });
+                }
+              }
+            } catch (queryError) {
+              console.error("Error querying users collection:", queryError);
+            }
+          }
+
+          if (!userData) {
             console.log("No user document (employee, user, or manager) found for:", firebaseUser.uid);
-            setUser({ id: firebaseUser.uid, email: (auth.currentUser?.email || ""), name: "Unknown", role: "unknown", createdAt: new Date(), updatedAt: new Date(), requiresPasswordChange: false });
+            setUser({ id: firebaseUser.uid, email: (auth.currentUser?.email || ""), name: "Unknown", role: "employee", createdAt: new Date(), updatedAt: new Date(), requiresPasswordChange: false });
             console.warn("User authenticated (Firebase Auth) but no Firestore document found. (Access denied or restricted page.)");
             return;
           }
           setUser({
-            id: userDoc.id,
+            id: firebaseUser.uid,
+            firestoreId: userDoc?.id || undefined,
             email: typeof userData.email === 'string' ? userData.email : '',
             name: typeof userData.name === 'string' ? userData.name : '',
-            role: typeof userData.role === 'string' ? userData.role : 'unknown',
+            role: (typeof userData.role === 'string' && ['admin', 'manager', 'employee'].includes(userData.role)) ? userData.role as UserRole : 'employee',
+            department: typeof userData.department === 'string' ? userData.department : undefined,
+            position: typeof userData.position === 'string' ? userData.position : undefined,
+            avatar: typeof userData.avatar === 'string' ? userData.avatar : undefined,
             createdAt: (userData.createdAt && typeof userData.createdAt === 'object' && 'toDate' in userData.createdAt) ? (userData.createdAt as { toDate: () => Date }).toDate() : new Date(),
             updatedAt: (userData.updatedAt && typeof userData.updatedAt === 'object' && 'toDate' in userData.updatedAt) ? (userData.updatedAt as { toDate: () => Date }).toDate() : new Date(),
             requiresPasswordChange: typeof userData.requiresPasswordChange === 'boolean' ? userData.requiresPasswordChange : false
@@ -275,30 +422,55 @@ export function NewAuthProvider({ children }: { children: React.ReactNode }) {
       const user = await signIn(email, password, isPasswordSetup)
       console.log('Firebase sign in successful:', user.uid)
       
-      // Get user data from Firestore - query by email
+      // Get user data from Firestore - query by email across all collections
       console.log('Fetching user data')
-      const employeesRef = collection(db, 'employees')
-      const q = query(
-        employeesRef,
+      let userDoc = null
+      let userData = null
+      
+      // Try users collection first (for administrators)
+      const usersRef = collection(db, 'users')
+      const userQuery = query(
+        usersRef,
         where('email', '==', email),
         limit(1)
       )
-      const querySnapshot = await getDocs(q)
+      const userSnapshot = await getDocs(userQuery)
       
-      let userDoc = querySnapshot.docs[0]
-      let userData = userDoc?.exists() ? userDoc.data() : null
+      if (userSnapshot.docs.length > 0) {
+        userDoc = userSnapshot.docs[0]
+        userData = userDoc.data()
+      }
       
+      // Try managers collection if not found in users
       if (!userDoc?.exists() || !userData) {
-        // Try users collection as fallback
-        const usersRef = collection(db, 'users')
-        const userQuery = query(
-          usersRef,
+        const managersRef = collection(db, 'managers')
+        const managerQuery = query(
+          managersRef,
           where('email', '==', email),
           limit(1)
         )
-        const userSnapshot = await getDocs(userQuery)
-        userDoc = userSnapshot.docs[0]
-        userData = userDoc?.exists() ? userDoc.data() : null
+        const managerSnapshot = await getDocs(managerQuery)
+        
+        if (managerSnapshot.docs.length > 0) {
+          userDoc = managerSnapshot.docs[0]
+          userData = userDoc.data()
+        }
+      }
+      
+      // Try employees collection as final fallback
+      if (!userDoc?.exists() || !userData) {
+        const employeesRef = collection(db, 'employees')
+        const employeeQuery = query(
+          employeesRef,
+          where('email', '==', email),
+          limit(1)
+        )
+        const employeeSnapshot = await getDocs(employeeQuery)
+        
+        if (employeeSnapshot.docs.length > 0) {
+          userDoc = employeeSnapshot.docs[0]
+          userData = userDoc.data()
+        }
       }
       
       if (!userDoc?.exists() || !userData) {
@@ -310,8 +482,24 @@ export function NewAuthProvider({ children }: { children: React.ReactNode }) {
         id: userDoc.id,
         role: userData.role,
         email: userData.email,
-        requiresPasswordChange: userData.requiresPasswordChange
+        requiresPasswordChange: userData.requiresPasswordChange,
+        hasPassword: userData.hasPassword,
+        uid: userData.uid
       })
+
+      // Handle first-time login - update the employee document with Firebase UID
+      if (!userData.hasPassword && !userData.uid) {
+        console.log('First-time login detected, updating employee document with UID')
+        await updateDoc(userDoc.ref, {
+          uid: user.uid,
+          hasPassword: true,
+          requiresPasswordChange: true,
+          updatedAt: new Date()
+        })
+        userData.uid = user.uid
+        userData.hasPassword = true
+        userData.requiresPasswordChange = true
+      }
 
       if (!userData.role) {
         console.log('No role found for user')
@@ -320,7 +508,8 @@ export function NewAuthProvider({ children }: { children: React.ReactNode }) {
 
       // Set user state
       const newUser = {
-        id: userDoc.id,
+        id: user.uid,
+        firestoreId: userDoc.id,
         email: userData.email,
         name: `${userData.firstName} ${userData.lastName}`.trim(),
         role: userData.role,

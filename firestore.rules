@@ -7,11 +7,6 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function isFirstUser() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' &&
-             getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
-    }
-
     function getUserRole() {
       let userDoc = get(/databases/$(database)/documents/users/$(request.auth.uid));
       let employeeDoc = get(/databases/$(database)/documents/employees/$(request.auth.uid));
@@ -34,159 +29,47 @@ service cloud.firestore {
       return isAuthenticated() && getUserRole() == 'employee';
     }
 
-    function isOwner(userId) {
-      return isAuthenticated() && (
-        request.auth.uid == userId || 
-        resource.data.uid == request.auth.uid
-      );
-    }
-
     function isManagerOf(employeeId) {
       return isAuthenticated() && 
         (get(/databases/$(database)/documents/employees/$(employeeId)).data.managerId == request.auth.uid);
     }
 
-    // Helper for first-time login checks
-    function isFirstTimeLogin(email) {
-      return !isAuthenticated() && 
-             request.resource.data.email == email &&
-             request.resource.data.hasPassword == false;
+    function isOwnerOfEmployeeRecord(employeeId) {
+      return isAuthenticated() && 
+        exists(/databases/$(database)/documents/employees/$(employeeId)) &&
+        get(/databases/$(database)/documents/employees/$(employeeId)).data.uid == request.auth.uid;
     }
 
-    // Helper for role-based access during first-time login
-    function hasRoleAccess(role) {
-      return role == 'employee' || role == 'manager' || role == 'admin';
-    }
-
-    // Updated helper for first-time login checks
-    function isFirstTimeLoginDoc() {
-      return resource.data.hasPassword == false && 
-             resource.data.uid == null;
-    }
-
-    // Updated helper for first-time login update
-    function isValidFirstTimeLoginUpdate() {
-      return !isAuthenticated() && 
+    // Helper for first-time login updates
+    function isFirstTimeLoginUpdate() {
+      return isAuthenticated() &&
              resource.data.hasPassword == false &&
              resource.data.uid == null &&
-             request.resource.data.hasPassword == true &&
-             request.resource.data.uid != null &&
              request.resource.data.email == resource.data.email &&
              request.resource.data.diff(resource.data).affectedKeys()
-               .hasOnly(['hasPassword', 'uid', 'updatedAt']);
-    }
-
-    // Updated helper for email query validation
-    function isValidEmailQuery() {
-      return request.query.filters.size() == 1 &&
-             request.query.filters[0].op == '==' &&
-             request.query.filters[0].field == 'email' &&
-             request.query.filters[0].value is string;
-    }
-
-    // Updated helper for email lookup
-    function isValidEmailLookup() {
-      return resource.data.email is string &&
-             resource.data.email.matches('^[^@]+@[^@]+\\.[^@]+$');
-    }
-
-    // Helper for checking if request is for new user sign-up
-    function isNewUserSignUp() {
-      return request.auth != null && 
-             request.auth.uid == request.resource.id &&
+               .hasOnly(['hasPassword', 'uid', 'updatedAt']) &&
+             request.resource.data.hasPassword == true &&
              request.resource.data.uid == request.auth.uid &&
-             request.resource.data.email == request.auth.token.email;
-    }
-
-    // Employee management validation functions
-    function isValidEmployeeData() {
-      let data = request.resource.data;
-      return data is map &&
-             data.firstName is string && data.firstName.size() > 0 &&
-             data.lastName is string && data.lastName.size() > 0 &&
-             data.email is string && data.email.matches('^[^@]+@[^@]+\\.[^@]+$') &&
-             data.phone is string && data.phone.size() >= 10 &&
-             data.department is string && data.department.size() > 0 &&
-             data.position is string && data.position.size() > 0 &&
-             data.role in ['admin', 'manager', 'employee'] &&
-             data.hireDate is timestamp &&
-             data.salary is number && data.salary >= 30000 &&
-             data.status in ['active', 'inactive', 'on_leave'] &&
-             data.hasPassword is bool &&
-             (data.uid == null || data.uid is string) &&
-             (data.managerId == null || data.managerId is string) &&
-             (data.address == null || (
-               data.address is map &&
-               data.address.street is string &&
-               data.address.city is string &&
-               data.address.state is string &&
-               data.address.country is string &&
-               data.address.postalCode is string
-             )) &&
-             (data.emergencyContact == null || (
-               data.emergencyContact is map &&
-               data.emergencyContact.name is string &&
-               data.emergencyContact.relationship is string &&
-               data.emergencyContact.phone is string
-             )) &&
-             (data.documents == null || (
-               data.documents is list &&
-               data.documents.size() <= 50
-             ));
-    }
-
-    function isValidWorkHistory() {
-      let history = request.resource.data.workHistory;
-      return history == null || (
-        history is list &&
-        history.size() <= 100
-      );
-    }
-
-    function isValidDisciplinaryRecord() {
-      let records = request.resource.data.disciplinaryRecords;
-      return records == null || (
-        records is list &&
-        records.size() <= 50
-      );
-    }
-
-    function canAccessSensitiveData() {
-      return isAdmin() || 
-             (isManager() && isManagerOf(resource.id)) ||
-             (isEmployee() && resource.data.uid == request.auth.uid);
+             request.resource.data.uid.size() > 0;
     }
 
     // Users collection rules
     match /users/{userId} {
-      // Allow unauthenticated users to query by email for login
-      allow list: if !isAuthenticated();
+      // Allow email queries for login (more permissive)
+      allow list: if !isAuthenticated() && request.query.limit <= 1;
       
-      // Allow unauthenticated users to get document for login
+      // Allow document reads for login
       allow get: if !isAuthenticated();
       
-      // Allow unauthenticated users to update during first-time login
-      allow update: if !isAuthenticated() && 
-                   resource.data.hasPassword == false &&
-                   resource.data.uid == null &&
-                   request.resource.data.hasPassword == true &&
-                   request.resource.data.uid != null &&
-                   request.resource.data.email == resource.data.email;
+      // Allow first-time login updates and authenticated updates
+      allow update: if isFirstTimeLoginUpdate() || 
+                   (isAuthenticated() && (isAdmin() || resource.data.uid == request.auth.uid));
       
       // Allow admins to create user documents
-      allow create: if isAuthenticated() && (isAdmin() || isFirstUser());
+      allow create: if isAuthenticated() && isAdmin();
       
       // Allow authenticated users to read based on role
-      allow read: if isAuthenticated() && (
-        isAdmin() || 
-        resource.data.uid == request.auth.uid
-      );
-      
-      // Allow authenticated users to update their own document
-      allow update: if isAuthenticated() && (
-        isAdmin() || 
-        resource.data.uid == request.auth.uid
-      );
+      allow read: if isAuthenticated() && (isAdmin() || resource.data.uid == request.auth.uid);
       
       // Only admins can delete users
       allow delete: if isAuthenticated() && isAdmin();
@@ -194,24 +77,22 @@ service cloud.firestore {
 
     // Employees collection rules
     match /employees/{employeeId} {
-      // Allow unauthenticated users to query by email for login
-      allow list: if !isAuthenticated();
+      // Allow email queries for login (more permissive)
+      allow list: if !isAuthenticated() && request.query.limit <= 1;
       
-      // Allow unauthenticated users to get document for login
+      // Allow document reads for login
       allow get: if !isAuthenticated();
       
-      // Allow unauthenticated users to update during first-time login
-      allow update: if !isAuthenticated() && 
-                   resource.data.hasPassword == false &&
-                   resource.data.uid == null &&
-                   request.resource.data.hasPassword == true &&
-                   request.resource.data.uid != null &&
-                   request.resource.data.email == resource.data.email;
+      // Allow first-time login updates and authenticated updates
+      allow update: if isFirstTimeLoginUpdate() || 
+                   (isAuthenticated() && (
+                     isAdmin() ||
+                     (isManagerOf(employeeId)) ||
+                     (resource.data.uid == request.auth.uid)
+                   ));
       
       // Allow admins to create employee documents
-      allow create: if isAuthenticated() && 
-                   isAdmin() && 
-                   isValidEmployeeData();
+      allow create: if isAuthenticated() && isAdmin();
       
       // Allow authenticated users to read based on role
       allow read: if isAuthenticated() && (
@@ -221,125 +102,88 @@ service cloud.firestore {
         isManagerOf(employeeId)
       );
       
-      // Allow authenticated users to update based on role
-      allow update: if isAuthenticated() && (
-        (isAdmin() && isValidEmployeeData()) ||
-        (isManagerOf(employeeId) && 
-         request.resource.data.diff(resource.data).affectedKeys()
-           .hasOnly(['workHistory', 'disciplinaryRecords', 'status', 'managerId', 'department', 'position'])) ||
-        (resource.data.uid == request.auth.uid && 
-         request.resource.data.diff(resource.data).affectedKeys()
-           .hasOnly(['address', 'emergencyContact', 'phone', 'documents']))
-      );
-      
       // Only admins can delete employees
       allow delete: if isAuthenticated() && isAdmin();
     }
 
-    // Work history subcollection
-    match /employees/{employeeId}/work_history/{recordId} {
-      allow read: if isAuthenticated() && (
-        isAdmin() || 
-        isManagerOf(employeeId) || 
-        get(/databases/$(database)/documents/employees/$(employeeId)).data.uid == request.auth.uid
-      );
+    // Managers collection rules
+    match /managers/{managerId} {
+      // Allow email queries for login (more permissive)
+      allow list: if !isAuthenticated() && request.query.limit <= 1;
       
-      allow write: if isAuthenticated() && (
-        isAdmin() || 
-        isManagerOf(employeeId)
-      );
-    }
-
-    // Disciplinary records subcollection
-    match /employees/{employeeId}/disciplinary_records/{recordId} {
-      allow read: if isAuthenticated() && (
-        isAdmin() || 
-        isManagerOf(employeeId) || 
-        get(/databases/$(database)/documents/employees/$(employeeId)).data.uid == request.auth.uid
-      );
+      // Allow document reads for login
+      allow get: if !isAuthenticated();
       
-      allow write: if isAuthenticated() && (
-        isAdmin() || 
-        isManagerOf(employeeId)
-      );
+      // Allow first-time login updates and authenticated updates
+      allow update: if isFirstTimeLoginUpdate() || 
+                   (isAuthenticated() && (isAdmin() || resource.data.uid == request.auth.uid));
+      
+      // Allow admins to create manager documents
+      allow create: if isAuthenticated() && isAdmin();
+      
+      // Allow authenticated users to read their own document
+      allow read: if isAuthenticated() && (isAdmin() || resource.data.uid == request.auth.uid);
+      
+      // Only admins can delete managers
+      allow delete: if isAuthenticated() && isAdmin();
     }
 
     // Attendance collection rules
     match /attendance/{recordId} {
-      // Helper function to check if user can access the record
-      function canAccessRecord() {
-        return isAuthenticated() && (
-          isAdmin() || 
-          isManager() || 
-          resource.data.employeeId == request.auth.uid ||
-          (isManager() && resource.data.managerId == request.auth.uid)
-        );
-      }
+      allow read: if isAuthenticated() && (
+        isAdmin() || 
+        isManager() || 
+        resource.data.employeeId == request.auth.uid ||
+        (isManager() && resource.data.managerId == request.auth.uid)
+      );
 
-      // Helper function to check if user can create/update the record
-      function canModifyRecord() {
-        return isAuthenticated() && (
-          isAdmin() || 
-          (isManager() && (
-            request.resource.data.employeeId == resource.data.employeeId ||
-            request.resource.data.managerId == request.auth.uid
-          )) ||
-          (isEmployee() && request.resource.data.employeeId == request.auth.uid)
-        );
-      }
-
-      // Allow read access based on role
-      allow read: if canAccessRecord();
-
-      // Allow create access based on role
       allow create: if isAuthenticated() && (
         isAdmin() || 
         isManager() || 
         (isEmployee() && request.resource.data.employeeId == request.auth.uid)
       );
 
-      // Allow update access based on role
-      allow update: if canModifyRecord();
-
-      // Only admins can delete records
-      allow delete: if isAuthenticated() && isAdmin();
-    }
-
-    // Leave requests collection rules
-    match /leave_requests/{requestId} {
-      allow read: if isAuthenticated() && (
-        isAdmin() || 
-        isManager() || 
-        resource.data.employeeId == request.auth.uid
-      );
-      allow create: if isAuthenticated() && (
-        isAdmin() || 
-        isManager() || 
-        request.resource.data.employeeId == request.auth.uid
-      );
       allow update: if isAuthenticated() && (
         isAdmin() || 
-        isManager() || 
-        resource.data.employeeId == request.auth.uid
+        (isManager() && (
+          request.resource.data.employeeId == resource.data.employeeId ||
+          request.resource.data.managerId == request.auth.uid
+        )) ||
+        (isEmployee() && request.resource.data.employeeId == request.auth.uid)
       );
+
       allow delete: if isAuthenticated() && isAdmin();
     }
 
-    // Activity logs collection
-    match /activity_logs/{logId} {
-      allow read: if isAuthenticated() && (
-        isAdmin() || 
-        isOwner(resource.data.userId) || 
-        isManagerOf(resource.data.userId)
-      );
-      allow create: if isAuthenticated();
-      allow update, delete: if isAdmin();
+    // Tasks collection rules - Simplified for internal HR system
+    match /tasks/{taskId} {
+      // All authenticated users can read tasks
+      allow read: if isAuthenticated();
+
+      // Admins and managers can create tasks
+      allow create: if isAuthenticated() && (isAdmin() || isManager());
+
+      // All authenticated users can update tasks (employees can update their assigned tasks)
+      allow update: if isAuthenticated();
+
+      // Admins and managers can delete tasks
+      allow delete: if isAuthenticated() && (isAdmin() || isManager());
     }
 
-    // Office locations collection rules
-    match /office_locations/{locationId} {
-      allow read: if isAuthenticated();
-      allow create, update, delete: if isAuthenticated() && isAdmin();
+    // Notifications collection rules
+    match /notifications/{notificationId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() || 
+        resource.data.employeeId == request.auth.uid ||
+        isOwnerOfEmployeeRecord(resource.data.employeeId)
+      );
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && (
+        isAdmin() || 
+        resource.data.employeeId == request.auth.uid ||
+        isOwnerOfEmployeeRecord(resource.data.employeeId)
+      );
+      allow delete: if isAuthenticated() && isAdmin();
     }
 
     // Settings collection rules
@@ -348,225 +192,114 @@ service cloud.firestore {
       allow write: if isAuthenticated() && isAdmin();
     }
 
-    // Managers collection rules
-    match /managers/{managerId} {
-      // Allow unauthenticated users to query by email for login
-      allow list: if !isAuthenticated();
-      
-      // Allow unauthenticated users to get document for login
-      allow get: if !isAuthenticated();
-      
-      // Allow first-time login updates (both before and after auth)
-      allow update: if (
-        // Case 1: Unauthenticated first-time login
-        (!isAuthenticated() && 
-         resource.data.hasPassword == false &&
-         resource.data.uid == null &&
-         request.resource.data.hasPassword == true &&
-         request.resource.data.uid != null &&
-         request.resource.data.email == resource.data.email) ||
-        // Case 2: Authenticated first-time login (after auth)
-        (isAuthenticated() &&
-         resource.data.hasPassword == false &&
-         resource.data.uid == null &&
-         request.resource.data.hasPassword == true &&
-         request.resource.data.uid == request.auth.uid &&
-         request.resource.data.email == resource.data.email &&
-         request.resource.data.diff(resource.data).affectedKeys()
-           .hasOnly(['hasPassword', 'uid', 'updatedAt']))
-      );
-      
-      // Allow admins to create manager documents
-      allow create: if isAuthenticated() && isAdmin();
-      
-      // Allow authenticated users to read their own document
+    // Focus Sessions collection rules (for productivity tracking)
+    match /focusSessions/{sessionId} {
       allow read: if isAuthenticated() && (
         isAdmin() || 
-        resource.data.uid == request.auth.uid
+        isManager() || 
+        resource.data.employeeId == request.auth.uid
       );
-      
-      // Allow authenticated users to update their own document
-      allow update: if isAuthenticated() && (
-        isAdmin() || 
-        resource.data.uid == request.auth.uid
-      );
-      
-      // Only admins can delete managers
-      allow delete: if isAuthenticated() && isAdmin();
-    }
 
-    // Tasks collection rules
-    match /tasks/{taskId} {
-      // Helper function to check if user is in a department
-      function isInDepartment(department) {
-        return isAuthenticated() && 
-          get(/databases/$(database)/documents/employees/$(request.auth.uid)).data.department == department;
-      }
-
-      // Helper function to check if user is assigned to task
-      function isAssignedToTask() {
-        return isAuthenticated() && (
-          resource.data.assignees[request.auth.uid] != null ||
-          (resource.data.department != null && 
-           isInDepartment(resource.data.department))
-        );
-      }
-
-      // Helper function to check if user can access the task
-      function canAccessTask() {
-        return isAuthenticated() && (
-          isAdmin() || 
-          isManager() || 
-          isAssignedToTask() ||
-          resource.data.assignerId == request.auth.uid ||
-          (isManager() && (
-            resource.data.assignees[request.auth.uid] != null ||
-            (resource.data.department != null && 
-             get(/databases/$(database)/documents/employees/$(request.auth.uid)).data.department == resource.data.department)
-          ))
-        );
-      }
-
-      // Helper function to check if user can modify the task
-      function canModifyTask() {
-        return isAuthenticated() && (
-          isAdmin() || 
-          (isManager() && (
-            request.resource.data.assignees[request.auth.uid] != null ||
-            (request.resource.data.department != null && 
-             get(/databases/$(database)/documents/employees/$(request.auth.uid)).data.department == request.resource.data.department)
-          )) ||
-          (isEmployee() && isAssignedToTask()) ||
-          resource.data.assignerId == request.auth.uid
-        );
-      }
-
-      // Helper function to validate task assignment
-      function isValidAssignment() {
-        // Must have at least one assignee or department
-        let hasAssignees = request.resource.data.assignees is map && 
-                          request.resource.data.assignees.size() > 0;
-        let hasDepartment = request.resource.data.department is string && 
-                           request.resource.data.department.size() > 0 &&
-                           exists(/databases/$(database)/documents/settings/departments) &&
-                           get(/databases/$(database)/documents/settings/departments).data.departments[request.resource.data.department] != null;
-
-        // Basic validation of assignees structure
-        let validAssignees = request.resource.data.assignees is map &&
-                           request.resource.data.assignees[request.auth.uid] is map &&
-                           request.resource.data.assignees[request.auth.uid].id is string &&
-                           request.resource.data.assignees[request.auth.uid].name is string &&
-                           request.resource.data.assignees[request.auth.uid].type is string &&
-                           (request.resource.data.assignees[request.auth.uid].type == 'user' || 
-                            request.resource.data.assignees[request.auth.uid].type == 'department') &&
-                           (request.resource.data.assignees[request.auth.uid].type == 'user' ? 
-                            exists(/databases/$(database)/documents/employees/$(request.resource.data.assignees[request.auth.uid].id)) :
-                            request.resource.data.assignees[request.auth.uid].department is string);
-
-        return (hasAssignees || hasDepartment) && validAssignees;
-      }
-
-      // Allow read access based on role and assignment
-      allow read: if canAccessTask();
-
-      // Allow create access based on role and valid assignment
       allow create: if isAuthenticated() && (
         isAdmin() || 
-        (isManager() && isValidAssignment()) ||
-        (isEmployee() && request.resource.data.assignees[request.auth.uid] != null)
+        isManager() || 
+        (isEmployee() && request.resource.data.employeeId == request.auth.uid)
       );
 
-      // Allow update access based on role and assignment
-      allow update: if canModifyTask() && isValidAssignment();
+      allow update: if isAuthenticated() && (
+        isAdmin() || 
+        (isEmployee() && resource.data.employeeId == request.auth.uid)
+      );
 
-      // Allow delete access based on role
       allow delete: if isAuthenticated() && (
         isAdmin() || 
-        (isManager() && (
-          resource.data.assignees[request.auth.uid] != null ||
-          (resource.data.department != null && 
-           get(/databases/$(database)/documents/employees/$(request.auth.uid)).data.department == resource.data.department)
-        )) ||
-        resource.data.assignerId == request.auth.uid
+        resource.data.employeeId == request.auth.uid
       );
     }
 
-    // Notifications collection rules
-    match /notifications/{notificationId} {
+    // Time Tracking collection rules
+    match /timeTracking/{trackingId} {
       allow read: if isAuthenticated() && (
         isAdmin() || 
-        resource.data.userId == request.auth.uid ||
-        (isManager() && resource.data.userId in get(/databases/$(database)/documents/employees/$(request.auth.uid)).data.managedEmployees)
+        isManager() || 
+        resource.data.employeeId == request.auth.uid
       );
-      allow create: if isAuthenticated();
+
+      allow create: if isAuthenticated() && (
+        isAdmin() || 
+        isManager() || 
+        (isEmployee() && request.resource.data.employeeId == request.auth.uid)
+      );
+
       allow update: if isAuthenticated() && (
         isAdmin() || 
-        resource.data.userId == request.auth.uid
+        (isEmployee() && resource.data.employeeId == request.auth.uid)
       );
-      allow delete: if isAuthenticated() && isAdmin();
+
+      allow delete: if isAuthenticated() && (
+        isAdmin() || 
+        resource.data.employeeId == request.auth.uid
+      );
     }
 
-    // Productivity collection rules
-    match /productivity/{recordId} {
+    // Break Sessions collection rules
+    match /breakSessions/{sessionId} {
       allow read: if isAuthenticated() && (
         isAdmin() || 
-        resource.data.userId == request.auth.uid ||
-        (isManager() && resource.data.userId in get(/databases/$(database)/documents/employees/$(request.auth.uid)).data.managedEmployees)
+        isManager() || 
+        resource.data.employeeId == request.auth.uid
       );
-      allow create: if isAuthenticated() && resource.data.userId == request.auth.uid;
+
+      allow create: if isAuthenticated() && (
+        isAdmin() || 
+        isManager() || 
+        (isEmployee() && request.resource.data.employeeId == request.auth.uid)
+      );
+
       allow update: if isAuthenticated() && (
         isAdmin() || 
-        resource.data.userId == request.auth.uid
+        (isEmployee() && resource.data.employeeId == request.auth.uid)
       );
+
+      allow delete: if isAuthenticated() && (
+        isAdmin() || 
+        resource.data.employeeId == request.auth.uid
+      );
+    }
+
+    // Leave Requests collection rules
+    match /leaveRequests/{requestId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() || 
+        isManager() || 
+        resource.data.employeeId == request.auth.uid ||
+        (isManager() && resource.data.managerId == request.auth.uid)
+      );
+
+      allow create: if isAuthenticated() && (
+        isAdmin() || 
+        isManager() || 
+        (isEmployee() && request.resource.data.employeeId == request.auth.uid)
+      );
+
+      allow update: if isAuthenticated() && (
+        isAdmin() || 
+        (isManager() && resource.data.managerId == request.auth.uid) ||
+        (isEmployee() && resource.data.employeeId == request.auth.uid)
+      );
+
       allow delete: if isAuthenticated() && isAdmin();
     }
 
     // Payroll collection rules
-    match /payroll/{recordId} {
+    match /payroll/{payrollId} {
       allow read: if isAuthenticated() && (
         isAdmin() || 
-        resource.data.employeeId == request.auth.uid ||
-        (isManager() && resource.data.employeeId in get(/databases/$(database)/documents/employees/$(request.auth.uid)).data.managedEmployees)
+        resource.data.employeeId == request.auth.uid
       );
-      allow create, update, delete: if isAuthenticated() && isAdmin();
-    }
 
-    // Departments collection rules
-    match /departments/{departmentId} {
-      allow read: if isAuthenticated();
-      allow create, update, delete: if isAuthenticated() && isAdmin();
-    }
-
-    // Documents collection rules
-    match /documents/{documentId} {
-      allow read: if isAuthenticated() && (
-        isAdmin() || 
-        resource.data.ownerId == request.auth.uid ||
-        (isManager() && resource.data.ownerId in get(/databases/$(database)/documents/employees/$(request.auth.uid)).data.managedEmployees) ||
-        (resource.data.sharedWith != null && request.auth.uid in resource.data.sharedWith)
-      );
-      allow create: if isAuthenticated();
-      allow update: if isAuthenticated() && (
-        isAdmin() || 
-        resource.data.ownerId == request.auth.uid
-      );
-      allow delete: if isAuthenticated() && (
-        isAdmin() || 
-        resource.data.ownerId == request.auth.uid
-      );
-    }
-
-    // Performance collection rules
-    match /performance/{recordId} {
-      allow read: if isAuthenticated() && (
-        isAdmin() || 
-        resource.data.employeeId == request.auth.uid ||
-        (isManager() && resource.data.employeeId in get(/databases/$(database)/documents/employees/$(request.auth.uid)).data.managedEmployees)
-      );
-      allow create, update: if isAuthenticated() && (
-        isAdmin() || 
-        (isManager() && resource.data.employeeId in get(/databases/$(database)/documents/employees/$(request.auth.uid)).data.managedEmployees)
-      );
+      allow create: if isAuthenticated() && isAdmin();
+      allow update: if isAuthenticated() && isAdmin();
       allow delete: if isAuthenticated() && isAdmin();
     }
 
@@ -574,23 +307,34 @@ service cloud.firestore {
     match /reports/{reportId} {
       allow read: if isAuthenticated() && (
         isAdmin() || 
-        resource.data.createdBy == request.auth.uid ||
-        (isManager() && resource.data.department == get(/databases/$(database)/documents/employees/$(request.auth.uid)).data.department)
+        isManager()
       );
+
       allow create: if isAuthenticated() && (
         isAdmin() || 
         isManager()
       );
-      allow update, delete: if isAuthenticated() && (
+
+      allow update: if isAuthenticated() && (
         isAdmin() || 
-        resource.data.createdBy == request.auth.uid
+        isManager()
       );
+
+      allow delete: if isAuthenticated() && isAdmin();
     }
 
-    // Default rule for other collections - allow authenticated users to read, but restrict writes
+    // Departments collection rules
+    match /departments/{departmentId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isAdmin();
+      allow update: if isAuthenticated() && isAdmin();
+      allow delete: if isAuthenticated() && isAdmin();
+    }
+
+    // Default rule for other collections (more permissive for authenticated users)
     match /{document=**} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated() && (isAdmin() || isManager());
+      allow write: if isAuthenticated() && isAdmin();
     }
   }
 } 

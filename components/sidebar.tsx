@@ -49,24 +49,26 @@ const sections = [
     ],
   },
   {
-    heading: 'ATTENDANCE & LEAVE',
+    heading: 'ATTENDANCE & TASKS',
     items: [
-      { title: 'Attendance', href: '/attendance', icon: <Calendar className="w-5 h-5" />, roles: ['admin', 'manager'] },
-      { title: 'Leave Management', href: '/leave', icon: <ClipboardList className="w-5 h-5" />, roles: ['admin', 'manager'] },
+      { title: 'Attendance', href: '/attendance', icon: <Calendar className="w-5 h-5" />, roles: ['admin', 'manager', 'employee'] },
+      { title: 'Tasks', href: '/my-tasks', icon: <ClipboardList className="w-5 h-5" />, roles: ['employee'] },
+      { title: 'Leave', href: '/leave', icon: <BookOpen className="w-5 h-5" />, roles: ['employee'] },
+      { title: 'Leave Management', href: '/leave', icon: <BookOpen className="w-5 h-5" />, roles: ['admin', 'manager'] },
       { title: 'Attendance Reports', href: '/attendance/reports', icon: <FileBarChart2 className="w-5 h-5" />, roles: ['admin', 'manager'] },
     ],
   },
   {
     heading: 'PERFORMANCE',
     items: [
-      { title: 'Productivity', href: '/productivity', icon: <Activity className="w-5 h-5" />, roles: ['admin', 'manager', 'employee'] },
-      { title: 'Performance', href: '/performance', icon: <LineChart className="w-5 h-5" />, roles: ['admin', 'manager', 'employee'] },
+      { title: 'Productivity', href: '/productivity', icon: <Activity className="w-5 h-5" />, roles: ['admin', 'manager'] },
+      { title: 'Performance', href: '/performance', icon: <LineChart className="w-5 h-5" />, roles: ['admin', 'manager'] },
     ],
   },
   {
     heading: 'RESOURCES',
     items: [
-      { title: 'Documents', href: '/documents', icon: <FileText className="w-5 h-5" />, roles: ['admin', 'manager', 'employee'] },
+      { title: 'Documents', href: '/documents', icon: <FileText className="w-5 h-5" />, roles: ['admin', 'manager'] },
       { title: 'Payroll', href: '/payroll', icon: <Wallet className="w-5 h-5" />, roles: ['admin', 'manager'] },
     ],
   },

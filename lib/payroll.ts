@@ -1,5 +1,5 @@
 import { db } from './firebase'
-import { collection, doc, addDoc, updateDoc, query, where, getDocs, Timestamp, orderBy } from 'firebase/firestore'
+import { collection, doc, addDoc, updateDoc, query, where, getDocs, getDoc, Timestamp, orderBy } from 'firebase/firestore'
 import { PayrollData, PayrollFormData } from '@/types/payroll'
 import { ProductivityService } from './productivity'
 import { settingsService } from './settings'
@@ -31,7 +31,39 @@ export class PayrollService {
   private productivityService: ProductivityService
 
   constructor() {
-    this.productivityService = new ProductivityService()
+    const defaultSettings = {
+      trackingEnabled: true,
+      idleThreshold: 5,
+      syncInterval: 30,
+      collectUrls: true,
+      collectTitles: true,
+      retentionPeriod: 90,
+      productiveDomains: [],
+      productiveSites: [],
+      unproductiveSites: [],
+      workingHours: {
+        start: '09:00',
+        end: '17:00'
+      },
+      breakDuration: 60,
+      targetProductiveHours: 6,
+      focusSessionDuration: 25,
+      maxFocusSessionsPerDay: 8,
+      minFocusTimePercentage: 60,
+      maxMeetingTimePercentage: 30,
+      productivityThresholds: {
+        low: 50,
+        medium: 75,
+        high: 90
+      },
+      notificationPreferences: {
+        focusReminders: true,
+        breakReminders: true,
+        productivityAlerts: true,
+        meetingReminders: true
+      }
+    }
+    this.productivityService = ProductivityService.getInstance(defaultSettings, defaultSettings)
   }
 
   /**
@@ -135,7 +167,8 @@ export class PayrollService {
       const grossSalary = baseSalary + bonusCalculation.totalBonus
       const deductions = customDeductions || await settingsService.calculateDeductions(baseSalary, grossSalary)
 
-      const netPay = grossSalary - deductions.total
+      const totalDeductions = deductions.tax + deductions.insurance + deductions.other
+      const netPay = grossSalary - totalDeductions
 
       const payrollData: ProductivityBasedPayroll = {
         employeeId,

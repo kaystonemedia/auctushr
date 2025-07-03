@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { LeaveRequest, LeaveStatus } from '@/types/leave'
-import { useAuth } from '@/contexts/auth-context'
+import { useNewAuth } from '@/contexts/new-auth-context'
 import { db } from '@/lib/firebase'
 import { collection, query, where, orderBy, onSnapshot, doc, updateDoc, Timestamp, getDocs, getDoc } from 'firebase/firestore'
 import { toast } from 'react-hot-toast'
@@ -27,7 +27,7 @@ const typeIcons: Record<string, any> = {
 }
 
 export function LeaveRequestsList({ view }: LeaveRequestsListProps) {
-  const { user } = useAuth()
+  const { user } = useNewAuth()
   const [requests, setRequests] = useState<LeaveRequest[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -36,7 +36,7 @@ export function LeaveRequestsList({ view }: LeaveRequestsListProps) {
     if (view === 'pending') {
       q = query(q, where('status', '==', 'pending'))
     } else if (view === 'my' && user) {
-      q = query(q, where('employeeId', '==', user.uid))
+      q = query(q, where('employeeId', '==', user.id))
     }
     const unsub = onSnapshot(q, (querySnapshot) => {
       const requestsList = querySnapshot.docs.map(doc => {

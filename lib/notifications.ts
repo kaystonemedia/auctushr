@@ -11,7 +11,8 @@ import {
   doc,
   updateDoc,
   or,
-  and
+  and,
+  deleteDoc
 } from 'firebase/firestore'
 import { AttendanceNotification, AttendanceRecord, AttendanceSettings } from '@/types/attendance'
 import { toast } from 'react-hot-toast'
@@ -26,6 +27,12 @@ interface NotificationOptions {
 
 export async function createNotification(options: NotificationOptions): Promise<void> {
   try {
+    // Validate that we have a valid employee ID
+    if (!options.employeeId || options.employeeId.trim() === '') {
+      console.warn('Skipping notification creation: Invalid employee ID')
+      return
+    }
+
     const notification = {
       // Don't include id field - Firestore will auto-generate it
       type: options.type,
@@ -38,7 +45,8 @@ export async function createNotification(options: NotificationOptions): Promise<
       data: options.data || null // Ensure data is never undefined
     }
 
-    await addDoc(collection(db, 'notifications'), notification)
+    const docRef = await addDoc(collection(db, 'notifications'), notification)
+    console.log('Notification created with ID:', docRef.id)
   } catch (error) {
     console.error('Error creating notification:', error)
     throw error
@@ -61,9 +69,18 @@ export function subscribeToNotifications(
   return onSnapshot(q, (snapshot) => {
     snapshot.docChanges().forEach((change) => {
       if (change.type === 'added') {
+        const docId = change.doc.id
+        if (!docId || docId.trim() === '') {
+          console.warn('Skipping notification with invalid ID:', change.doc.data())
+          return
+        }
+        
+        const docData = change.doc.data()
         const notification = {
-          id: change.doc.id,
-          ...change.doc.data()
+          id: docId,
+          ...docData,
+          createdAt: docData.createdAt?.toDate() || new Date(),
+          updatedAt: docData.updatedAt?.toDate() || new Date()
         } as AttendanceNotification
         onNotification(notification)
       }
@@ -293,7 +310,7 @@ export async function sendTaskAssignmentNotification(
     title: string
     description: string
     assignedBy: string
-    priority: 'low' | 'medium' | 'high'
+    priority: 'low' | 'medium' | 'high' | 'urgent'
   }
 ): Promise<void> {
   await createNotification({
@@ -311,7 +328,7 @@ export async function sendTaskCompletionNotification(
   taskData: {
     title: string
     completedAt: Date
-    priority: 'low' | 'medium' | 'high'
+    priority: 'low' | 'medium' | 'high' | 'urgent'
   }
 ): Promise<void> {
   await createNotification({
@@ -384,7 +401,7 @@ export async function sendSystemAnnouncement(
   announcement: {
     title: string
     message: string
-    priority: 'low' | 'medium' | 'high'
+    priority: 'low' | 'medium' | 'high' | 'urgent'
   }
 ): Promise<void> {
   for (const employeeId of employeeIds) {
@@ -470,4 +487,37 @@ export async function sendManagerNotification(
     employeeId: managerId, // For managers, we use their ID as employeeId
     data
   })
-} 
+}
+
+// Clean up invalid notifications
+export async function cleanupInvalidNotifications(): Promise<void> {
+  try {
+    const notificationsRef = collection(db, 'notifications')
+    const snapshot = await getDocs(notificationsRef)
+    
+    const invalidNotifications: string[] = []
+    
+    snapshot.forEach((doc) => {
+      const data = doc.data()
+      if (!data.employeeId || data.employeeId.trim() === '') {
+        invalidNotifications.push(doc.id)
+      }
+    })
+    
+    console.log(`Found ${invalidNotifications.length} invalid notifications to clean up`)
+    
+    // Delete invalid notifications
+    for (const notificationId of invalidNotifications) {
+      try {
+        await deleteDoc(doc(db, 'notifications', notificationId))
+        console.log(`Deleted invalid notification: ${notificationId}`)
+      } catch (error) {
+        console.error(`Failed to delete notification ${notificationId}:`, error)
+      }
+    }
+    
+    console.log('Cleanup completed')
+  } catch (error) {
+    console.error('Error during cleanup:', error)
+  }
+}

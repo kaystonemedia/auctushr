@@ -33,6 +33,7 @@ import {
   AlertCircle
 } from 'lucide-react'
 import { toast } from '@/components/ui/use-toast'
+import { cleanupInvalidNotifications } from '@/lib/notifications'
 
 export default function SettingsPage() {
   const { user } = useAuth()
@@ -185,6 +186,28 @@ export default function SettingsPage() {
       ...settings,
       security: { ...settings.security, ...updates }
     })
+  }
+
+  const handleCleanupNotifications = async () => {
+    if (!confirm('This will remove all notifications with invalid data. Are you sure?')) return
+    
+    setSaving(true)
+    try {
+      await cleanupInvalidNotifications()
+      toast({
+        title: "Success",
+        description: "Invalid notifications cleaned up successfully"
+      })
+    } catch (error) {
+      console.error('Error cleaning up notifications:', error)
+      toast({
+        title: "Error",
+        description: "Failed to clean up notifications",
+        variant: "destructive"
+      })
+    } finally {
+      setSaving(false)
+    }
   }
 
   const addBonusTier = (type: 'productivity' | 'attendance') => {
@@ -655,6 +678,403 @@ export default function SettingsPage() {
                   </div>
                 )}
               </div>
+
+              <Separator />
+
+              {/* Deductions Configuration */}
+              <div className="space-y-6">
+                <h3 className="text-lg font-medium">Payroll Deductions</h3>
+                
+                {/* Tax Deductions */}
+                <Card className="p-4">
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="font-medium">Tax Deductions</h4>
+                        <p className="text-sm text-gray-600">Configure tax rates and thresholds</p>
+                      </div>
+                      <Switch
+                        checked={settings.payroll.deductions.tax.enabled}
+                        onCheckedChange={(checked) => updatePayrollSettings({
+                          deductions: {
+                            ...settings.payroll.deductions,
+                            tax: {
+                              ...settings.payroll.deductions.tax,
+                              enabled: checked
+                            }
+                          }
+                        })}
+                      />
+                    </div>
+                    
+                    {settings.payroll.deductions.tax.enabled && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <Label htmlFor="taxRate">Tax Rate (%)</Label>
+                          <Input
+                            id="taxRate"
+                            type="number"
+                            step="0.1"
+                            value={settings.payroll.deductions.tax.rate}
+                            onChange={(e) => updatePayrollSettings({
+                              deductions: {
+                                ...settings.payroll.deductions,
+                                tax: {
+                                  ...settings.payroll.deductions.tax,
+                                  rate: Number(e.target.value)
+                                }
+                              }
+                            })}
+                            placeholder="20"
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="taxThreshold">Minimum Threshold ($)</Label>
+                          <Input
+                            id="taxThreshold"
+                            type="number"
+                            value={settings.payroll.deductions.tax.minThreshold}
+                            onChange={(e) => updatePayrollSettings({
+                              deductions: {
+                                ...settings.payroll.deductions,
+                                tax: {
+                                  ...settings.payroll.deductions.tax,
+                                  minThreshold: Number(e.target.value)
+                                }
+                              }
+                            })}
+                            placeholder="50000"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </Card>
+
+                {/* Insurance Deductions */}
+                <Card className="p-4">
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="font-medium">Insurance Deductions</h4>
+                        <p className="text-sm text-gray-600">Configure insurance types and rates</p>
+                      </div>
+                      <Switch
+                        checked={settings.payroll.deductions.insurance.enabled}
+                        onCheckedChange={(checked) => updatePayrollSettings({
+                          deductions: {
+                            ...settings.payroll.deductions,
+                            insurance: {
+                              ...settings.payroll.deductions.insurance,
+                              enabled: checked
+                            }
+                          }
+                        })}
+                      />
+                    </div>
+                    
+                    {settings.payroll.deductions.insurance.enabled && (
+                      <div className="space-y-4">
+                        <div>
+                          <Label htmlFor="insuranceRate">Insurance Rate (%)</Label>
+                          <Input
+                            id="insuranceRate"
+                            type="number"
+                            step="0.1"
+                            value={settings.payroll.deductions.insurance.rate}
+                            onChange={(e) => updatePayrollSettings({
+                              deductions: {
+                                ...settings.payroll.deductions,
+                                insurance: {
+                                  ...settings.payroll.deductions.insurance,
+                                  rate: Number(e.target.value)
+                                }
+                              }
+                            })}
+                            placeholder="10"
+                          />
+                        </div>
+                        <div>
+                          <Label>Insurance Types</Label>
+                          <div className="flex flex-wrap gap-2 mt-2">
+                            {settings.payroll.deductions.insurance.types.map((type, index) => (
+                              <Badge key={index} variant="secondary" className="flex items-center gap-1">
+                                {type}
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-4 w-4 p-0 hover:bg-red-100"
+                                  onClick={() => {
+                                    const newTypes = settings.payroll.deductions.insurance.types.filter((_, i) => i !== index)
+                                    updatePayrollSettings({
+                                      deductions: {
+                                        ...settings.payroll.deductions,
+                                        insurance: {
+                                          ...settings.payroll.deductions.insurance,
+                                          types: newTypes
+                                        }
+                                      }
+                                    })
+                                  }}
+                                >
+                                  ×
+                                </Button>
+                              </Badge>
+                            ))}
+                          </div>
+                          <div className="flex gap-2 mt-2">
+                            <Input
+                              placeholder="Add insurance type (e.g., health, dental, vision)"
+                              onKeyPress={(e) => {
+                                if (e.key === 'Enter') {
+                                  const value = e.currentTarget.value.trim()
+                                  if (value && !settings.payroll.deductions.insurance.types.includes(value)) {
+                                    updatePayrollSettings({
+                                      deductions: {
+                                        ...settings.payroll.deductions,
+                                        insurance: {
+                                          ...settings.payroll.deductions.insurance,
+                                          types: [...settings.payroll.deductions.insurance.types, value]
+                                        }
+                                      }
+                                    })
+                                    e.currentTarget.value = ''
+                                  }
+                                }
+                              }}
+                            />
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={(e) => {
+                                const input = e.currentTarget.previousElementSibling as HTMLInputElement
+                                const value = input.value.trim()
+                                if (value && !settings.payroll.deductions.insurance.types.includes(value)) {
+                                  updatePayrollSettings({
+                                    deductions: {
+                                      ...settings.payroll.deductions,
+                                      insurance: {
+                                        ...settings.payroll.deductions.insurance,
+                                        types: [...settings.payroll.deductions.insurance.types, value]
+                                      }
+                                    }
+                                  })
+                                  input.value = ''
+                                }
+                              }}
+                            >
+                              <Plus className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </Card>
+
+                {/* Pension Deductions */}
+                <Card className="p-4">
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="font-medium">Pension Deductions</h4>
+                        <p className="text-sm text-gray-600">Configure pension contributions</p>
+                      </div>
+                      <Switch
+                        checked={settings.payroll.deductions.pension.enabled}
+                        onCheckedChange={(checked) => updatePayrollSettings({
+                          deductions: {
+                            ...settings.payroll.deductions,
+                            pension: {
+                              ...settings.payroll.deductions.pension,
+                              enabled: checked
+                            }
+                          }
+                        })}
+                      />
+                    </div>
+                    
+                    {settings.payroll.deductions.pension.enabled && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <Label htmlFor="pensionRate">Pension Rate (%)</Label>
+                          <Input
+                            id="pensionRate"
+                            type="number"
+                            step="0.1"
+                            value={settings.payroll.deductions.pension.rate}
+                            onChange={(e) => updatePayrollSettings({
+                              deductions: {
+                                ...settings.payroll.deductions,
+                                pension: {
+                                  ...settings.payroll.deductions.pension,
+                                  rate: Number(e.target.value)
+                                }
+                              }
+                            })}
+                            placeholder="5"
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="employerMatch">Employer Match (%)</Label>
+                          <Input
+                            id="employerMatch"
+                            type="number"
+                            step="0.1"
+                            value={settings.payroll.deductions.pension.employerMatch}
+                            onChange={(e) => updatePayrollSettings({
+                              deductions: {
+                                ...settings.payroll.deductions,
+                                pension: {
+                                  ...settings.payroll.deductions.pension,
+                                  employerMatch: Number(e.target.value)
+                                }
+                              }
+                            })}
+                            placeholder="3"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </Card>
+
+                {/* Other Deductions */}
+                <Card className="p-4">
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="font-medium">Other Deductions</h4>
+                        <p className="text-sm text-gray-600">Configure custom deduction items</p>
+                      </div>
+                      <Switch
+                        checked={settings.payroll.deductions.other.enabled}
+                        onCheckedChange={(checked) => updatePayrollSettings({
+                          deductions: {
+                            ...settings.payroll.deductions,
+                            other: {
+                              ...settings.payroll.deductions.other,
+                              enabled: checked
+                            }
+                          }
+                        })}
+                      />
+                    </div>
+                    
+                    {settings.payroll.deductions.other.enabled && (
+                      <div className="space-y-4">
+                        {settings.payroll.deductions.other.items.map((item, index) => (
+                          <Card key={index} className="p-3 bg-gray-50">
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-center">
+                              <div>
+                                <Label>Name</Label>
+                                <Input
+                                  value={item.name}
+                                  onChange={(e) => {
+                                    const newItems = [...settings.payroll.deductions.other.items]
+                                    newItems[index] = { ...item, name: e.target.value }
+                                    updatePayrollSettings({
+                                      deductions: {
+                                        ...settings.payroll.deductions,
+                                        other: {
+                                          ...settings.payroll.deductions.other,
+                                          items: newItems
+                                        }
+                                      }
+                                    })
+                                  }}
+                                  placeholder="Deduction name"
+                                />
+                              </div>
+                              <div>
+                                <Label>Rate (%)</Label>
+                                <Input
+                                  type="number"
+                                  step="0.1"
+                                  value={item.rate}
+                                  onChange={(e) => {
+                                    const newItems = [...settings.payroll.deductions.other.items]
+                                    newItems[index] = { ...item, rate: Number(e.target.value) }
+                                    updatePayrollSettings({
+                                      deductions: {
+                                        ...settings.payroll.deductions,
+                                        other: {
+                                          ...settings.payroll.deductions.other,
+                                          items: newItems
+                                        }
+                                      }
+                                    })
+                                  }}
+                                  placeholder="5"
+                                />
+                              </div>
+                              <div>
+                                <Label>Description</Label>
+                                <Input
+                                  value={item.description}
+                                  onChange={(e) => {
+                                    const newItems = [...settings.payroll.deductions.other.items]
+                                    newItems[index] = { ...item, description: e.target.value }
+                                    updatePayrollSettings({
+                                      deductions: {
+                                        ...settings.payroll.deductions,
+                                        other: {
+                                          ...settings.payroll.deductions.other,
+                                          items: newItems
+                                        }
+                                      }
+                                    })
+                                  }}
+                                  placeholder="Description"
+                                />
+                              </div>
+                              <div className="flex justify-end">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => {
+                                    const newItems = settings.payroll.deductions.other.items.filter((_, i) => i !== index)
+                                    updatePayrollSettings({
+                                      deductions: {
+                                        ...settings.payroll.deductions,
+                                        other: {
+                                          ...settings.payroll.deductions.other,
+                                          items: newItems
+                                        }
+                                      }
+                                    })
+                                  }}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </div>
+                          </Card>
+                        ))}
+                        <Button
+                          variant="outline"
+                          onClick={() => {
+                            const newItem = { name: '', rate: 0, description: '' }
+                            updatePayrollSettings({
+                              deductions: {
+                                ...settings.payroll.deductions,
+                                other: {
+                                  ...settings.payroll.deductions.other,
+                                  items: [...settings.payroll.deductions.other.items, newItem]
+                                }
+                              }
+                            })
+                          }}
+                          className="w-full"
+                        >
+                          <Plus className="h-4 w-4 mr-2" />
+                          Add Custom Deduction
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </Card>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
@@ -1062,6 +1482,30 @@ export default function SettingsPage() {
                         placeholder="Private key for push notifications"
                       />
                     </div>
+                  </div>
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* Notification Maintenance */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-medium">Maintenance</h3>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label>Clean Up Invalid Notifications</Label>
+                      <p className="text-sm text-gray-600">Remove notifications with invalid data from the database</p>
+                    </div>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={handleCleanupNotifications}
+                      disabled={saving}
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Clean Up
+                    </Button>
                   </div>
                 </div>
               </div>

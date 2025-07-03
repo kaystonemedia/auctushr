@@ -178,15 +178,16 @@ export function ProductivityDashboard() {
   const [employeeTasks, setEmployeeTasks] = useState([])
 
   useEffect(() => {
-    if (!(user as any)?.uid) {
+    if (!user?.id) {
       setLoading(false)
       return
     }
+    console.log('useEffect triggered - fetching data for user:', user.id)
     Promise.all([fetchAnalytics(), fetchTaskStats()]).finally(() => setLoading(false))
   }, [user, dateRange])
 
   const fetchAnalytics = async () => {
-    if (!(user as any)?.uid) {
+    if (!user?.id) {
       console.error('User ID is required')
       return
     }
@@ -195,7 +196,7 @@ export function ProductivityDashboard() {
       setLoading(true)
       const service = ProductivityService.getInstance(DEFAULT_SETTINGS, DEFAULT_SETTINGS)
       const data = await service.calculateProductivityAnalytics(
-        (user as any).uid,
+        user.id,
         dateRange.from,
         dateRange.to
       )
@@ -209,22 +210,38 @@ export function ProductivityDashboard() {
   }
 
   const fetchTaskStats = async () => {
+    if (!user?.id) {
+      console.log('No user ID available for fetching tasks')
+      return
+    }
+
     try {
+      console.log('Fetching tasks for user:', user.id, 'role:', user?.role)
+      
       // Fetch tasks based on user role
       let tasksQuery
       if (user?.role === 'admin') {
         tasksQuery = collection(db, 'tasks')
       } else if (user?.role === 'manager') {
-        // Get team members first
-        const teamSnap = await getDocs(query(collection(db, 'users'), where('managerId', '==', user.id)))
+        // Get team members first from employees collection
+        const teamSnap = await getDocs(query(collection(db, 'employees'), where('managerId', '==', user.id)))
         const teamIds = teamSnap.docs.map(doc => doc.id)
-        tasksQuery = query(collection(db, 'tasks'), where('assignedTo', 'in', teamIds.length ? teamIds : ['dummy']))
+        console.log('Manager team IDs:', teamIds)
+        
+        if (teamIds.length > 0) {
+          tasksQuery = query(collection(db, 'tasks'), where('assignedTo', 'in', teamIds))
+        } else {
+          // If no team members, also include tasks assigned to the manager directly
+          tasksQuery = query(collection(db, 'tasks'), where('assignedTo', '==', user.id))
+        }
       } else {
-        tasksQuery = query(collection(db, 'tasks'), where('assignedTo', '==', user?.id))
+        tasksQuery = query(collection(db, 'tasks'), where('assignedTo', '==', user.id))
       }
 
       const tasksSnap = await getDocs(tasksQuery)
       const tasks = tasksSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+      
+      console.log('Fetched tasks:', tasks.length, tasks)
 
       // Calculate stats
       const stats = {
@@ -232,36 +249,86 @@ export function ProductivityDashboard() {
         completed: tasks.filter(t => (t as any).status === 'completed').length,
         accepted: tasks.filter(t => (t as any).status === 'accepted').length,
         pending: tasks.filter(t => (t as any).status === 'pending').length,
+        inProgress: tasks.filter(t => (t as any).status === 'in_progress').length,
       }
+      console.log('Task stats:', stats)
       setTaskStats(stats)
+
+      // Normalize task data - ensure assignedTo field exists
+      const normalizedTasks = tasks.map(task => {
+        const taskData = task as any
+        if (!taskData.assignedTo && taskData.assigneeId) {
+          taskData.assignedTo = taskData.assigneeId
+        }
+        return taskData
+      })
 
       // Get employee tasks for the progress list
       const employeeTasksData = await Promise.all(
-        tasks
+        normalizedTasks
           .filter(t => (t as any).status !== 'completed')
+          .filter(t => (t as any).assignedTo && typeof (t as any).assignedTo === 'string' && (t as any).assignedTo.trim() !== '')
           .map(async (task) => {
-            const userSnap = await getDoc(doc(db, 'users', (task as any).assignedTo))
-            const userData = userSnap.data()
-            return {
-              id: (task as any).assignedTo,
-              name: userData?.name || 'Unknown User',
-              avatar: userData?.avatar,
-              taskTitle: (task as any).title,
-              status: (task as any).status,
-              progress: (task as any).progress || 0,
+            try {
+              // Try to get user from employees collection first, then users
+              let userData = null
+              try {
+                const empSnap = await getDoc(doc(db, 'employees', (task as any).assignedTo))
+                if (empSnap.exists()) {
+                  userData = empSnap.data()
+                }
+              } catch (empError) {
+                console.log('Employee not found, trying users collection')
+              }
+              
+              if (!userData) {
+                try {
+                  const userSnap = await getDoc(doc(db, 'users', (task as any).assignedTo))
+                  if (userSnap.exists()) {
+                    userData = userSnap.data()
+                  }
+                } catch (userError) {
+                  console.log('User not found in users collection either')
+                }
+              }
+              
+              const name = userData?.name || 
+                          `${userData?.firstName || ''} ${userData?.lastName || ''}`.trim() || 
+                          'Unknown User'
+              
+              return {
+                id: (task as any).assignedTo,
+                name,
+                avatar: userData?.avatar,
+                taskTitle: (task as any).title,
+                status: (task as any).status,
+                progress: (task as any).progress || 0,
+              }
+            } catch (userError) {
+              console.error('Error fetching user data for task:', task, userError)
+              return {
+                id: (task as any).assignedTo,
+                name: 'Unknown User',
+                avatar: undefined,
+                taskTitle: (task as any).title,
+                status: (task as any).status,
+                progress: (task as any).progress || 0,
+              }
             }
           })
       )
       setEmployeeTasks(employeeTasksData as any)
 
       // Update the tasks state for the TaskList component
-      setTasks(tasks.map(task => ({
+      setTasks(normalizedTasks.map(task => ({
         ...task,
-        dueDate: (task as any).dueDate?.toDate(),
-        createdAt: (task as any).createdAt?.toDate(),
-        updatedAt: (task as any).updatedAt?.toDate(),
-        completedAt: (task as any).completedAt?.toDate() || null
+        dueDate: (task as any).dueDate?.toDate?.() || (task as any).dueDate,
+        createdAt: (task as any).createdAt?.toDate?.() || (task as any).createdAt,
+        updatedAt: (task as any).updatedAt?.toDate?.() || (task as any).updatedAt,
+        completedAt: (task as any).completedAt?.toDate?.() || (task as any).completedAt || null
       })) as Task[])
+      
+      console.log('Task stats updated successfully')
     } catch (error) {
       console.error('Error fetching task stats:', error)
       toast.error('Failed to fetch task statistics')
@@ -270,22 +337,25 @@ export function ProductivityDashboard() {
 
   const handleTaskCreated = (task: Task) => {
     setTasks(prev => [...prev, task])
-    if ((user as any)?.uid) {
+    if (user?.id) {
       fetchAnalytics() // Only refresh analytics if user is available
+      fetchTaskStats() // Refresh task statistics
     }
   }
 
   const handleTaskUpdated = (updatedTask: Task) => {
     setTasks(prev => prev.map(task => task.id === updatedTask.id ? updatedTask : task))
-    if ((user as any)?.uid) {
+    if (user?.id) {
       fetchAnalytics() // Only refresh analytics if user is available
+      fetchTaskStats() // Refresh task statistics when tasks are updated
     }
   }
 
   const handleTaskDeleted = (taskId: string) => {
     setTasks(prev => prev.filter(task => task.id !== taskId))
-    if ((user as any)?.uid) {
+    if (user?.id) {
       fetchAnalytics() // Only refresh analytics if user is available
+      fetchTaskStats() // Refresh task statistics when tasks are deleted
     }
   }
 
@@ -388,9 +458,11 @@ export function ProductivityDashboard() {
                     </div>
                   </CardHeader>
                   <CardContent>
-                    <div className="text-2xl font-bold">{analytics.overview.taskCompletionRate}%</div>
+                    <div className="text-2xl font-bold">
+                      {taskStats.totalIssued > 0 ? Math.round((taskStats.completed / taskStats.totalIssued) * 100) : 0}%
+                    </div>
                     <div className="text-xs text-muted-foreground mt-1">
-                      {analytics.overview.totalTasksCompleted} of {(analytics.overview as any).totalTasks || 0} tasks completed
+                      {taskStats.completed} of {taskStats.totalIssued} tasks completed
                     </div>
                     <Button
                       variant="link"
@@ -709,43 +781,33 @@ export function ProductivityDashboard() {
           <TaskProgressCards stats={taskStats} employees={employeeTasks} />
 
           {/* Task Overview Card */}
-          {analytics ? (
-            <Card>
-              <CardHeader>
-                <CardTitle>Task Overview</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="p-4 bg-blue-50 rounded-lg">
-                    <h3 className="font-medium text-blue-700">Pending Tasks</h3>
-                    <p className="text-2xl font-bold text-blue-900">
-                      {((analytics.overview as any).totalTasks || 0) - analytics.overview.totalTasksCompleted}
-                    </p>
-                  </div>
-                  <div className="p-4 bg-green-50 rounded-lg">
-                    <h3 className="font-medium text-green-700">Completed Tasks</h3>
-                    <p className="text-2xl font-bold text-green-900">
-                      {analytics.overview.totalTasksCompleted}
-                    </p>
-                  </div>
-                  <div className="p-4 bg-purple-50 rounded-lg">
-                    <h3 className="font-medium text-purple-700">Completion Rate</h3>
-                    <p className="text-2xl font-bold text-purple-900">
-                      {analytics.overview.taskCompletionRate}%
-                    </p>
-                  </div>
+          <Card>
+            <CardHeader>
+              <CardTitle>Task Overview</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="p-4 bg-blue-50 rounded-lg">
+                  <h3 className="font-medium text-blue-700">Pending Tasks</h3>
+                  <p className="text-2xl font-bold text-blue-900">
+                    {taskStats.pending}
+                  </p>
                 </div>
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="text-center py-12">
-              <AlertCircle className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900">No Data Available</h3>
-              <p className="mt-2 text-sm text-gray-500">
-                Start tracking your productivity to see analytics.
-              </p>
-            </div>
-          )}
+                <div className="p-4 bg-green-50 rounded-lg">
+                  <h3 className="font-medium text-green-700">Completed Tasks</h3>
+                  <p className="text-2xl font-bold text-green-900">
+                    {taskStats.completed}
+                  </p>
+                </div>
+                <div className="p-4 bg-purple-50 rounded-lg">
+                  <h3 className="font-medium text-purple-700">Completion Rate</h3>
+                  <p className="text-2xl font-bold text-purple-900">
+                    {taskStats.totalIssued > 0 ? Math.round((taskStats.completed / taskStats.totalIssued) * 100) : 0}%
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
 
           <TaskList
             tasks={tasks}

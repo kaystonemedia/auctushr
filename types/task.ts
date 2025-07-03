@@ -1,7 +1,7 @@
 import { Timestamp } from 'firebase/firestore'
 
 export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent'
-export type TaskStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled'
+export type TaskStatus = 'pending' | 'accepted' | 'in_progress' | 'completed' | 'cancelled'
 export type TaskCategory = 'general' | 'development' | 'design' | 'marketing' | 'support' | 'other'
 export type TaskAssignmentType = 'user' | 'department' | 'team'
 
@@ -59,6 +59,7 @@ export interface TaskFilter {
 export interface TaskStats {
   total: number
   pending: number
+  accepted: number
   inProgress: number
   completed: number
   cancelled: number

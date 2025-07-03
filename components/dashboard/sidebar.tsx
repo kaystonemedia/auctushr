@@ -13,7 +13,8 @@ import {
   Building2,
   Mail,
   HelpCircle,
-  Activity
+  Activity,
+  CheckSquare
 } from 'lucide-react'
 
 interface SidebarProps {
@@ -36,37 +37,37 @@ const navItems: NavItem[] = [
   },
   {
     title: 'Employees',
-    href: '/dashboard/employees',
+    href: '/employees',
     icon: <Users className="w-5 h-5" />,
     roles: ['admin', 'manager']
   },
   {
     title: 'Attendance',
-    href: '/dashboard/attendance',
+    href: '/attendance',
     icon: <Calendar className="w-5 h-5" />,
     roles: ['admin', 'manager', 'employee']
   },
   {
     title: 'Attendance Report',
-    href: '/dashboard/attendance-report',
+    href: '/attendance/reports',
     icon: <BarChart className="w-5 h-5" />,
     roles: ['admin', 'manager']
   },
   {
     title: 'Documents',
-    href: '/dashboard/documents',
+    href: '/documents',
     icon: <FileText className="w-5 h-5" />,
     roles: ['admin', 'manager']
   },
   {
     title: 'Leave Management',
-    href: '/dashboard/leave',
+    href: '/leave',
     icon: <ClipboardList className="w-5 h-5" />,
     roles: ['admin', 'manager']
   },
   {
     title: 'Departments',
-    href: '/dashboard/departments',
+    href: '/departments',
     icon: <Building2 className="w-5 h-5" />,
     roles: ['admin']
   },
@@ -77,26 +78,32 @@ const navItems: NavItem[] = [
     roles: ['admin', 'manager']
   },
   {
-    title: 'Messages',
-    href: '/dashboard/messages',
-    icon: <Mail className="w-5 h-5" />,
-    roles: ['admin', 'manager', 'employee']
+    title: 'Tasks',
+    href: '/my-tasks',
+    icon: <ClipboardList className="w-5 h-5" />,
+    roles: ['employee']
+  },
+  {
+    title: 'Tasks',
+    href: '/tasks',
+    icon: <CheckSquare className="w-5 h-5" />,
+    roles: ['admin', 'manager']
   },
   {
     title: 'Settings',
-    href: '/dashboard/settings',
+    href: '/settings',
     icon: <Settings className="w-5 h-5" />,
     roles: ['admin', 'manager']
   },
   {
     title: 'Profile',
-    href: '/dashboard/profile',
+    href: '/profile',
     icon: <User className="w-5 h-5" />,
     roles: ['admin', 'manager', 'employee']
   },
   {
     title: 'Help & Support',
-    href: '/dashboard/help',
+    href: '/help',
     icon: <HelpCircle className="w-5 h-5" />,
     roles: ['admin', 'manager', 'employee']
   }

@@ -69,8 +69,19 @@ export async function generateAttendanceReport(options: GenerateReportOptions): 
         records: filteredRecords.map(record => ({
           ...record,
           // Add any custom calculations or transformations here
-          productivity: record.hoursWorked ? (record.hoursWorked / 8) * 100 : 0,
-          efficiency: record.idleTime ? ((record.hoursWorked || 0) - record.idleTime) / (record.hoursWorked || 1) * 100 : 0
+          productivity: (() => {
+            const hoursWorked = record.checkIn && record.checkOut 
+              ? (record.checkOut.time.getTime() - record.checkIn.time.getTime()) / (1000 * 60 * 60)
+              : 0
+            return hoursWorked ? (hoursWorked / 8) * 100 : 0
+          })(),
+          efficiency: (() => {
+            const hoursWorked = record.checkIn && record.checkOut 
+              ? (record.checkOut.time.getTime() - record.checkIn.time.getTime()) / (1000 * 60 * 60)
+              : 0
+            const idleTimeHours = record.idleTime ? (typeof record.idleTime === 'number' ? record.idleTime / 60 : 0) : 0
+            return idleTimeHours > 0 ? ((hoursWorked || 0) - idleTimeHours) / (hoursWorked || 1) * 100 : 0
+          })()
         }))
       }
 

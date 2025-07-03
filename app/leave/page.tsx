@@ -4,14 +4,17 @@ import { useState } from 'react'
 import { LeaveRequestForm } from "@/components/leave-request-form"
 import { LeaveRequestsList } from "@/components/leave-requests-list"
 import { LeaveBalanceDisplay } from "@/components/leave-balance"
-import { useAuth } from "@/contexts/auth-context"
+import { useNewAuth } from "@/contexts/new-auth-context"
 import { Plus, Calendar, Clock, CheckCircle, CalendarDays } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
 export default function LeavePage() {
-  const { user } = useAuth()
+  const { user } = useNewAuth()
   const [showForm, setShowForm] = useState(false)
-  const [view, setView] = useState<'all' | 'pending' | 'my'>('all')
+  // Default to 'my' view for employees, 'all' for admins/managers
+  const [view, setView] = useState<'all' | 'pending' | 'my'>(
+    user?.role === 'employee' ? 'my' : 'all'
+  )
 
   return (
     <div className="py-10 px-4 max-w-4xl mx-auto space-y-8">
@@ -22,8 +25,15 @@ export default function LeavePage() {
             <CalendarDays className="h-7 w-7" />
           </div>
           <div>
-            <h1 className="text-3xl font-bold leading-tight">Leave Management</h1>
-            <p className="text-sm text-gray-500 mt-1">Manage leave requests and approvals</p>
+            <h1 className="text-3xl font-bold leading-tight">
+              {user?.role === 'employee' ? 'My Leave' : 'Leave Management'}
+            </h1>
+            <p className="text-sm text-gray-500 mt-1">
+              {user?.role === 'employee' 
+                ? 'View your leave balance and request time off' 
+                : 'Manage leave requests and approvals'
+              }
+            </p>
           </div>
         </div>
         <Button className="shadow-lg" size="lg" onClick={() => setShowForm(true)}>

@@ -51,12 +51,15 @@ export function CreateTaskModal({ isOpen, onClose, onSuccess }: CreateTaskModalP
 
     try {
       setLoading(true)
-      const taskRef = await addDoc(collection(db, 'tasks'), {
+      const taskData = {
         ...formData,
+        assignedTo: formData.assigneeId, // Add assignedTo field for compatibility
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
         completedAt: null
-      })
+      }
+      
+      const taskRef = await addDoc(collection(db, 'tasks'), taskData)
 
       const newTask: Task = {
         id: taskRef.id,
@@ -71,8 +74,17 @@ export function CreateTaskModal({ isOpen, onClose, onSuccess }: CreateTaskModalP
         completedAt: undefined
       }
 
+      // Send notification to assigned user
+      const { sendTaskAssignmentNotification } = await import('@/lib/notifications')
+      await sendTaskAssignmentNotification(formData.assigneeId, {
+        title: formData.title,
+        description: formData.description,
+        assignedBy: user.name,
+        priority: formData.priority === 'urgent' ? 'high' : formData.priority
+      })
+
       onSuccess(newTask)
-      toast.success('Task created successfully')
+      toast.success('Task created successfully and notification sent')
       onClose()
     } catch (error) {
       console.error('Error creating task:', error)

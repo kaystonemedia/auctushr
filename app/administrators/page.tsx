@@ -31,6 +31,8 @@ interface Administrator {
   firstName: string
   lastName: string
   email: string
+  department: string
+  position: string
   status: 'active' | 'inactive'
   createdAt: Date
 }
@@ -91,7 +93,9 @@ export default function AdministratorsPage() {
 
   const filteredAdministrators = administrators.filter((admin) =>
     `${admin.firstName} ${admin.lastName}`.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    admin.email.toLowerCase().includes(searchQuery.toLowerCase())
+    admin.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    admin.department.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    admin.position.toLowerCase().includes(searchQuery.toLowerCase())
   )
 
   const handleExport = () => {
@@ -144,6 +148,8 @@ export default function AdministratorsPage() {
             <TableRow>
               <TableHead>Name</TableHead>
               <TableHead>Email</TableHead>
+              <TableHead>Department</TableHead>
+              <TableHead>Position</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Created At</TableHead>
               <TableHead className="w-[50px]"></TableHead>
@@ -152,7 +158,7 @@ export default function AdministratorsPage() {
           <TableBody>
             {filteredAdministrators.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                   No administrators found
                 </TableCell>
               </TableRow>
@@ -163,6 +169,10 @@ export default function AdministratorsPage() {
                     {admin.firstName} {admin.lastName}
                   </TableCell>
                   <TableCell>{admin.email}</TableCell>
+                  <TableCell>
+                    <span className="capitalize">{admin.department}</span>
+                  </TableCell>
+                  <TableCell>{admin.position}</TableCell>
                   <TableCell>
                     <span
                       className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
@@ -224,6 +234,8 @@ export default function AdministratorsPage() {
             ...admin,
             firstName: admin.firstName,
             lastName: admin.lastName,
+            department: admin.department,
+            position: admin.position,
             createdAt: new Date()
           }])
           setIsAddModalOpen(false)

@@ -5,16 +5,17 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useToast } from '@/components/ui/use-toast'
-import { db } from '@/lib/firebase'
-import { collection, addDoc, query, where, getDocs } from 'firebase/firestore'
-import { createUserWithEmailAndPassword, getAuth } from 'firebase/auth'
+import { createAdmin } from '@/lib/firebase'
 
 interface Administrator {
   id: string
   firstName: string
   lastName: string
   email: string
+  department: string
+  position: string
   status: 'active' | 'inactive'
   createdAt: Date
 }
@@ -31,8 +32,14 @@ export function AddAdminModal({ isOpen, onClose, onSuccess }: AddAdminModalProps
     email: '',
     firstName: '',
     lastName: '',
-    password: '',
-    confirmPassword: ''
+    department: '',
+    position: '',
+    phone: '',
+    emergencyContact: {
+      name: '',
+      relationship: '',
+      phone: ''
+    }
   })
   const { toast } = useToast()
 
@@ -42,63 +49,46 @@ export function AddAdminModal({ isOpen, onClose, onSuccess }: AddAdminModalProps
 
     try {
       // Validate form data
-      if (!formData.email || !formData.firstName || !formData.lastName || !formData.password) {
-        throw new Error('All fields are required')
+      if (!formData.email || !formData.firstName || !formData.lastName || !formData.department || !formData.position) {
+        throw new Error('All required fields must be filled')
       }
 
-      if (formData.password !== formData.confirmPassword) {
-        throw new Error('Passwords do not match')
-      }
-
-      if (formData.password.length < 6) {
-        throw new Error('Password must be at least 6 characters long')
-      }
-
-      // Check if email already exists
-      const usersRef = collection(db, 'users')
-      const q = query(usersRef, where('email', '==', formData.email.toLowerCase()))
-      const querySnapshot = await getDocs(q)
-
-      if (!querySnapshot.empty) {
-        throw new Error('A user with this email already exists')
-      }
-
-      // Create user in Firebase Auth
-      const auth = getAuth()
-      const userCredential = await createUserWithEmailAndPassword(
-        auth,
-        formData.email.toLowerCase(),
-        formData.password
-      )
-
-      // Create user document in Firestore
-      const userDoc = await addDoc(collection(db, 'users'), {
-        uid: userCredential.user.uid,
-        email: formData.email.toLowerCase(),
-        firstName: formData.firstName,
-        lastName: formData.lastName,
-        role: 'admin',
-        status: 'active',
-        createdAt: new Date(),
-        updatedAt: new Date()
-      })
+      // Create admin using the new createAdmin function
+      const result = await createAdmin(formData)
 
       const newAdmin: Administrator = {
-        id: userDoc.id,
+        id: result.id,
         firstName: formData.firstName,
         lastName: formData.lastName,
         email: formData.email.toLowerCase(),
+        department: formData.department,
+        position: formData.position,
         status: 'active',
         createdAt: new Date()
       }
 
       toast({
         title: 'Success',
-        description: 'Administrator added successfully',
+        description: 'Administrator added successfully. They will receive instructions to set up their account.',
       })
 
       onSuccess(newAdmin)
       onClose()
+      
+      // Reset form data
+      setFormData({
+        email: '',
+        firstName: '',
+        lastName: '',
+        department: '',
+        position: '',
+        phone: '',
+        emergencyContact: {
+          name: '',
+          relationship: '',
+          phone: ''
+        }
+      })
     } catch (error: any) {
       console.error('Error adding administrator:', error)
       toast({
@@ -121,80 +111,151 @@ export function AddAdminModal({ isOpen, onClose, onSuccess }: AddAdminModalProps
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[425px]">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-[500px] max-h-[90vh] flex flex-col">
+        <DialogHeader className="flex-shrink-0">
           <DialogTitle>Add New Administrator</DialogTitle>
+          <p className="text-sm text-muted-foreground">
+            The administrator will receive an email with instructions to set up their password and complete their profile.
+          </p>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+        <div className="flex-1 overflow-y-auto pr-2">
+          <form id="add-admin-form" onSubmit={handleSubmit} className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="firstName">First Name</Label>
+                <Input
+                  id="firstName"
+                  name="firstName"
+                  value={formData.firstName}
+                  onChange={handleChange}
+                  disabled={loading}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="lastName">Last Name</Label>
+                <Input
+                  id="lastName"
+                  name="lastName"
+                  value={formData.lastName}
+                  onChange={handleChange}
+                  disabled={loading}
+                  required
+                />
+              </div>
+            </div>
+            
             <div className="space-y-2">
-              <Label htmlFor="firstName">First Name</Label>
+              <Label htmlFor="email">Email</Label>
               <Input
-                id="firstName"
-                name="firstName"
-                value={formData.firstName}
+                id="email"
+                name="email"
+                type="email"
+                value={formData.email}
                 onChange={handleChange}
                 disabled={loading}
                 required
               />
             </div>
+
             <div className="space-y-2">
-              <Label htmlFor="lastName">Last Name</Label>
+              <Label htmlFor="department">Department</Label>
+              <Select value={formData.department} onValueChange={(value) => setFormData({ ...formData, department: value })}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select department" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="management">Management</SelectItem>
+                  <SelectItem value="hr">HR</SelectItem>
+                  <SelectItem value="engineering">Engineering</SelectItem>
+                  <SelectItem value="marketing">Marketing</SelectItem>
+                  <SelectItem value="sales">Sales</SelectItem>
+                  <SelectItem value="finance">Finance</SelectItem>
+                  <SelectItem value="operations">Operations</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="position">Position</Label>
               <Input
-                id="lastName"
-                name="lastName"
-                value={formData.lastName}
+                id="position"
+                name="position"
+                value={formData.position}
                 onChange={handleChange}
                 disabled={loading}
                 required
+                placeholder="e.g., System Administrator, HR Director"
               />
             </div>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
-            <Input
-              id="email"
-              name="email"
-              type="email"
-              value={formData.email}
-              onChange={handleChange}
-              disabled={loading}
-              required
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="password">Password</Label>
-            <Input
-              id="password"
-              name="password"
-              type="password"
-              value={formData.password}
-              onChange={handleChange}
-              disabled={loading}
-              required
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="confirmPassword">Confirm Password</Label>
-            <Input
-              id="confirmPassword"
-              name="confirmPassword"
-              type="password"
-              value={formData.confirmPassword}
-              onChange={handleChange}
-              disabled={loading}
-              required
-            />
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose} disabled={loading}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={loading}>
-              {loading ? 'Adding...' : 'Add Administrator'}
-            </Button>
-          </DialogFooter>
-        </form>
+
+            <div className="space-y-2">
+              <Label htmlFor="phone">Phone (Optional)</Label>
+              <Input
+                id="phone"
+                name="phone"
+                value={formData.phone}
+                onChange={handleChange}
+                disabled={loading}
+                placeholder="e.g., +1 (555) 123-4567"
+              />
+            </div>
+
+            <div className="space-y-4">
+              <Label className="text-sm font-medium">Emergency Contact (Optional)</Label>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="emergencyName">Name</Label>
+                  <Input
+                    id="emergencyName"
+                    value={formData.emergencyContact.name}
+                    onChange={(e) => setFormData({ 
+                      ...formData, 
+                      emergencyContact: { ...formData.emergencyContact, name: e.target.value } 
+                    })}
+                    disabled={loading}
+                    placeholder="Contact name"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="emergencyRelationship">Relationship</Label>
+                  <Input
+                    id="emergencyRelationship"
+                    value={formData.emergencyContact.relationship}
+                    onChange={(e) => setFormData({ 
+                      ...formData, 
+                      emergencyContact: { ...formData.emergencyContact, relationship: e.target.value } 
+                    })}
+                    disabled={loading}
+                    placeholder="e.g., Spouse, Parent"
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="emergencyPhone">Phone</Label>
+                <Input
+                  id="emergencyPhone"
+                  value={formData.emergencyContact.phone}
+                  onChange={(e) => setFormData({ 
+                    ...formData, 
+                    emergencyContact: { ...formData.emergencyContact, phone: e.target.value } 
+                  })}
+                  disabled={loading}
+                  placeholder="Emergency contact phone"
+                />
+              </div>
+            </div>
+          </form>
+        </div>
+        
+        <DialogFooter className="flex-shrink-0 pt-4 border-t">
+          <Button type="button" variant="outline" onClick={onClose} disabled={loading}>
+            Cancel
+          </Button>
+          <Button type="submit" form="add-admin-form" disabled={loading}>
+            {loading ? 'Adding...' : 'Add Administrator'}
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   )

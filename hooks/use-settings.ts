@@ -27,35 +27,50 @@ const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
 }
 
 const DEFAULT_PAYROLL_SETTINGS: PayrollSettings = {
-  currency: {
-    code: "USD",
-    symbol: "$",
-    exchangeRate: 1,
-    lastUpdated: new Date()
+  currency: "USD",
+  taxRate: 20,
+  insuranceRate: 10,
+  pensionRate: 5,
+  bonusStructure: {
+    productivity: {
+      enabled: false,
+      tiers: []
+    },
+    attendance: {
+      enabled: false,
+      tiers: []
+    },
+    overtime: {
+      enabled: false,
+      rate: 1.5,
+      maxHours: 40
+    },
+    project: {
+      enabled: false,
+      completionBonus: 10,
+      qualityBonus: 5
+    }
   },
   deductions: {
     tax: {
       enabled: true,
-      percentage: 20
+      rate: 20,
+      minThreshold: 0
     },
     insurance: {
       enabled: true,
-      percentage: 10
+      rate: 10,
+      types: ['health']
+    },
+    pension: {
+      enabled: true,
+      rate: 5,
+      employerMatch: 5
     },
     other: {
       enabled: false,
       items: []
     }
-  },
-  hourlyRate: {
-    enabled: false,
-    baseRate: 0,
-    overtimeMultiplier: 1.5
-  },
-  idleTime: {
-    enabled: false,
-    threshold: 15,
-    deductionPercentage: 5
   }
 }
 

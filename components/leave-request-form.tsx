@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { LeaveType, LeaveRequest, LeaveBalance } from '@/types/leave'
-import { useAuth } from '@/contexts/auth-context'
+import { useNewAuth } from '@/contexts/new-auth-context'
 import { db } from '@/lib/firebase'
 import { collection, addDoc, doc, getDoc } from 'firebase/firestore'
 import { toast } from 'react-hot-toast'
@@ -35,7 +35,7 @@ const LEAVE_TYPES = [
 ]
 
 export function LeaveRequestForm({ onClose, onSuccess }: LeaveRequestFormProps) {
-  const { user } = useAuth()
+  const { user } = useNewAuth()
   const [loading, setLoading] = useState(false)
   const [balance, setBalance] = useState<LeaveBalance | null>(null)
   const [formData, setFormData] = useState({
