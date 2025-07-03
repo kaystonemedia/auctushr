@@ -8,6 +8,8 @@ interface StatsCardProps {
   subtitle?: string
   trend?: string | number
   trendColor?: string
+  onClick?: () => void
+  className?: string
 }
 
 export function StatsCard({ 
@@ -17,10 +19,12 @@ export function StatsCard({
   icon,
   subtitle,
   trend,
-  trendColor
+  trendColor,
+  onClick,
+  className
 }: StatsCardProps) {
   return (
-    <Card>
+    <Card className={className} onClick={onClick}>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="text-sm font-medium">{title}</CardTitle>
         {icon}

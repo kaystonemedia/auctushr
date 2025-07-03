@@ -40,9 +40,22 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 403 })
     }
 
-    // Fetch all employees from the employees collection
-    console.log('Fetching employees collection...')
-    const employeesSnapshot = await getAdminDb().collection('employees').get()
+    // Fetch employees based on user role
+    let employeesSnapshot
+    if (userData?.role === 'admin') {
+      // Admins can see all employees
+      console.log('Fetching all employees for admin...')
+      employeesSnapshot = await getAdminDb().collection('employees').get()
+    } else if (userData?.role === 'manager') {
+      // Managers can only see employees assigned to them
+      console.log('Fetching employees for manager:', decodedToken.uid)
+      employeesSnapshot = await getAdminDb().collection('employees')
+        .where('managerId', '==', decodedToken.uid)
+        .get()
+    } else {
+      console.error('Unauthorized role:', userData?.role)
+      return NextResponse.json({ error: "Unauthorized" }, { status: 403 })
+    }
     console.log(`Found ${employeesSnapshot.size} employees`)
 
     const employees = employeesSnapshot.docs.map((doc: QueryDocumentSnapshot<DocumentData>) => {

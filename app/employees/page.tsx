@@ -111,22 +111,29 @@ export default function EmployeesPage() {
     try {
       console.log('Adding employee with data:', data)
       
+      // If current user is a manager, automatically assign the employee to them
+      const employeeData = { ...data }
+      if (user?.role === 'manager' && user?.uid && !employeeData.managerId) {
+        employeeData.managerId = user.uid
+        console.log('Auto-assigning employee to current manager:', user.uid)
+      }
+      
       // Create employee using the createEmployee function
-      const user = await createEmployee(data)
-      console.log('Created user:', user)
+      const newUser = await createEmployee(employeeData)
+      console.log('Created user:', newUser)
 
-      if (!user) {
+      if (!newUser) {
         throw new Error('Failed to create employee')
       }
 
       // Update local state
       const newEmployee = {
-        id: user.uid || '',
-        uid: user.uid,
-        ...data,
-        hireDate: data.hireDate instanceof Date ? data.hireDate : new Date(data.hireDate),
-        salary: Number(data.salary),
-        status: data.status || 'active',
+        id: newUser.uid || '',
+        uid: newUser.uid,
+        ...employeeData,
+        hireDate: employeeData.hireDate instanceof Date ? employeeData.hireDate : new Date(employeeData.hireDate),
+        salary: Number(employeeData.salary),
+        status: employeeData.status || 'active',
         hasPassword: false,
         createdAt: new Date(),
         updatedAt: new Date()
@@ -248,9 +255,14 @@ export default function EmployeesPage() {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Employees</h1>
+          <h1 className="text-2xl font-bold text-gray-900">
+            {user?.role === 'manager' ? 'My Team' : 'Employees'}
+          </h1>
           <p className="mt-1 text-sm text-gray-500">
-            Manage your organization's employees and their roles
+            {user?.role === 'manager' 
+              ? 'Manage your team members and add new employees' 
+              : 'Manage your organization\'s employees and their roles'
+            }
           </p>
         </div>
         <button

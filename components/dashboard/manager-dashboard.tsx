@@ -494,6 +494,8 @@ export default function ManagerDashboard() {
               : "text-red-500"
           }
           subtitle="Total team members"
+          onClick={() => router.push('/employees')}
+          className="cursor-pointer hover:bg-gray-50 transition-colors"
         />
         <StatsCard
           title="Present Today"
