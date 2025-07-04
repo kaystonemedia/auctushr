@@ -90,6 +90,7 @@ export default function LeavePage() {
           <div className="bg-white rounded-xl p-8 max-w-md w-full shadow-2xl">
             <h2 className="text-lg font-semibold mb-4">Submit Leave Request</h2>
             <LeaveRequestForm
+              isOpen={true}
               onClose={() => setShowForm(false)}
               onSuccess={() => {
                 setView('my')
