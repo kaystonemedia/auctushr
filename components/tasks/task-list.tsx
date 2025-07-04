@@ -257,7 +257,9 @@ export function TaskList({ tasks, loading, onTaskUpdate, onTaskDelete }: TaskLis
                 </div>
                 <div className="flex justify-between">
                   <span className="text-sm text-gray-500">Assigned To:</span>
-                  <span className="text-sm font-medium">{task.assignedTo}</span>
+                  <span className="text-sm font-medium">
+                    {task.assignees.length > 0 ? task.assignees.map(a => a.name).join(', ') : 'Unassigned'}
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-sm text-gray-500">Department:</span>
