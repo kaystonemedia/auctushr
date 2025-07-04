@@ -10,12 +10,38 @@ const config: Config = {
   theme: {
     container: {
       center: true,
-      padding: "2rem",
+      padding: {
+        DEFAULT: '1rem',
+        sm: '2rem',
+        lg: '4rem',
+        xl: '5rem',
+        '2xl': '6rem',
+      },
       screens: {
         "2xl": "1400px",
       },
     },
     extend: {
+      screens: {
+        'xs': '475px',
+        'mobile': {'max': '768px'},
+        'tablet': {'min': '768px', 'max': '1024px'},
+        'desktop': {'min': '1024px'},
+      },
+      spacing: {
+        'touch': '44px', // Minimum touch target size
+        'safe-top': 'env(safe-area-inset-top)',
+        'safe-bottom': 'env(safe-area-inset-bottom)',
+        'safe-left': 'env(safe-area-inset-left)',
+        'safe-right': 'env(safe-area-inset-right)',
+      },
+      fontSize: {
+        'mobile-xs': ['12px', '16px'],
+        'mobile-sm': ['14px', '20px'],
+        'mobile-base': ['16px', '24px'],
+        'mobile-lg': ['18px', '28px'],
+        'mobile-xl': ['20px', '32px'],
+      },
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",

@@ -18,10 +18,17 @@ import {
 } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 
 interface LeaveRequestFormProps {
   onClose: () => void
   onSuccess: () => void
+  isOpen: boolean
 }
 
 const LEAVE_TYPES = [
@@ -34,7 +41,7 @@ const LEAVE_TYPES = [
   { value: 'unpaid', label: 'Unpaid Leave' }
 ]
 
-export function LeaveRequestForm({ onClose, onSuccess }: LeaveRequestFormProps) {
+export function LeaveRequestForm({ onClose, onSuccess, isOpen }: LeaveRequestFormProps) {
   const { user } = useNewAuth()
   const [loading, setLoading] = useState(false)
   const [balance, setBalance] = useState<LeaveBalance | null>(null)
@@ -160,89 +167,101 @@ export function LeaveRequestForm({ onClose, onSuccess }: LeaveRequestFormProps) 
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      <div className="space-y-4">
-        <div className="space-y-2">
-          <Label>Leave Type</Label>
-          <Select
-          value={formData.type}
-            onValueChange={(value) => setFormData({ ...formData, type: value as LeaveType })}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {LEAVE_TYPES.map((type) => (
-                <SelectItem key={type.value} value={type.value}>
-                  {type.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Request Leave</DialogTitle>
+        </DialogHeader>
+        
+        <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Leave Type */}
           <div className="space-y-2">
-            <Label>Start Date</Label>
-            <Input
-            type="date"
-            value={formData.startDate}
-            onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
-              min={new Date().toISOString().split('T')[0]}
-            required
-          />
-        </div>
-          <div className="space-y-2">
-            <Label>End Date</Label>
-            <Input
-            type="date"
-            value={formData.endDate}
-            onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
-              min={formData.startDate || new Date().toISOString().split('T')[0]}
-            required
-          />
-        </div>
-      </div>
-
-      {daysRequested > 0 && balance && (
-          <div className="bg-muted rounded-lg p-4">
-            <div className="space-y-1">
-              <p className="text-sm">
-            Days requested: <span className="font-medium">{daysRequested}</span>
-          </p>
-              <p className="text-sm">
-            Available balance: <span className="font-medium">{String(balance[formData.type as keyof LeaveBalance])}</span> days
-          </p>
-            </div>
-        </div>
-      )}
-
-        <div className="space-y-2">
-          <Label>Reason</Label>
-          <Textarea
-          value={formData.reason}
-          onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
-            placeholder="Please provide a reason for your leave request"
-            className="min-h-[100px]"
-          required
-        />
-        </div>
-
-        {error && (
-          <div className="bg-destructive/10 text-destructive rounded-lg p-4">
-            <p className="text-sm">{error}</p>
+            <label htmlFor="type" className="text-sm font-medium">
+              Leave Type
+            </label>
+            <select
+              id="type"
+              value={formData.type}
+              onChange={(e) => setFormData({ ...formData, type: e.target.value as LeaveType })}
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-base"
+              required
+            >
+              <option value="">Select leave type</option>
+              <option value="annual">Annual Leave</option>
+              <option value="sick">Sick Leave</option>
+              <option value="personal">Personal Leave</option>
+              <option value="maternity">Maternity Leave</option>
+              <option value="paternity">Paternity Leave</option>
+              <option value="bereavement">Bereavement Leave</option>
+              <option value="unpaid">Unpaid Leave</option>
+            </select>
           </div>
-        )}
-      </div>
 
-      <div className="flex justify-end space-x-3">
-        <Button variant="outline" type="button" onClick={onClose}>
-          Cancel
-        </Button>
-        <Button type="submit" disabled={loading || !!error}>
-          {loading ? 'Submitting...' : 'Submit Request'}
-        </Button>
-      </div>
-    </form>
+          {/* Date Range */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label htmlFor="startDate" className="text-sm font-medium">
+                Start Date
+              </label>
+              <input
+                type="date"
+                id="startDate"
+                value={formData.startDate}
+                onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-base"
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="endDate" className="text-sm font-medium">
+                End Date
+              </label>
+              <input
+                type="date"
+                id="endDate"
+                value={formData.endDate}
+                onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-base"
+                required
+              />
+            </div>
+          </div>
+
+          {/* Reason */}
+          <div className="space-y-2">
+            <label htmlFor="reason" className="text-sm font-medium">
+              Reason
+            </label>
+            <textarea
+              id="reason"
+              value={formData.reason}
+              onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
+              placeholder="Please provide a reason for your leave request..."
+              rows={4}
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-base resize-none"
+              required
+            />
+          </div>
+
+          {/* Mobile-friendly buttons */}
+          <div className="flex flex-col sm:flex-row gap-3 pt-4">
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-full sm:w-auto px-6 py-3 text-base font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-lg hover:bg-gray-200 focus:ring-2 focus:ring-gray-500 focus:border-gray-500 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={loading || !!error}
+              className="w-full sm:w-auto px-6 py-3 text-base font-medium text-white bg-blue-600 border border-transparent rounded-lg hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {loading ? 'Submitting...' : 'Submit Request'}
+            </button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 } 

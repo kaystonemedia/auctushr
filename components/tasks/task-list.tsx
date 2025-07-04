@@ -212,95 +212,170 @@ export function TaskList({ tasks, loading, onTaskUpdate, onTaskDelete }: TaskLis
 
   return (
     <div className="space-y-4">
-      {tasks.map((task) => (
-        <Card key={task.id} className="p-4">
-          <div className="flex items-start justify-between">
-            <div className="flex items-start space-x-4">
-              <div className="space-y-1">
-                <div className="flex items-center space-x-2">
-                  <h3 className="font-medium">{task.title}</h3>
-                  <Badge className={PRIORITY_COLORS[task.priority]}>
+      {/* Mobile View */}
+      <div className="md:hidden">
+        <div className="space-y-4">
+          {tasks.map((task) => (
+            <div
+              key={task.id}
+              className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm"
+            >
+              <div className="flex justify-between items-start mb-3">
+                <div className="flex-1">
+                  <h3 className="font-medium text-gray-900">{task.title}</h3>
+                  <p className="text-sm text-gray-500 mt-1">{task.description}</p>
+                </div>
+                <span className={`px-2 py-1 text-xs font-medium rounded-full ml-2 ${
+                  task.status === 'completed'
+                    ? 'bg-green-100 text-green-800'
+                    : task.status === 'in_progress'
+                    ? 'bg-blue-100 text-blue-800'
+                    : 'bg-gray-100 text-gray-800'
+                }`}>
+                  {task.status.replace('_', ' ')}
+                </span>
+              </div>
+              
+              <div className="space-y-2 mb-3">
+                <div className="flex justify-between">
+                  <span className="text-sm text-gray-500">Priority:</span>
+                  <span className={`text-sm font-medium ${
+                    task.priority === 'high'
+                      ? 'text-red-600'
+                      : task.priority === 'medium'
+                      ? 'text-yellow-600'
+                      : 'text-green-600'
+                  }`}>
                     {task.priority}
-                  </Badge>
-                  <Badge className={STATUS_COLORS[task.status]}>
-                    {formatStatus(task.status)}
-                  </Badge>
+                  </span>
                 </div>
-                {task.description && (
-                  <p className="text-sm text-gray-500">{task.description}</p>
-                )}
-                <div className="flex items-center space-x-4 text-sm text-gray-500">
-                  <div className="flex items-center">
-                    <Calendar className="h-4 w-4 mr-1" />
-                    {format(task.dueDate, 'MMM d, yyyy')}
-                  </div>
-                  {task.completedAt && (
-                    <div className="flex items-center text-green-600">
-                      <CheckCircle className="h-4 w-4 mr-1" />
-                      Completed {format(task.completedAt, 'MMM d, yyyy')}
-                    </div>
-                  )}
+                <div className="flex justify-between">
+                  <span className="text-sm text-gray-500">Due Date:</span>
+                  <span className="text-sm font-medium">
+                    {new Date(task.dueDate).toLocaleDateString()}
+                  </span>
                 </div>
-                
-                {/* Status Transition Buttons */}
-                <div className="flex items-center space-x-2 mt-2">
-                  {getAvailableStatusTransitions(task).map((transition) => {
-                    const IconComponent = transition.icon
-                    return (
-                      <Button
-                        key={transition.status}
-                        variant="outline"
-                        size="sm"
-                        className={`${transition.color} border-current hover:bg-current hover:bg-opacity-10`}
-                        onClick={() => handleStatusChange(task, transition.status as TaskStatus)}
-                      >
-                        <IconComponent className="h-4 w-4 mr-1" />
-                        {transition.label}
-                      </Button>
-                    )
-                  })}
-                  
-                  {/* Show workflow hint for employees */}
-                  {(isTaskAssignedToUser(task) && user?.role === 'employee') && (
-                    <div className="text-xs text-gray-500 ml-4">
-                      {task.status === 'pending' && 'Accept this task to start working on it'}
-                      {task.status === 'accepted' && 'Start working when you\'re ready'}
-                      {task.status === 'in_progress' && 'Mark as complete when finished'}
-                      {task.status === 'completed' && '✓ Task completed'}
-                    </div>
-                  )}
+                <div className="flex justify-between">
+                  <span className="text-sm text-gray-500">Assigned To:</span>
+                  <span className="text-sm font-medium">{task.assignedTo}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm text-gray-500">Department:</span>
+                  <span className="text-sm font-medium">{task.department}</span>
                 </div>
               </div>
+              
+              <div className="mt-4 pt-4 border-t border-gray-100 flex justify-between">
+                <button
+                  onClick={() => setEditingTask(task)}
+                  className="px-3 py-1 text-sm text-blue-600 hover:text-blue-800 font-medium"
+                >
+                  Edit
+                </button>
+                <button
+                  onClick={() => handleDelete(task.id)}
+                  className="px-3 py-1 text-sm text-red-600 hover:text-red-800 font-medium"
+                >
+                  Delete
+                </button>
+              </div>
             </div>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm">
-                  <MoreVertical className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                {/* Edit is allowed for assigned users or admins/managers */}
-                {(isTaskAssignedToUser(task) || user?.role === 'admin' || user?.role === 'manager') && (
-                  <DropdownMenuItem onClick={() => setEditingTask(task)}>
-                    <Pencil className="h-4 w-4 mr-2" />
-                    Edit
-                  </DropdownMenuItem>
-                )}
-                {/* Delete is only allowed for admins/managers */}
-                {(user?.role === 'admin' || user?.role === 'manager') && (
-                  <DropdownMenuItem
-                    onClick={() => handleDelete(task.id)}
-                    className="text-red-600"
-                  >
-                    <Trash className="h-4 w-4 mr-2" />
-                    Delete
-                  </DropdownMenuItem>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </Card>
-      ))}
+          ))}
+        </div>
+      </div>
+
+      {/* Desktop View */}
+      <div className="hidden md:block">
+        {tasks.map((task) => (
+          <Card key={task.id} className="p-4">
+            <div className="flex items-start justify-between">
+              <div className="flex items-start space-x-4">
+                <div className="space-y-1">
+                  <div className="flex items-center space-x-2">
+                    <h3 className="font-medium">{task.title}</h3>
+                    <Badge className={PRIORITY_COLORS[task.priority]}>
+                      {task.priority}
+                    </Badge>
+                    <Badge className={STATUS_COLORS[task.status]}>
+                      {formatStatus(task.status)}
+                    </Badge>
+                  </div>
+                  {task.description && (
+                    <p className="text-sm text-gray-500">{task.description}</p>
+                  )}
+                  <div className="flex items-center space-x-4 text-sm text-gray-500">
+                    <div className="flex items-center">
+                      <Calendar className="h-4 w-4 mr-1" />
+                      {format(task.dueDate, 'MMM d, yyyy')}
+                    </div>
+                    {task.completedAt && (
+                      <div className="flex items-center text-green-600">
+                        <CheckCircle className="h-4 w-4 mr-1" />
+                        Completed {format(task.completedAt, 'MMM d, yyyy')}
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* Status Transition Buttons */}
+                  <div className="flex items-center space-x-2 mt-2">
+                    {getAvailableStatusTransitions(task).map((transition) => {
+                      const IconComponent = transition.icon
+                      return (
+                        <Button
+                          key={transition.status}
+                          variant="outline"
+                          size="sm"
+                          className={`${transition.color} border-current hover:bg-current hover:bg-opacity-10`}
+                          onClick={() => handleStatusChange(task, transition.status as TaskStatus)}
+                        >
+                          <IconComponent className="h-4 w-4 mr-1" />
+                          {transition.label}
+                        </Button>
+                      )
+                    })}
+                    
+                    {/* Show workflow hint for employees */}
+                    {(isTaskAssignedToUser(task) && user?.role === 'employee') && (
+                      <div className="text-xs text-gray-500 ml-4">
+                        {task.status === 'pending' && 'Accept this task to start working on it'}
+                        {task.status === 'accepted' && 'Start working when you\'re ready'}
+                        {task.status === 'in_progress' && 'Mark as complete when finished'}
+                        {task.status === 'completed' && '✓ Task completed'}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="sm">
+                    <MoreVertical className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {/* Edit is allowed for assigned users or admins/managers */}
+                  {(isTaskAssignedToUser(task) || user?.role === 'admin' || user?.role === 'manager') && (
+                    <DropdownMenuItem onClick={() => setEditingTask(task)}>
+                      <Pencil className="h-4 w-4 mr-2" />
+                      Edit
+                    </DropdownMenuItem>
+                  )}
+                  {/* Delete is only allowed for admins/managers */}
+                  {(user?.role === 'admin' || user?.role === 'manager') && (
+                    <DropdownMenuItem
+                      onClick={() => handleDelete(task.id)}
+                      className="text-red-600"
+                    >
+                      <Trash className="h-4 w-4 mr-2" />
+                      Delete
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          </Card>
+        ))}
+      </div>
 
       {editingTask && (
         <EditTaskModal
