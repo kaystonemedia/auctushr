@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils'
 import Link from 'next/link'
 
 export function Header() {
-  const { user, signOut } = useNewAuth()
+  const { user, logout } = useNewAuth()
   const [isDropdownOpen, setIsDropdownOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const router = useRouter()
@@ -29,7 +29,7 @@ export function Header() {
 
   const handleLogout = async () => {
     try {
-      await signOut()
+      await logout()
       router.push('/auth/sign-in')
     } catch (error) {
       console.error('Error signing out:', error)
