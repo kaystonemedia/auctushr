@@ -261,7 +261,7 @@ export function EmployeeTable({ employees, onEdit, onDelete, hideManagerColumn =
                  </div>
                  <div className="flex justify-between">
                    <span className="text-sm text-gray-500">Employee ID:</span>
-                   <span className="text-sm font-medium">{employee.employeeId}</span>
+                   <span className="text-sm font-medium">{employee.id}</span>
                  </div>
                  <div className="flex justify-between">
                    <span className="text-sm text-gray-500">Phone:</span>
