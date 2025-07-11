@@ -113,9 +113,9 @@ export default function EmployeesPage() {
       
       // If current user is a manager, automatically assign the employee to them
       const employeeData = { ...data }
-      if (user?.role === 'manager' && user?.uid && !employeeData.managerId) {
-        employeeData.managerId = user.uid
-        console.log('Auto-assigning employee to current manager:', user.uid)
+      if (user?.role === 'manager' && user?.id && !employeeData.managerId) {
+        employeeData.managerId = user.id
+        console.log('Auto-assigning employee to current manager:', user.id)
       }
       
       // Create employee using the createEmployee function
@@ -282,6 +282,7 @@ export default function EmployeesPage() {
           employees={employees}
           onEdit={handleEdit}
           onDelete={handleDelete}
+          hideManagerColumn={user?.role === 'manager'}
         />
       </div>
 

@@ -191,21 +191,32 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-// Handle idle state
+// Handle idle state - Continue tracking even when idle
 chrome.idle.onStateChanged.addListener(async (newState) => {
-  if (newState === 'idle' && state.isCheckedIn) {
+  // Only track idle if we have an active session (checked in)
+  if (!state.currentSession.startTime) return;
+
+  if (newState === 'idle' && !state.idleStartTime) {
+    // Start idle tracking but KEEP the session running
     state.idleStartTime = Date.now();
     await logActivity('idle_start', { timestamp: new Date().toISOString() });
     await saveState();
+    console.log('💤 User went idle - continuing to track time');
   } else if (newState === 'active' && state.idleStartTime) {
+    // User is back - resume active tracking
     const idleDuration = Date.now() - state.idleStartTime;
     state.currentSession.idleTime += idleDuration;
     state.idleStartTime = null;
+    
+    // Update last active time to current time
+    updateLastActiveTime();
+    
     await logActivity('idle_end', { 
       timestamp: new Date().toISOString(),
       duration: idleDuration
     });
     await saveState();
+    console.log('🔄 User returned from idle - resuming active tracking');
   }
 });
 
@@ -223,29 +234,38 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 
 // Track web activity
 chrome.webNavigation.onCompleted.addListener((details) => {
-  if (!state.isCheckedIn || !state.currentSession.startTime) return
+  // Continue tracking if we have an active session (even if idle)
+  if (!state.currentSession.startTime) return
 
   logActivity(WEB_ACTIVITY_TYPES.NAVIGATION, {
     url: details.url,
     title: details.title,
     transitionType: details.transitionType
   })
+  
+  // User is active again, update last active time
+  updateLastActiveTime();
 })
 
 // Track tab updates
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (!state.isCheckedIn || !state.currentSession.startTime || !changeInfo.url) return
+  // Continue tracking if we have an active session (even if idle)
+  if (!state.currentSession.startTime || !changeInfo.url) return
 
   logActivity(WEB_ACTIVITY_TYPES.NAVIGATION, {
     url: changeInfo.url,
     title: tab.title,
     tabId
   })
+  
+  // User is active again, update last active time
+  updateLastActiveTime();
 })
 
 // Track tab focus
 chrome.tabs.onActivated.addListener((activeInfo) => {
-  if (!state.isCheckedIn || !state.currentSession.startTime) return
+  // Continue tracking if we have an active session (even if idle)
+  if (!state.currentSession.startTime) return
 
   chrome.tabs.get(activeInfo.tabId, (tab) => {
     logActivity(WEB_ACTIVITY_TYPES.FOCUS, {
@@ -253,6 +273,9 @@ chrome.tabs.onActivated.addListener((activeInfo) => {
       title: tab.title,
       tabId: tab.id
     })
+    
+    // User is active again, update last active time
+    updateLastActiveTime();
   })
 })
 
@@ -268,7 +291,8 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 
 // Track application usage
 chrome.tabs.onActivated.addListener(async (activeInfo) => {
-  if (!state.isCheckedIn || !state.currentSession.startTime) return;
+  // Continue tracking if we have an active session (even if idle)
+  if (!state.currentSession.startTime) return;
 
   const tab = await chrome.tabs.get(activeInfo.tabId);
   const url = new URL(tab.url);
@@ -288,11 +312,15 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
 
   // Update website stats
   updateWebsiteStats(domain);
+  
+  // User is active again, update last active time
+  updateLastActiveTime();
 });
 
 // Track meetings (integrate with calendar)
 async function checkCalendarEvents() {
-  if (!state.isCheckedIn || !state.currentSession.startTime) return;
+  // Continue tracking if we have an active session (even if idle)
+  if (!state.currentSession.startTime) return;
 
   try {
     // Check if user has a meeting now
@@ -331,7 +359,8 @@ async function checkCalendarEvents() {
 
 // Track breaks
 function checkBreakStatus() {
-  if (!state.isCheckedIn || !state.currentSession.startTime) return;
+  // Continue tracking if we have an active session (even if idle)
+  if (!state.currentSession.startTime) return;
 
   const now = Date.now();
   const lastActivity = state.lastActiveTime;
@@ -354,7 +383,8 @@ function checkBreakStatus() {
 
 // Track focus time
 function checkFocusStatus() {
-  if (!state.isCheckedIn || !state.currentSession.startTime) return;
+  // Continue tracking if we have an active session (even if idle)
+  if (!state.currentSession.startTime) return;
 
   const now = Date.now();
   const lastActivity = state.lastActiveTime;
@@ -404,12 +434,21 @@ function updateWebsiteStats(domain) {
 // Helper functions
 function updateLastActiveTime() {
   const now = Date.now();
+  
+  // If user was idle, end the idle period
   if (state.idleStartTime) {
-    state.currentSession.idleTime += now - state.idleStartTime;
+    const idleDuration = now - state.idleStartTime;
+    state.currentSession.idleTime += idleDuration;
     state.idleStartTime = null;
+    console.log('🔄 User returned from idle - resuming active tracking');
   }
+  
   state.lastActiveTime = now;
-  logActivity('active');
+  
+  // Log activity only if we have an active session
+  if (state.currentSession.startTime) {
+    logActivity('active');
+  }
 }
 
 function calculateActiveTime() {
@@ -421,7 +460,8 @@ function calculateActiveTime() {
 }
 
 async function logActivity(type, data) {
-  if (!state.isCheckedIn) return;
+  // Continue logging if we have an active session (even if idle)
+  if (!state.currentSession.startTime) return;
 
   const activity = {
     type,
@@ -542,21 +582,31 @@ async function handleCheckOut() {
 }
 
 async function syncActivityData(isCheckOut = false) {
-  if (!state.isCheckedIn || !state.currentSession.startTime) return;
+  // Continue syncing if we have an active session (even if idle)
+  if (!state.currentSession.startTime) return;
 
   try {
+    const authToken = await getAuthToken();
+    const userId = await getUserId();
+    
+    if (!authToken || !userId) {
+      console.error('Missing authentication or user ID for sync');
+      return;
+    }
+
     const response = await fetch(`${API_BASE_URL}/attendance/sync`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${await getAuthToken()}`
+        'Authorization': `Bearer ${authToken}`
       },
       body: JSON.stringify({
         session: {
           ...state.currentSession,
           activeTime: calculateActiveTime(),
           isCheckOut
-        }
+        },
+        userId: userId
       })
     });
 
@@ -701,6 +751,11 @@ async function getAuthToken() {
   return authToken;
 }
 
+async function getUserId() {
+  const { userId } = await chrome.storage.local.get('userId');
+  return userId;
+}
+
 async function updateSettings(newSettings) {
   await chrome.storage.local.set({ settings: newSettings });
   
@@ -715,11 +770,17 @@ async function updateSettings(newSettings) {
 // Send productivity notification to API
 async function sendProductivityNotification(type, data = {}) {
   try {
+    const authToken = await getAuthToken();
+    if (!authToken) {
+      console.error('No auth token available for productivity notification');
+      return;
+    }
+
     const response = await fetch(`${API_BASE_URL}/notifications/productivity`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${await auth.currentUser.getIdToken()}`
+        'Authorization': `Bearer ${authToken}`
       },
       body: JSON.stringify({
         type,

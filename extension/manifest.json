@@ -13,12 +13,11 @@
     "alarms"
   ],
   "host_permissions": [
-            "https://kaystonehr.com/*",
+    "https://kaystonehr.com/*",
     "https://www.googleapis.com/*"
   ],
   "background": {
-    "service_worker": "background.js",
-    "type": "module"
+    "service_worker": "background.js"
   },
   "content_scripts": [
     {

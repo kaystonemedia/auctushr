@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useAuth } from '@/contexts/auth-context'
+import { useNewAuth } from '@/contexts/new-auth-context'
 import { SettingsService } from '@/lib/settings'
 import { Settings, PayrollSettings, ProductivityBonusTier, AttendanceBonusTier } from '@/types/settings'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -36,7 +36,7 @@ import { toast } from '@/components/ui/use-toast'
 import { cleanupInvalidNotifications } from '@/lib/notifications'
 
 export default function SettingsPage() {
-  const { user } = useAuth()
+  const { user } = useNewAuth()
   const [settings, setSettings] = useState<Settings | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -325,23 +325,23 @@ export default function SettingsPage() {
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex flex-col space-y-4 mb-8 md:flex-row md:items-center md:justify-between md:space-y-0">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">System Settings</h1>
-          <p className="text-gray-600 mt-2">
+          <h1 className="text-2xl md:text-3xl font-bold text-gray-900">System Settings</h1>
+          <p className="text-gray-600 mt-2 text-sm md:text-base">
             Configure system-wide settings and bonus structures
           </p>
         </div>
-        <div className="flex space-x-2">
-          <Button variant="outline" onClick={exportSettings}>
+        <div className="flex flex-col space-y-2 md:flex-row md:space-y-0 md:space-x-2">
+          <Button variant="outline" onClick={exportSettings} size="sm">
             <Download className="h-4 w-4 mr-2" />
             Export
           </Button>
-          <Button variant="outline" onClick={resetToDefaults}>
+          <Button variant="outline" onClick={resetToDefaults} size="sm">
             <RefreshCw className="h-4 w-4 mr-2" />
             Reset
           </Button>
-          <Button onClick={saveSettings} disabled={saving}>
+          <Button onClick={saveSettings} disabled={saving} size="sm">
             <Save className="h-4 w-4 mr-2" />
             {saving ? 'Saving...' : 'Save Changes'}
           </Button>
@@ -349,30 +349,30 @@ export default function SettingsPage() {
       </div>
 
       <Tabs defaultValue="payroll" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-6">
-          <TabsTrigger value="payroll" className="flex items-center space-x-2">
-            <DollarSign className="h-4 w-4" />
-            <span>Payroll</span>
+        <TabsList className="grid w-full grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-1 h-auto">
+          <TabsTrigger value="payroll" className="flex items-center justify-center space-x-1 md:space-x-2 px-2 py-2 text-xs md:text-sm">
+            <DollarSign className="h-3 w-3 md:h-4 md:w-4" />
+            <span className="hidden sm:inline">Payroll</span>
           </TabsTrigger>
-          <TabsTrigger value="company" className="flex items-center space-x-2">
-            <Users className="h-4 w-4" />
-            <span>Company</span>
+          <TabsTrigger value="company" className="flex items-center justify-center space-x-1 md:space-x-2 px-2 py-2 text-xs md:text-sm">
+            <Users className="h-3 w-3 md:h-4 md:w-4" />
+            <span className="hidden sm:inline">Company</span>
           </TabsTrigger>
-          <TabsTrigger value="attendance" className="flex items-center space-x-2">
-            <Clock className="h-4 w-4" />
-            <span>Attendance</span>
+          <TabsTrigger value="attendance" className="flex items-center justify-center space-x-1 md:space-x-2 px-2 py-2 text-xs md:text-sm">
+            <Clock className="h-3 w-3 md:h-4 md:w-4" />
+            <span className="hidden sm:inline">Attendance</span>
           </TabsTrigger>
-          <TabsTrigger value="productivity" className="flex items-center space-x-2">
-            <TrendingUp className="h-4 w-4" />
-            <span>Productivity</span>
+          <TabsTrigger value="productivity" className="flex items-center justify-center space-x-1 md:space-x-2 px-2 py-2 text-xs md:text-sm">
+            <TrendingUp className="h-3 w-3 md:h-4 md:w-4" />
+            <span className="hidden sm:inline">Productivity</span>
           </TabsTrigger>
-          <TabsTrigger value="notifications" className="flex items-center space-x-2">
-            <Bell className="h-4 w-4" />
-            <span>Notifications</span>
+          <TabsTrigger value="notifications" className="flex items-center justify-center space-x-1 md:space-x-2 px-2 py-2 text-xs md:text-sm">
+            <Bell className="h-3 w-3 md:h-4 md:w-4" />
+            <span className="hidden sm:inline">Notifications</span>
           </TabsTrigger>
-          <TabsTrigger value="security" className="flex items-center space-x-2">
-            <Shield className="h-4 w-4" />
-            <span>Security</span>
+          <TabsTrigger value="security" className="flex items-center justify-center space-x-1 md:space-x-2 px-2 py-2 text-xs md:text-sm">
+            <Shield className="h-3 w-3 md:h-4 md:w-4" />
+            <span className="hidden sm:inline">Security</span>
           </TabsTrigger>
         </TabsList>
 
@@ -386,7 +386,7 @@ export default function SettingsPage() {
             </CardHeader>
             <CardContent className="space-y-6">
               {/* Basic Payroll Settings */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div>
                   <Label htmlFor="currency">Currency</Label>
                   <Input
@@ -406,7 +406,7 @@ export default function SettingsPage() {
                     placeholder="20"
                   />
                 </div>
-                <div>
+                <div className="sm:col-span-2 lg:col-span-1">
                   <Label htmlFor="insuranceRate">Default Insurance Rate (%)</Label>
                   <Input
                     id="insuranceRate"
@@ -450,43 +450,45 @@ export default function SettingsPage() {
                   <div className="space-y-4">
                     {settings.payroll.bonusStructure.productivity.tiers.map((tier, index) => (
                       <Card key={index} className="p-4">
-                        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-center">
-                          <div>
-                            <Label>Min Score</Label>
-                            <Input
-                              type="number"
-                              value={tier.minScore}
-                              onChange={(e) => updateBonusTier('productivity', index, { minScore: Number(e.target.value) })}
-                              placeholder="0"
-                            />
+                        <div className="space-y-4">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                            <div>
+                              <Label>Min Score</Label>
+                              <Input
+                                type="number"
+                                value={tier.minScore}
+                                onChange={(e) => updateBonusTier('productivity', index, { minScore: Number(e.target.value) })}
+                                placeholder="0"
+                              />
+                            </div>
+                            <div>
+                              <Label>Max Score</Label>
+                              <Input
+                                type="number"
+                                value={tier.maxScore}
+                                onChange={(e) => updateBonusTier('productivity', index, { maxScore: Number(e.target.value) })}
+                                placeholder="100"
+                              />
+                            </div>
+                            <div>
+                              <Label>Bonus (%)</Label>
+                              <Input
+                                type="number"
+                                value={tier.bonusPercentage}
+                                onChange={(e) => updateBonusTier('productivity', index, { bonusPercentage: Number(e.target.value) })}
+                                placeholder="5"
+                              />
+                            </div>
+                            <div>
+                              <Label>Description</Label>
+                              <Input
+                                value={tier.description}
+                                onChange={(e) => updateBonusTier('productivity', index, { description: e.target.value })}
+                                placeholder="High Performance"
+                              />
+                            </div>
                           </div>
-                          <div>
-                            <Label>Max Score</Label>
-                            <Input
-                              type="number"
-                              value={tier.maxScore}
-                              onChange={(e) => updateBonusTier('productivity', index, { maxScore: Number(e.target.value) })}
-                              placeholder="100"
-                            />
-                          </div>
-                          <div>
-                            <Label>Bonus (%)</Label>
-                            <Input
-                              type="number"
-                              value={tier.bonusPercentage}
-                              onChange={(e) => updateBonusTier('productivity', index, { bonusPercentage: Number(e.target.value) })}
-                              placeholder="5"
-                            />
-                          </div>
-                          <div>
-                            <Label>Description</Label>
-                            <Input
-                              value={tier.description}
-                              onChange={(e) => updateBonusTier('productivity', index, { description: e.target.value })}
-                              placeholder="High Performance"
-                            />
-                          </div>
-                          <div className="flex items-center space-x-2">
+                          <div className="flex items-center justify-between">
                             <Badge variant="secondary">
                               {tier.minScore}-{tier.maxScore}%
                             </Badge>

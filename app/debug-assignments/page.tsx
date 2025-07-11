@@ -5,9 +5,29 @@ import { useNewAuth } from '@/contexts/new-auth-context'
 import { db } from '@/lib/firebase'
 import { collection, getDocs, query, where } from 'firebase/firestore'
 
+interface Employee {
+  id: string
+  firstName: string
+  lastName: string
+  email: string
+  managerId?: string
+  role?: string
+  [key: string]: any
+}
+
+interface Manager {
+  id: string
+  firstName: string
+  lastName: string
+  email: string
+  uid?: string
+  collection: string
+  [key: string]: any
+}
+
 interface DebugData {
-  managers: any[]
-  employees: any[]
+  managers: Manager[]
+  employees: Employee[]
   assignments: any[]
 }
 
@@ -40,12 +60,12 @@ export default function DebugAssignmentsPage() {
         ...usersSnapshot.docs.map(doc => ({ id: doc.id, collection: 'users', ...doc.data() })),
         ...managersSnapshot.docs.map(doc => ({ id: doc.id, collection: 'managers', ...doc.data() })),
         ...employeesWithManagerRole.docs.map(doc => ({ id: doc.id, collection: 'employees', ...doc.data() }))
-      ]
+      ] as Manager[]
 
       const employees = employeesSnapshot.docs.map(doc => ({ 
         id: doc.id, 
         ...doc.data() 
-      }))
+      })) as Employee[]
 
       // Create assignment analysis
       const assignments = employees
@@ -83,6 +103,11 @@ export default function DebugAssignmentsPage() {
   return (
     <div className="p-6 max-w-7xl mx-auto">
       <h1 className="text-2xl font-bold mb-6">Debug Manager-Employee Assignments</h1>
+      <div className="bg-blue-50 p-4 rounded-lg mb-6">
+        <div className="text-sm">
+          <strong>Current User:</strong> {user?.email} | <strong>Role:</strong> {user?.role} | <strong>ID:</strong> {user?.id}
+        </div>
+      </div>
       
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Managers */}

@@ -70,12 +70,13 @@ const roleBasedRoutes = {
     '/administrators',
     '/tasks',
     '/departments',
-    '/people',
     '/wellness-check-in',
     '/whos-away',
     '/test-auth',
     '/add-employee',
-    '/todo'
+    '/todo',
+    '/debug-assignments',
+    '/fix-assignments'
   ],
   manager: [
     '/dashboard',
@@ -92,10 +93,11 @@ const roleBasedRoutes = {
     '/help',
     '/tasks',
     '/departments',
-    '/people',
     '/wellness-check-in',
     '/whos-away',
-    '/test-auth'
+    '/test-auth',
+    '/debug-assignments',
+    '/fix-assignments'
   ],
   employee: [
     '/dashboard',
@@ -104,7 +106,9 @@ const roleBasedRoutes = {
     '/my-tasks',
     '/leave',
     '/help',
-    '/test-auth'
+    '/test-auth',
+    '/debug-assignments',
+    '/fix-assignments'
   ]
 }
 

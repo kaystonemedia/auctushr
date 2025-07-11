@@ -8,7 +8,7 @@ import { Plus, Search, Building2, Users, Pencil, Trash2 } from 'lucide-react'
 import { collection, getDocs, doc, deleteDoc, query, where } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { toast } from 'react-hot-toast'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { DepartmentForm } from '@/components/departments/department-form'
 
 interface Department {
@@ -133,9 +133,12 @@ export default function DepartmentsPage() {
               Add Department
             </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="sm:max-w-[600px] max-h-[90vh]">
             <DialogHeader>
               <DialogTitle>Add New Department</DialogTitle>
+              <DialogDescription>
+                Create a new department for your organization
+              </DialogDescription>
             </DialogHeader>
             <DepartmentForm
               onSuccess={() => {
@@ -214,9 +217,12 @@ export default function DepartmentsPage() {
 
       {editingDepartment && (
         <Dialog open={!!editingDepartment} onOpenChange={() => setEditingDepartment(null)}>
-          <DialogContent>
+          <DialogContent className="sm:max-w-[600px] max-h-[90vh]">
             <DialogHeader>
               <DialogTitle>Edit Department</DialogTitle>
+              <DialogDescription>
+                Update department information and settings
+              </DialogDescription>
             </DialogHeader>
             <DepartmentForm
               department={editingDepartment}

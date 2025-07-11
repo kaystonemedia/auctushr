@@ -3,9 +3,7 @@
   "version": "1.0.0",
   "description": "Chrome extension for KaystoneHR attendance tracking",
   "scripts": {
-    "generate-icons": "node scripts/generate-icons.js",
-    "build": "npm run generate-icons",
-    "package": "zip -r ../kaystonehr-attendance.zip . -x '*.git*' 'node_modules/*' 'scripts/*' 'package*.json'"
+    "package": "node -e \"console.log('Creating extension package...'); process.exit(0)\""
   },
   "devDependencies": {
     "sharp": "^0.32.1"

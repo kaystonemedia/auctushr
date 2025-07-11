@@ -58,6 +58,7 @@ const roleBasedRoutes = {
     '/attendance',
     '/my-tasks',
     '/leave',
+    '/documents',
     '/help'
   ]
 }

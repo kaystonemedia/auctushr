@@ -6,7 +6,7 @@ import { AttendanceFilterPanel } from "@/components/attendance-filter-panel"
 import { AttendanceRecord, AttendanceStats, AttendanceFilters } from "@/types/attendance"
 import { db } from "@/lib/firebase"
 import { collection, query, where, getDocs, orderBy, doc, updateDoc } from "firebase/firestore"
-import { useAuth } from "@/contexts/auth-context"
+import { useNewAuth } from "@/contexts/new-auth-context"
 import { Download, Filter } from "lucide-react"
 import { exportAttendanceToCSV } from "@/lib/export-attendance"
 import { AttendanceAnalytics } from "@/components/attendance-analytics"
@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
 
 export default function AttendanceReportsPage() {
-  const { user } = useAuth()
+  const { user } = useNewAuth()
   const [records, setRecords] = useState<AttendanceRecord[]>([])
   const [stats, setStats] = useState<AttendanceStats>({
     totalDays: 0,
@@ -97,8 +97,8 @@ export default function AttendanceReportsPage() {
       }
 
       // If user is not admin, only fetch their own records
-      if (user?.role !== 'admin' && user?.uid) {
-        q = query(q, where("employeeId", "==", user.uid))
+      if (user?.role !== 'admin' && user?.id) {
+        q = query(q, where("employeeId", "==", user.id))
       }
 
       const querySnapshot = await getDocs(q)
@@ -204,14 +204,14 @@ export default function AttendanceReportsPage() {
       const recordRef = doc(db, "attendance", recordId)
       await updateDoc(recordRef, {
         approvalStatus: 'approved',
-        approvedBy: user?.uid,
+        approvedBy: user?.id,
         approvedAt: new Date()
       })
       
       // Update local state
-      setRecords(prev => prev.map(record => 
-        record.id === recordId 
-          ? { ...record, approvalStatus: 'approved', approvedBy: user?.uid, approvedAt: new Date() }
+            setRecords(prev => prev.map(record =>
+        record.id === recordId
+          ? { ...record, approvalStatus: 'approved', approvedBy: user?.id, approvedAt: new Date() }
           : record
       ))
       
@@ -227,14 +227,14 @@ export default function AttendanceReportsPage() {
       const recordRef = doc(db, "attendance", recordId)
       await updateDoc(recordRef, {
         approvalStatus: 'rejected',
-        rejectedBy: user?.uid,
+        rejectedBy: user?.id,
         rejectedAt: new Date()
       })
       
       // Update local state
       setRecords(prev => prev.map(record => 
         record.id === recordId 
-          ? { ...record, approvalStatus: 'rejected', rejectedBy: user?.uid, rejectedAt: new Date() }
+          ? { ...record, approvalStatus: 'rejected', rejectedBy: user?.id, rejectedAt: new Date() }
           : record
       ))
       

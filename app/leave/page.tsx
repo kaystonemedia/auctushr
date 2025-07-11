@@ -16,6 +16,11 @@ export default function LeavePage() {
     user?.role === 'employee' ? 'my' : 'all'
   )
 
+  const fetchData = () => {
+    // This would typically refresh the leave requests list
+    // For now, it's just a placeholder
+  }
+
   return (
     <div className="py-10 px-4 max-w-4xl mx-auto space-y-8">
       {/* Header */}
@@ -90,11 +95,12 @@ export default function LeavePage() {
           <div className="bg-white rounded-xl p-8 max-w-md w-full shadow-2xl">
             <h2 className="text-lg font-semibold mb-4">Submit Leave Request</h2>
             <LeaveRequestForm
-              isOpen={true}
+              isOpen={showForm}
               onClose={() => setShowForm(false)}
               onSuccess={() => {
                 setView('my')
                 setShowForm(false)
+                fetchData()
               }}
             />
           </div>

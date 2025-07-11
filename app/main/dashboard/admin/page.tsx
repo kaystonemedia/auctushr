@@ -1,13 +1,13 @@
 'use client'
 
-import { useAuth } from '@/contexts/auth-context'
+import { useNewAuth } from '@/contexts/new-auth-context'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Users, Building2, FileText, Settings, ArrowRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
 
 export default function AdminDashboard() {
-  const { user } = useAuth()
+  const { user } = useNewAuth()
 
   return (
     <div className="p-8">

@@ -1,11 +1,11 @@
 'use client'
 
-import { useAuth } from '@/contexts/auth-context'
+import { useNewAuth } from '@/contexts/new-auth-context'
 import AdminDashboard from '@/components/dashboard/admin-dashboard'
 import ManagerDashboard from '@/components/dashboard/manager-dashboard'
 
 export default function DashboardPage() {
-  const { user } = useAuth()
+  const { user } = useNewAuth()
 
   if (!user) {
     return null

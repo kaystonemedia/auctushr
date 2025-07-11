@@ -177,6 +177,17 @@ async function saveSettings() {
   }
 }
 
+// Authentication setup
+async function setupAuthentication() {
+  const { authToken, userId } = await chrome.storage.local.get(['authToken', 'userId']);
+  
+  if (!authToken || !userId) {
+    // Show auth setup message
+    showNotification('Please set up authentication in extension options', 'warning');
+    // You could redirect to options page or show login form here
+  }
+}
+
 // Setup event listeners
 function setupEventListeners() {
   // Check in/out buttons
@@ -240,6 +251,7 @@ function setupEventListeners() {
 // Initialize popup
 async function initialize() {
   await loadSettings();
+  await setupAuthentication();
   setupEventListeners();
   await fetchStatus();
 

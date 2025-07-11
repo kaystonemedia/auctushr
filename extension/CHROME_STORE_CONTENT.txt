@@ -1,0 +1,361 @@
+EXTENSION PURPOSE:
+Employee attendance tracking and verification system for KaystoneHR employees to ensure accurate work hour documentation and location-based attendance verification.
+
+====================================
+1. EXTENSION DESCRIPTION
+====================================
+
+SHORT DESCRIPTION (132 characters max):
+Track attendance, monitor productivity, and manage work activities for KaystoneHR employees with automated time tracking.
+
+DETAILED DESCRIPTION:
+KaystoneHR Attendance is a professional time tracking and productivity monitoring extension designed for KaystoneHR employees to streamline their work management and attendance tracking.
+
+Key Features:
+• Seamless Check-In/Check-Out: Track your work hours with location-based attendance recording
+• Productivity Monitoring: Automatic tracking of active work time vs idle time
+• Smart Notifications: Get reminders for breaks, meetings, and prolonged idle periods
+• Activity Insights: Monitor website usage and work patterns to optimize productivity
+• Real-Time Sync: Automatic synchronization with your KaystoneHR dashboard
+• Location Tracking: GPS-based location verification for accurate attendance records
+• Focus Time Tracking: Track deep work sessions and break patterns
+• Meeting Integration: Automatic detection and logging of meeting activities
+
+Perfect for:
+- Remote workers who need accurate time tracking
+- Teams requiring productivity insights
+- HR departments monitoring employee attendance
+- Managers tracking team productivity metrics
+- Employees wanting to optimize their work patterns
+
+How it works:
+1. Install the extension and authenticate with your KaystoneHR account
+2. Click the extension icon to check in/out of work
+3. The extension automatically tracks your activity and productivity
+4. View real-time stats and sync data with your KaystoneHR dashboard
+5. Receive helpful notifications to maintain optimal productivity
+
+Privacy & Security:
+Your data is encrypted and only shared with your authorized KaystoneHR account. All tracking is transparent and can be configured through the extension settings.
+
+Technical Requirements:
+- Valid KaystoneHR employee account
+- Chrome browser with location services enabled
+- Internet connection for real-time synchronization
+
+Transform your work tracking experience with KaystoneHR Attendance - where productivity meets simplicity.
+
+====================================
+2. PRIVACY POLICY
+====================================
+
+KAYSTONEHR ATTENDANCE EXTENSION PRIVACY POLICY
+
+Effective Date: [Current Date]
+Last Updated: [Current Date]
+
+1. Introduction
+This Privacy Policy explains how the KaystoneHR Attendance Extension ("Extension", "we", "us", "our") collects, uses, and protects your personal information when you use our Chrome extension.
+
+2. Information We Collect
+
+2.1 Attendance Data:
+- Check-in and check-out timestamps
+- Work session duration and breaks
+- Location data for attendance verification (GPS coordinates)
+- Device information (browser, operating system)
+
+2.2 Activity Data:
+- Website URLs and page titles you visit during work hours
+- Click, scroll, and keyboard activity patterns
+- Focus and idle time measurements
+- Application usage statistics
+
+2.3 Productivity Metrics:
+- Active vs idle time calculations
+- Break duration and frequency
+- Meeting participation data
+- Task completion statistics
+
+2.4 Technical Data:
+- Browser information and version
+- Extension version and settings
+- Sync timestamps and error logs
+- Network connectivity status
+
+3. How We Use Your Information
+
+3.1 Primary Uses:
+- Track work attendance and hours
+- Monitor productivity and work patterns
+- Generate attendance reports for HR purposes
+- Provide productivity insights and recommendations
+- Sync data with your KaystoneHR employee dashboard
+
+3.2 Secondary Uses:
+- Improve extension functionality and user experience
+- Provide technical support and troubleshooting
+- Ensure compliance with employment policies
+- Generate aggregate analytics (anonymized)
+
+4. Data Sharing and Disclosure
+
+4.1 Authorized Sharing:
+- Your employer (KaystoneHR client) for attendance and productivity reporting
+- KaystoneHR platform for dashboard integration and analytics
+- Third-party service providers for data processing and storage
+
+4.2 Legal Compliance:
+We may disclose your information if required by law, court order, or government regulation.
+
+4.3 We Do NOT:
+- Sell your personal information to third parties
+- Share data with unauthorized entities
+- Use your data for advertising purposes
+- Access personal or non-work-related activities
+
+5. Data Security
+
+5.1 Protection Measures:
+- End-to-end encryption for data transmission
+- Secure authentication protocols
+- Regular security audits and updates
+- Access controls and permission management
+
+5.2 Data Retention:
+- Active session data: Stored until check-out
+- Historical data: Retained per company policy (typically 2-7 years)
+- Logs and technical data: Retained for 90 days
+
+6. Your Rights and Controls
+
+6.1 User Controls:
+- Enable/disable specific tracking features
+- Configure notification preferences
+- View all collected data through the extension
+- Request data export or deletion
+
+6.2 Data Rights:
+- Access: Request copies of your data
+- Correction: Update inaccurate information
+- Deletion: Request removal of your data
+- Portability: Export data in standard formats
+
+7. Location Data
+
+7.1 Collection:
+We collect GPS coordinates when you check in/out to verify your work location.
+
+7.2 Use:
+Location data is used solely for attendance verification and is not tracked continuously.
+
+7.3 Sharing:
+Location data is shared with your employer for attendance verification purposes only.
+
+8. Cookies and Storage
+
+8.1 Browser Storage:
+The extension uses Chrome's local storage to save settings and temporary data.
+
+8.2 No Cookies:
+We do not use tracking cookies or third-party advertising cookies.
+
+9. Children's Privacy
+
+This extension is designed for working professionals and is not intended for users under 18 years of age.
+
+10. Changes to This Policy
+
+We may update this Privacy Policy periodically. Users will be notified of significant changes through the extension interface.
+
+11. Contact Information
+
+For privacy-related questions or concerns:
+- Email: privacy@kaystonehr.com
+- Support: support@kaystonehr.com
+- Website: https://kaystonehr.com/privacy
+
+12. Compliance
+
+This Privacy Policy complies with:
+- General Data Protection Regulation (GDPR)
+- California Consumer Privacy Act (CCPA)
+- Chrome Web Store Developer Program Policies
+
+====================================
+3. PERMISSION JUSTIFICATIONS
+====================================
+
+REQUIRED PERMISSIONS EXPLANATION
+
+Storage:
+- Purpose: Save user settings, attendance data, and sync status locally
+- Justification: Required to maintain user preferences and cache data between sessions
+- Data Stored: Settings, authentication tokens, temporary attendance records
+
+Idle Detection:
+- Purpose: Detect when user is away from computer to pause productivity tracking
+- Justification: Essential for accurate work time calculations and productivity metrics
+- Usage: Monitors idle state to differentiate between active work and break time
+
+Tabs:
+- Purpose: Access current tab information for productivity tracking
+- Justification: Needed to log website usage and work-related activities
+- Data Accessed: Tab URLs, titles, and focus state for work activity analysis
+
+Geolocation:
+- Purpose: Verify work location during check-in/check-out
+- Justification: Required for location-based attendance verification
+- Usage: GPS coordinates collected only during check-in/out, not continuously
+
+Scripting:
+- Purpose: Inject content scripts to track user interactions
+- Justification: Necessary for monitoring work activity and productivity metrics
+- Scope: Limited to tracking work-related interactions during active sessions
+
+Web Navigation:
+- Purpose: Track page navigation for productivity analysis
+- Justification: Required to understand work patterns and website usage
+- Data Collected: Navigation timestamps and URLs visited during work hours
+
+Alarms:
+- Purpose: Schedule periodic data synchronization and reminders
+- Justification: Ensures reliable data backup and provides timely notifications
+- Usage: Sync data every 5 minutes, break reminders, meeting notifications
+
+Host Permissions:
+- kaystonehr.com: Sync attendance data with your employee dashboard
+- googleapis.com: Access calendar integration for meeting detection
+
+====================================
+4. SUPPORT INFORMATION
+====================================
+
+Support URL: https://kaystonehr.com/support/chrome-extension
+
+Contact Information:
+- Email: support@kaystonehr.com
+- Documentation: https://kaystonehr.com/docs/chrome-extension
+- FAQ: https://kaystonehr.com/faq/attendance-tracking
+
+Common Issues and Solutions:
+
+Authentication Problems:
+1. Ensure you have a valid KaystoneHR employee account
+2. Check your internet connection
+3. Clear extension data and re-authenticate
+4. Contact your HR administrator for account verification
+
+Location Services:
+1. Enable location services in Chrome settings
+2. Allow location access for the extension
+3. Ensure GPS is enabled on your device
+4. Check for location service restrictions
+
+Sync Issues:
+1. Verify internet connectivity
+2. Check Chrome extension permissions
+3. Manually trigger sync from extension popup
+4. Clear browser cache and restart Chrome
+
+====================================
+5. ADDITIONAL STORE INFORMATION
+====================================
+
+Category: Productivity
+Language: English
+Website: https://kaystonehr.com
+Version: 1.0.0
+Minimum Chrome Version: Chrome 88 (Manifest V3 support)
+
+Developer Information:
+Name: KaystoneHR
+Email: developer@kaystonehr.com
+Website: https://kaystonehr.com
+
+====================================
+6. PROMOTIONAL CONTENT
+====================================
+
+Key Benefits for Store Listing:
+- Accurate Time Tracking - Never miss a check-in with location-based verification
+- Productivity Insights - Understand your work patterns and optimize efficiency
+- Seamless Integration - Works perfectly with your KaystoneHR dashboard
+- Privacy-Focused - Your data is secure and only shared with authorized parties
+- Smart Notifications - Get reminders for breaks, meetings, and idle time
+- Real-Time Sync - Automatic backup ensures no data loss
+
+Target Keywords:
+- Time tracking
+- Attendance monitoring
+- Productivity tracking
+- Employee management
+- HR tools
+- Work from home
+- Remote work tracking
+- Time management
+- Workplace productivity
+- Employee attendance
+
+====================================
+7. TERMS OF SERVICE
+====================================
+
+KAYSTONEHR ATTENDANCE EXTENSION TERMS OF SERVICE
+
+By installing and using this extension, you agree to:
+
+1. Authorized Use: Use the extension only for legitimate work-related activities
+2. Data Accuracy: Provide accurate attendance and activity information
+3. Company Policies: Comply with your employer's attendance and productivity policies
+4. Privacy Respect: Understand that work activities may be monitored for productivity purposes
+5. Responsible Usage: Use the extension in accordance with Chrome Web Store policies
+
+Prohibited Uses:
+- Circumventing attendance tracking systems
+- Sharing authentication credentials
+- Using the extension for personal activities during work hours
+- Tampering with location or activity data
+
+Limitation of Liability:
+The extension is provided "as is" without warranties. KaystoneHR is not liable for any direct, indirect, or consequential damages arising from use of the extension.
+
+Termination:
+Your employer or KaystoneHR may terminate your access to the extension at any time for violation of these terms.
+
+====================================
+8. CHANGELOG
+====================================
+
+Version 1.0.0:
+- Initial release
+- Basic attendance tracking with check-in/check-out
+- Location-based verification
+- Activity monitoring and productivity tracking
+- Real-time sync with KaystoneHR dashboard
+- Smart notifications and reminders
+- Configurable privacy settings
+
+====================================
+SUBMISSION NOTES
+====================================
+
+This content is formatted for easy copying and pasting into Chrome Web Store submission forms.
+
+Each section can be copied individually:
+- Use Section 1 for store description fields
+- Use Section 2 for privacy policy requirements
+- Use Section 3 when explaining permissions
+- Use Section 4 for support information
+- Use Section 5 for basic store details
+- Use Section 6 for promotional content
+- Use Section 7 for terms of service
+- Use Section 8 for version information
+
+Save this document or copy sections as needed for your submission. 
+
+
+Essential for Core Functionality: The extension's primary purpose is to track attendance for KaystoneHR employees. Without access to the KaystoneHR domain, the extension cannot sync data or authenticate users.
+Data Synchronization: Real-time sync of check-in/check-out times, productivity metrics, and attendance records requires API access to kaystonehr.com.
+User Authentication: Employees must authenticate with their KaystoneHR accounts to use the extension.
+No Alternative: There is no way to provide the core attendance tracking functionality without accessing the KaystoneHR platform.

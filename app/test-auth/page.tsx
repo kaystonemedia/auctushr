@@ -1,82 +1,46 @@
 'use client';
 
-import { useState } from 'react';
-import { createTestUser, signIn, signOut } from '@/lib/firebase';
-import { TestNotifications } from '@/components/test-notifications'
+import { useNewAuth } from '@/contexts/new-auth-context'
 
 export default function TestAuthPage() {
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState('');
+  const { user, firebaseUser, isLoading } = useNewAuth()
 
-  const handleCreateTestUser = async () => {
-    setLoading(true);
-    try {
-      await createTestUser();
-      setResult('Test user created successfully');
-    } catch (error) {
-      setResult(`Create test user error: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSignIn = async () => {
-    setLoading(true);
-    try {
-      await signIn('test@example.com', 'password123');
-      setResult('Signed in successfully');
-    } catch (error) {
-      setResult(`Sign in error: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSignOut = async () => {
-    setLoading(true);
-    try {
-      await signOut();
-      setResult('Signed out successfully');
-    } catch (error) {
-      setResult(`Sign out error: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    } finally {
-      setLoading(false);
-    }
-  };
+  if (isLoading) {
+    return <div className="p-6">Loading...</div>
+  }
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
-      <h1 className="text-2xl font-bold">Test Page</h1>
+    <div className="p-6 max-w-2xl mx-auto">
+      <h1 className="text-2xl font-bold mb-6">Authentication Test</h1>
       
       <div className="space-y-4">
-        <button
-          onClick={handleCreateTestUser}
-          disabled={loading}
-          className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50"
-        >
-          Create Test User
-        </button>
-        <button
-          onClick={handleSignIn}
-          disabled={loading}
-          className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 disabled:opacity-50"
-        >
-          Sign In
-        </button>
-        <button
-          onClick={handleSignOut}
-          disabled={loading}
-          className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 disabled:opacity-50"
-        >
-          Sign Out
-        </button>
-        {loading && <div>Loading...</div>}
-        {result && <div className="mt-4 p-4 bg-gray-100 rounded">{result}</div>}
-      </div>
+        <div className="bg-blue-50 p-4 rounded-lg">
+          <h2 className="font-semibold mb-2">User Object:</h2>
+          <pre className="text-sm bg-white p-2 rounded">
+            {JSON.stringify(user, null, 2)}
+          </pre>
+        </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <TestNotifications />
+        <div className="bg-green-50 p-4 rounded-lg">
+          <h2 className="font-semibold mb-2">Firebase User:</h2>
+          <pre className="text-sm bg-white p-2 rounded">
+            {JSON.stringify(firebaseUser ? {
+              uid: firebaseUser.uid,
+              email: firebaseUser.email,
+              emailVerified: firebaseUser.emailVerified
+            } : null, null, 2)}
+          </pre>
+        </div>
+
+        <div className="bg-yellow-50 p-4 rounded-lg">
+          <h2 className="font-semibold mb-2">Access Summary:</h2>
+          <div className="text-sm space-y-1">
+            <div>Logged in: {user ? 'Yes' : 'No'}</div>
+            <div>Role: {user?.role || 'None'}</div>
+            <div>Can access debug page: {user?.role === 'admin' ? 'Yes' : 'No'}</div>
+          </div>
+        </div>
       </div>
     </div>
-  );
+  )
 } 

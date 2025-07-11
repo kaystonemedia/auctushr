@@ -102,7 +102,7 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
         <div className="relative z-10 flex-shrink-0 flex h-16 bg-white shadow border-b border-gray-200">
           {/* Mobile menu button - Only shows on small screens */}
           <button
-            className="px-4 border-r border-gray-200 text-gray-500 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 md:hidden"
+            className="flex items-center justify-center px-4 border-r border-gray-200 text-gray-500 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 md:hidden"
             onClick={() => setIsMobileMenuOpen(true)}
           >
             <span className="sr-only">Open sidebar</span>

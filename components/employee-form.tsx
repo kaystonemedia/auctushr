@@ -598,8 +598,9 @@ export function EmployeeForm({ isOpen, onClose, onSubmit, initialData }: Employe
                     >
                       <option value="">Select Manager</option>
                       {managers.map(manager => (
-                        <option key={manager.id} value={manager.id}>
+                        <option key={manager.id} value={manager.uid || manager.id}>
                           {manager.firstName} {manager.lastName} - {manager.department}
+                          {!manager.uid && ' (⚠️ No UID)'}
                         </option>
                       ))}
                     </select>

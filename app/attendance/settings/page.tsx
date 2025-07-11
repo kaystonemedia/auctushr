@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { Header } from "@/components/header"
 import { Sidebar } from "@/components/sidebar"
-import { useAuth } from "@/contexts/auth-context"
+import { useNewAuth } from "@/contexts/new-auth-context"
 import { db } from "@/lib/firebase"
 import { doc, getDoc, updateDoc, collection, addDoc, getDocs, query, where, deleteDoc } from "firebase/firestore"
 import { toast } from "react-hot-toast"
@@ -54,7 +54,7 @@ interface OfficeLocation {
 }
 
 export default function AttendanceSettingsPage() {
-  const { user } = useAuth()
+  const { user } = useNewAuth()
   const [settings, setSettings] = useState<AttendanceSettings>(DEFAULT_SETTINGS)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)

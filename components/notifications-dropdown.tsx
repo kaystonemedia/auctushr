@@ -56,7 +56,10 @@ export function NotificationsDropdown() {
         // Filter out notifications with invalid IDs and log them for debugging
         const validNotifications = convertedNotifications.filter(notif => {
           if (!notif.id || notif.id.trim() === '') {
-            console.warn('Found notification with invalid ID:', notif)
+            // Only log in development mode to avoid console spam
+            if (process.env.NODE_ENV === 'development') {
+              console.debug('Found notification with invalid ID:', notif)
+            }
             return false
           }
           return true
@@ -99,15 +102,31 @@ export function NotificationsDropdown() {
 
       // Only add notification if it has a valid ID
       if (convertedNotification.id && convertedNotification.id.trim() !== '') {
-        setNotifications(prev => [convertedNotification, ...prev])
-        
-        // Show toast for new notifications
-        toast.success(convertedNotification.message, {
-          duration: 4000,
-          position: 'top-right'
+        setNotifications(prev => {
+          // Check if this notification already exists
+          const existingNotification = prev.find(n => n.id === convertedNotification.id)
+          
+          if (!existingNotification) {
+            // This is a truly new notification - show toast only for unread notifications
+            if (!convertedNotification.read) {
+              toast.success(convertedNotification.message, {
+                duration: 4000,
+                position: 'top-right'
+              })
+            }
+            return [convertedNotification, ...prev]
+          } else {
+            // Update existing notification (in case read status changed)
+            return prev.map(n => 
+              n.id === convertedNotification.id ? convertedNotification : n
+            )
+          }
         })
       } else {
-        console.warn('Received notification with invalid ID:', convertedNotification)
+        // Only log in development mode to avoid console spam
+        if (process.env.NODE_ENV === 'development') {
+          console.debug('Received notification with invalid ID:', convertedNotification)
+        }
       }
     })
 

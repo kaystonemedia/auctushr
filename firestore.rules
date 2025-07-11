@@ -331,6 +331,214 @@ service cloud.firestore {
       allow delete: if isAuthenticated() && isAdmin();
     }
 
+    // Documents collection rules
+    match /documents/{documentId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() ||
+        resource.data.ownerId == request.auth.uid ||
+        resource.data.createdBy == request.auth.uid ||
+        resource.data.sharedWith != null && resource.data.sharedWith.hasAny([request.auth.uid])
+      );
+
+      allow create: if isAuthenticated() && (
+        isAdmin() ||
+        isManager() ||
+        (isEmployee() && request.resource.data.ownerId == request.auth.uid)
+      );
+
+      allow update: if isAuthenticated() && (
+        isAdmin() ||
+        resource.data.ownerId == request.auth.uid ||
+        resource.data.createdBy == request.auth.uid ||
+        (isManager() && resource.data.requiresApproval == true)
+      );
+
+      allow delete: if isAuthenticated() && (
+        isAdmin() ||
+        resource.data.ownerId == request.auth.uid ||
+        resource.data.createdBy == request.auth.uid
+      );
+    }
+
+    // Document Activities collection rules
+    match /document_activities/{activityId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() ||
+        isManager() ||
+        resource.data.userId == request.auth.uid
+      );
+
+      allow create: if isAuthenticated();
+
+      allow update: if isAuthenticated() && isAdmin();
+      allow delete: if isAuthenticated() && isAdmin();
+    }
+
+    // File Storage collection rules (for firestore provider)
+    match /file_storage/{fileId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() ||
+        resource.data.ownerId == request.auth.uid
+      );
+
+      allow create: if isAuthenticated();
+
+      allow update: if isAuthenticated() && (
+        isAdmin() ||
+        resource.data.ownerId == request.auth.uid
+      );
+
+      allow delete: if isAuthenticated() && (
+        isAdmin() ||
+        resource.data.ownerId == request.auth.uid
+      );
+    }
+
+    // Performance Reviews collection rules
+    match /performance_reviews/{reviewId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() ||
+        resource.data.employeeId == request.auth.uid ||
+        resource.data.reviewerId == request.auth.uid
+      );
+
+      allow create: if isAuthenticated() && (
+        isAdmin() ||
+        isManager()
+      );
+
+      allow update: if isAuthenticated() && (
+        isAdmin() ||
+        resource.data.reviewerId == request.auth.uid ||
+        resource.data.employeeId == request.auth.uid
+      );
+
+      allow delete: if isAuthenticated() && isAdmin();
+    }
+
+    // KPIs collection rules
+    match /kpis/{kpiId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && (isAdmin() || isManager());
+      allow update: if isAuthenticated() && (isAdmin() || isManager());
+      allow delete: if isAuthenticated() && isAdmin();
+    }
+
+    // KPI Scores collection rules
+    match /kpi_scores/{scoreId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() ||
+        isManager() ||
+        resource.data.employeeId == request.auth.uid
+      );
+
+      allow create: if isAuthenticated() && (
+        isAdmin() ||
+        isManager() ||
+        resource.data.employeeId == request.auth.uid
+      );
+
+      allow update: if isAuthenticated() && (
+        isAdmin() ||
+        isManager() ||
+        resource.data.employeeId == request.auth.uid
+      );
+
+      allow delete: if isAuthenticated() && isAdmin();
+    }
+
+    // 360 Feedback collection rules
+    match /feedback_360/{feedbackId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() ||
+        resource.data.employeeId == request.auth.uid ||
+        resource.data.providerId == request.auth.uid ||
+        (isManager() && resource.data.providerType == 'manager')
+      );
+
+      allow create: if isAuthenticated() && (
+        isAdmin() ||
+        isManager()
+      );
+
+      allow update: if isAuthenticated() && (
+        isAdmin() ||
+        resource.data.providerId == request.auth.uid
+      );
+
+      allow delete: if isAuthenticated() && isAdmin();
+    }
+
+    // Goals collection rules
+    match /goals/{goalId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() ||
+        resource.data.employeeId == request.auth.uid ||
+        isManager()
+      );
+
+      allow create: if isAuthenticated() && (
+        isAdmin() ||
+        isManager()
+      );
+
+      allow update: if isAuthenticated() && (
+        isAdmin() ||
+        isManager() ||
+        resource.data.employeeId == request.auth.uid
+      );
+
+      allow delete: if isAuthenticated() && (
+        isAdmin() ||
+        isManager()
+      );
+    }
+
+    // Salary Reviews collection rules
+    match /salary_reviews/{salaryReviewId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() ||
+        resource.data.employeeId == request.auth.uid
+      );
+
+      allow create: if isAuthenticated() && (
+        isAdmin() ||
+        isManager()
+      );
+
+      allow update: if isAuthenticated() && isAdmin();
+      allow delete: if isAuthenticated() && isAdmin();
+    }
+
+    // Self Assessments collection rules
+    match /self_assessments/{assessmentId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() ||
+        resource.data.employeeId == request.auth.uid ||
+        isManager()
+      );
+
+      allow create: if isAuthenticated() && (
+        isAdmin() ||
+        resource.data.employeeId == request.auth.uid
+      );
+
+      allow update: if isAuthenticated() && (
+        isAdmin() ||
+        resource.data.employeeId == request.auth.uid
+      );
+
+      allow delete: if isAuthenticated() && isAdmin();
+    }
+
+    // Feedback Criteria collection rules
+    match /feedback_criteria/{criteriaId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && (isAdmin() || isManager());
+      allow update: if isAuthenticated() && (isAdmin() || isManager());
+      allow delete: if isAuthenticated() && isAdmin();
+    }
+
     // Default rule for other collections (more permissive for authenticated users)
     match /{document=**} {
       allow read: if isAuthenticated();
