@@ -99,7 +99,7 @@ export default function PerformancePage() {
   })
 
   useEffect(() => {
-    if (user?.uid) {
+    if (user?.id) {
       loadPerformanceData()
     }
   }, [user])
@@ -163,7 +163,7 @@ export default function PerformancePage() {
 
       await performanceService.createPerformanceReview(
         newReview.employeeId,
-        user!.uid,
+        user!.id,
         {
           type: newReview.type,
           dueDate: new Date(newReview.dueDate)
@@ -203,7 +203,7 @@ export default function PerformancePage() {
         calculationMethod: 'manual',
         isActive: true,
         validFrom: new Date(),
-        createdBy: user!.uid,
+        createdBy: user!.id,
         createdAt: new Date(),
         updatedAt: new Date()
       })
@@ -245,7 +245,7 @@ export default function PerformancePage() {
       }
 
       await performanceService.createGoal({
-        employeeId: newGoal.employeeId || user!.uid,
+        employeeId: newGoal.employeeId || user!.id,
         title: newGoal.title,
         description: newGoal.description,
         category: newGoal.category,
@@ -260,7 +260,7 @@ export default function PerformancePage() {
         supportNeeded: [],
         quarterlyReviews: [],
         linkedKPIs: [],
-        createdBy: user!.uid,
+        createdBy: user!.id,
         createdAt: new Date(),
         updatedAt: new Date()
       })

@@ -55,7 +55,7 @@ export default function DocumentsPage() {
   const [selectedDocument, setSelectedDocument] = useState<Document | null>(null)
 
   useEffect(() => {
-    if (user?.uid) {
+    if (user?.id) {
       loadDocuments()
     }
   }, [user])
@@ -69,11 +69,11 @@ export default function DocumentsPage() {
       let docs: Document[]
       if (user?.role === 'admin') {
         // Admin can see all documents
-        const result = await documentService.searchDocuments('', {}, user!.uid)
+        const result = await documentService.searchDocuments('', {}, user!.id)
         docs = result.documents
       } else {
         // Regular users see their own documents
-        docs = await documentService.getUserDocuments(user!.uid)
+        docs = await documentService.getUserDocuments(user!.id)
       }
       
       setDocuments(docs)
@@ -96,7 +96,7 @@ export default function DocumentsPage() {
       
       // Update access count
       const documentService = new DocumentService()
-      await documentService.getDocument(document.id, user!.uid)
+      await documentService.getDocument(document.id, user!.id)
       
       // Refresh the document list to update access count
       await loadDocuments()
@@ -117,7 +117,7 @@ export default function DocumentsPage() {
 
     try {
       const documentService = new DocumentService()
-      await documentService.deleteDocument(documentId, user!.uid)
+      await documentService.deleteDocument(documentId, user!.id)
       toast({
         title: "Document deleted",
         description: "Document has been successfully deleted."
@@ -197,11 +197,11 @@ export default function DocumentsPage() {
   }
 
   const canDelete = (document: Document) => {
-    return user?.role === 'admin' || document.ownerId === user?.uid
+    return user?.role === 'admin' || document.ownerId === user?.id
   }
 
   const canEdit = (document: Document) => {
-    return user?.role === 'admin' || document.ownerId === user?.uid
+    return user?.role === 'admin' || document.ownerId === user?.id
   }
 
   // Calculate statistics
