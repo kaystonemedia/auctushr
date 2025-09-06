@@ -23,14 +23,17 @@ export async function GET(request: NextRequest) {
     const snapshot = await payrollQuery.get()
     const payrollEntries = snapshot.docs.map((doc: QueryDocumentSnapshot) => doc.data() as any)
 
-    const totalPayrollThisMonth = payrollEntries.reduce((sum, entry) => sum + (entry.netPay || 0), 0)
+    const totalPayrollThisMonth = payrollEntries.reduce((sum: number, entry: any) => sum + (entry.netPay || 0), 0)
     const averageProductivity = payrollEntries.length > 0 
-      ? payrollEntries.reduce((sum, entry) => sum + (entry.productivityScore || 0), 0) / payrollEntries.length 
+      ? payrollEntries.reduce((sum: number, entry: any) => sum + (entry.productivityScore || 0), 0) / payrollEntries.length 
       : 0
-    const totalBonusesDistributed = payrollEntries.reduce((sum, entry) => sum + (entry.totalBonus || 0), 0)
+    const totalBonusesDistributed = payrollEntries.reduce((sum: number, entry: any) => sum + (entry.totalBonus || 0), 0)
 
     // Group by department
-    const departmentStats = payrollEntries.reduce((acc, entry) => {
+    const departmentStats = payrollEntries.reduce((
+      acc: Record<string, { totalProductivity: number; totalBonuses: number; count: number }>,
+      entry: any
+    ) => {
       if (!acc[entry.department]) {
         acc[entry.department] = {
           totalProductivity: 0,
@@ -44,7 +47,11 @@ export async function GET(request: NextRequest) {
       return acc
     }, {} as Record<string, { totalProductivity: number; totalBonuses: number; count: number }>)
 
-    const topPerformingDepartments = Object.entries(departmentStats)
+    const entries = Object.entries(departmentStats) as Array<[
+      string,
+      { totalProductivity: number; totalBonuses: number; count: number }
+    ]>
+    const topPerformingDepartments = entries
       .map(([department, stats]) => ({
         department,
         averageProductivity: stats.totalProductivity / stats.count,
