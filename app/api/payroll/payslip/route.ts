@@ -95,7 +95,7 @@ export async function GET(request: NextRequest) {
     const attendanceRecords = attendanceSnapshot.docs.map((doc: QueryDocumentSnapshot) => doc.data() as any)
     
     const totalDays = attendanceRecords.length
-    const presentDays = attendanceRecords.filter(record => record.status === 'present').length
+    const presentDays = attendanceRecords.filter((record: any) => record.status === 'present').length
     const attendanceRate = totalDays > 0 ? (presentDays / totalDays) * 100 : 0
 
     // Calculate bonuses based on productivity and attendance
