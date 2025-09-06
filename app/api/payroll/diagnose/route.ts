@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import type { QueryDocumentSnapshot } from 'firebase-admin/firestore'
 
 export async function GET(request: NextRequest) {
   try {
@@ -62,17 +63,17 @@ export async function GET(request: NextRequest) {
 
       // Get sample data from all collections
       const allPeople = [
-        ...usersSnapshot.docs.map(doc => ({ 
+        ...usersSnapshot.docs.map((doc: QueryDocumentSnapshot) => ({ 
           id: doc.id, 
           collection: 'users',
           ...doc.data() 
         })),
-        ...managersSnapshot.docs.map(doc => ({ 
+        ...managersSnapshot.docs.map((doc: QueryDocumentSnapshot) => ({ 
           id: doc.id, 
           collection: 'managers',
           ...doc.data() 
         })),
-        ...employeesSnapshot.docs.map(doc => ({ 
+        ...employeesSnapshot.docs.map((doc: QueryDocumentSnapshot) => ({ 
           id: doc.id, 
           collection: 'employees',
           ...doc.data() 
@@ -133,7 +134,7 @@ export async function GET(request: NextRequest) {
             .where('employeeId', '==', employeeId)
             .limit(5)
           const employeePayrollSnapshot = await employeePayrollQuery.get()
-          results.employeePayrollEntries = employeePayrollSnapshot.docs.map(doc => ({
+          results.employeePayrollEntries = employeePayrollSnapshot.docs.map((doc: QueryDocumentSnapshot) => ({
             id: doc.id,
             data: doc.data()
           }))
