@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import type { QueryDocumentSnapshot } from 'firebase-admin/firestore'
 
+type PersonDoc = {
+  id: string
+  collection: 'users' | 'managers' | 'employees'
+  [key: string]: any
+}
+
 export async function GET(request: NextRequest) {
   try {
     // Ensure this is server-side only
@@ -19,7 +25,17 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const employeeId = searchParams.get('employeeId')
 
-    const results = {
+    const results: {
+      hasFirebaseAdmin: boolean
+      totalUsers: number
+      totalManagers: number
+      totalEmployees: number
+      totalPayrollEntries: number
+      employeeDetails: any
+      employeePayrollEntries: Array<{ id: string; data: any }>
+      allPeople: PersonDoc[]
+      error?: string
+    } = {
       hasFirebaseAdmin: !!adminDb,
       totalUsers: 0,
       totalManagers: 0,
