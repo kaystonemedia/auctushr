@@ -7,7 +7,13 @@ export async function GET(request: NextRequest) {
     // Test Firebase Admin initialization
     let adminDb = null
     let firebaseAdmin = null
-    let status = {
+    let status: {
+      adminInitialized: boolean
+      dbConnected: boolean
+      collections: string[]
+      error: string | null
+      sampleDocument?: any
+    } = {
       adminInitialized: false,
       dbConnected: false,
       collections: [],
