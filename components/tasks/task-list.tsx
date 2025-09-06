@@ -150,6 +150,8 @@ export function TaskList({ tasks, loading, onTaskUpdate, onTaskDelete }: TaskLis
 
   // Get available status transitions based on current status and user role
   const getAvailableStatusTransitions = (task: Task) => {
+    if (!task) return []
+    
     const transitions = []
     
     // Check if this task is assigned to current user
@@ -202,7 +204,7 @@ export function TaskList({ tasks, loading, onTaskUpdate, onTaskDelete }: TaskLis
     )
   }
 
-  if (tasks.length === 0) {
+  if (!tasks || tasks.length === 0) {
     return (
       <div className="text-center py-8 text-gray-500">
         No tasks found
@@ -258,7 +260,7 @@ export function TaskList({ tasks, loading, onTaskUpdate, onTaskDelete }: TaskLis
                 <div className="flex justify-between">
                   <span className="text-sm text-gray-500">Assigned To:</span>
                   <span className="text-sm font-medium">
-                    {task.assignees.length > 0 ? task.assignees.map(a => a.name).join(', ') : 'Unassigned'}
+                    {task.assignees && task.assignees.length > 0 ? task.assignees.map(a => a.name).join(', ') : 'Unassigned'}
                   </span>
                 </div>
                 <div className="flex justify-between">
@@ -320,7 +322,7 @@ export function TaskList({ tasks, loading, onTaskUpdate, onTaskDelete }: TaskLis
                   
                   {/* Status Transition Buttons */}
                   <div className="flex items-center space-x-2 mt-2">
-                    {getAvailableStatusTransitions(task).map((transition) => {
+                    {(getAvailableStatusTransitions(task) || []).map((transition) => {
                       const IconComponent = transition.icon
                       return (
                         <Button
