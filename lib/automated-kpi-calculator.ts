@@ -1,5 +1,5 @@
 import { performanceService } from './performance-service'
-import { collection, getDocs, query, where } from 'firebase/firestore'
+import { collection, getDocs, query, where } from '@/lib/data/firestore'
 import { db } from './firebase'
 
 export class AutomatedKPICalculator {
@@ -67,13 +67,18 @@ export class AutomatedKPICalculator {
   
   async calculateTaskCompletionScore(employeeId: string) {
     // Get task completion rate from task management system
-    const tasksQuery = query(
-      collection(db, 'tasks'),
-      where('assignedTo', '==', employeeId)
+    const assigneesQuery = query(
+      collection(db, 'task_assignees'),
+      where('assigneeId', '==', employeeId)
     )
-    
-    const tasksSnapshot = await getDocs(tasksQuery)
-    const tasks = tasksSnapshot.docs.map(doc => doc.data())
+    const assigneesSnapshot = await getDocs(assigneesQuery)
+    const taskIds = assigneesSnapshot.docs
+      .map(doc => doc.data().taskId as string | undefined)
+      .filter((id): id is string => Boolean(id))
+
+    const tasks = taskIds.length > 0
+      ? (await getDocs(query(collection(db, 'tasks'), where('id', 'in', taskIds)))).docs.map(doc => doc.data())
+      : []
     
     const totalTasks = tasks.length
     const completedTasks = tasks.filter(task => task.status === 'completed').length
@@ -346,7 +351,7 @@ export class AutomatedKPICalculator {
           // Create performance review for the period
           const review = await performanceService.createPerformanceReview(
             employee.id,
-            employee.managerId || 'system',
+            'system',
             {
               reviewPeriod,
               type: 'quarterly',
@@ -357,13 +362,8 @@ export class AutomatedKPICalculator {
           // Calculate KPIs based on role
           let kpiScores = []
           
-          if (employee.role === 'manager') {
-            kpiScores = await this.calculateTeamLeadershipKPIs(employee.id, review.id)
-          } else if (employee.department === 'sales') {
-            kpiScores = await this.calculateSalesKPIs(employee.id, review.id)
-          } else {
-            kpiScores = await this.calculateProductivityKPIs(employee.id, review.id)
-          }
+          // Default to productivity KPIs since we don't have role/department info
+          kpiScores = await this.calculateProductivityKPIs(employee.id, review.id)
           
           results.push({
             employeeId: employee.id,
@@ -376,7 +376,7 @@ export class AutomatedKPICalculator {
           results.push({
             employeeId: employee.id,
             status: 'error',
-            error: error.message
+            error: error instanceof Error ? error.message : 'Unknown error'
           })
         }
       }

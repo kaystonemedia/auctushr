@@ -31,6 +31,22 @@ export function Sidebar({ activePath }: SidebarProps) {
           >
             Settings
           </a>
+          <a
+            href="/help"
+            className={`flex items-center px-4 py-2 text-sm font-medium rounded-md ${
+              activePath === '/help' ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+            }`}
+          >
+            Help
+          </a>
+          <a
+            href="/support"
+            className={`flex items-center px-4 py-2 text-sm font-medium rounded-md ${
+              activePath === '/support' ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+            }`}
+          >
+            Support
+          </a>
         </div>
       </div>
     </div>

@@ -4,8 +4,6 @@ import { useState, useEffect } from 'react'
 import { Filter, Clock, MapPin, User, AlertCircle } from "lucide-react"
 import { AttendanceRecord, AttendanceStats, AttendanceFilters, AttendanceNotification } from "@/types/attendance"
 import { useNewAuth } from "@/contexts/new-auth-context"
-import { db } from "@/lib/firebase"
-import { collection, query, where, getDocs, addDoc, updateDoc, doc, Timestamp, orderBy, onSnapshot, and } from "firebase/firestore"
 import { toast } from "react-hot-toast"
 import { detectIdleTime, calculateAttendanceStats, startIdleTimeTracking } from "@/lib/attendance"
 import { AttendanceDetails } from "@/components/attendance-details"
@@ -18,11 +16,11 @@ import { AttendanceTable } from '@/components/attendance-table'
 import { Calendar } from "@/components/ui/calendar"
 import { AttendanceCheckOut } from '@/components/attendance-check-out'
 import { TeamAttendanceOverview } from '@/components/team-attendance-overview'
-import { settingsService } from '@/lib/settings'
+import { settingsClientService } from '@/lib/settings-client'
 import { Settings } from '@/types/settings'
 
 export default function AttendancePage() {
-  const { user, firebaseUser, isLoading: authLoading } = useNewAuth()
+  const { user, isLoading: authLoading } = useNewAuth()
   const [todayRecord, setTodayRecord] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [selectedDate, setSelectedDate] = useState<Date>(new Date())
@@ -78,7 +76,7 @@ export default function AttendancePage() {
 
   const loadSettings = async () => {
     try {
-      const currentSettings = await settingsService.getSettings()
+      const currentSettings = await settingsClientService.getSettings()
       setSettings(currentSettings)
     } catch (error) {
       console.error('Error loading settings:', error)
@@ -86,77 +84,54 @@ export default function AttendancePage() {
     }
   }
 
-  useEffect(() => {
-    if (!firebaseUser?.uid) {
+  const loadAttendanceData = async () => {
+    if (!user?.id) {
       setLoading(false)
       return
     }
+    try {
+      setLoading(true)
+      const params = new URLSearchParams()
+      if (filters.startDate) params.set('fromDate', filters.startDate.toISOString().slice(0, 10))
+      if (filters.endDate) params.set('toDate', filters.endDate.toISOString().slice(0, 10))
+      if (!filters.startDate && !filters.endDate) {
+        params.set('date', new Date().toISOString().slice(0, 10))
+      }
+      if (user.role === 'employee') {
+        params.set('employeeId', user.id)
+      }
 
-    // Build filters array
-    const filtersArray = []
-    
-    if (user?.role !== 'admin') {
-      filtersArray.push(where("employeeId", "==", firebaseUser.uid))
-    }
-
-    // Build query with proper structure
-    let q
-    if (filtersArray.length > 0) {
-      q = query(
-        collection(db, "attendance"),
-        and(...filtersArray),
-        orderBy("date", "desc")
-      )
-    } else {
-      q = query(
-        collection(db, "attendance"),
-        orderBy("date", "desc")
-      )
-    }
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const recordsList = snapshot.docs.map(doc => {
-        const data = doc.data()
-        return {
-          id: doc.id,
-          ...data,
-          date: data.date?.toDate() || new Date(),
-          checkIn: {
-            ...data.checkIn,
-            time: data.checkIn?.time?.toDate() || new Date(),
-            location: data.checkIn?.location || null,
-            deviceInfo: data.checkIn?.deviceInfo || null
-          },
-          checkOut: data.checkOut ? {
-            ...data.checkOut,
-            time: data.checkOut.time?.toDate() || new Date(),
-            location: data.checkOut.location || null,
-            deviceInfo: data.checkOut.deviceInfo || null
-          } : undefined
-        }
-      }) as AttendanceRecord[]
+      const res = await fetch(`/api/attendance/records?${params}`, { credentials: 'include' })
+      if (!res.ok) throw new Error('Failed to load attendance')
+      const data = await res.json()
+      const recordsList = (data.records || []).map((r: AttendanceRecord) => ({
+        ...r,
+        date: r.date ? new Date(r.date) : new Date(),
+        checkIn: {
+          ...r.checkIn,
+          time: r.checkIn?.time ? new Date(r.checkIn.time) : new Date(),
+        },
+        checkOut: r.checkOut
+          ? { ...r.checkOut, time: r.checkOut.time ? new Date(r.checkOut.time) : new Date() }
+          : undefined,
+      })) as AttendanceRecord[]
       setAttendanceRecords(recordsList)
       setStats(calculateAttendanceStats(recordsList))
+      setTodayRecord(data.todayRecord || null)
+    } catch (error) {
+      console.error('Error fetching attendance records:', error)
+      toast.error('Failed to fetch attendance records')
+    } finally {
       setLoading(false)
-    }, (error) => {
-      console.error("Error fetching attendance records:", error)
-      toast.error("Failed to fetch attendance records")
-      setLoading(false)
-    })
-
-    return () => unsubscribe()
-  }, [firebaseUser?.uid, user?.role])
+    }
+  }
 
   useEffect(() => {
-    if (!firebaseUser?.uid) {
-      setLoading(false)
-      return
-    }
-
-    fetchTodayRecord()
-    fetchAttendanceRecords()
-    fetchDepartments()
-  }, [filters, firebaseUser?.uid])
+    if (authLoading || !user?.id) return
+    loadAttendanceData()
+    const interval = setInterval(loadAttendanceData, 60_000)
+    return () => clearInterval(interval)
+  }, [filters, user?.id, user?.role, authLoading])
 
   useEffect(() => {
     if (!user || !todayRecord || todayRecord.checkOut || !settings) return
@@ -203,13 +178,13 @@ export default function AttendancePage() {
 
     const updateRecord = async () => {
       try {
-        const recordRef = doc(db, 'attendance', todayRecord.id)
         const attendanceSettings = {
           workingHours: {
             start: settings.attendance.checkInTime,
             end: settings.attendance.checkOutTime
           },
           idleThreshold: settings.productivity.idleThreshold,
+          idleTimeSLAThreshold: settings.attendance.idleTimeSLAThreshold || 3,
           maxIdlePeriods: 3,
           allowedLateMinutes: settings.attendance.lateThreshold,
           locationRadius: settings.attendance.maxDistance,
@@ -227,11 +202,15 @@ export default function AttendancePage() {
           }))
         }, attendanceSettings)
 
-        await updateDoc(recordRef, {
-          idleTime: updatedRecord.idleTime,
-          flags: updatedRecord.flags,
-          status: updatedRecord.status,
-          updatedAt: new Date()
+        await fetch(`/api/attendance/records/${todayRecord.id}`, {
+          method: 'PATCH',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            idleTimeMinutes: updatedRecord.idleTimeTotal,
+            activeTimeMinutes: updatedRecord.activeTime,
+            flags: updatedRecord.flags,
+          }),
         })
       } catch (error) {
         console.error('Error updating idle time:', error)
@@ -250,149 +229,37 @@ export default function AttendancePage() {
     }
   }
 
-  const fetchTodayRecord = async () => {
-    if (!firebaseUser?.uid) return
-
-    try {
-      const today = new Date()
-      today.setHours(0, 0, 0, 0)
-      const attendanceQuery = query(
-        collection(db, 'attendance'),
-        where('employeeId', '==', firebaseUser.uid),
-        where('date', '==', Timestamp.fromDate(today))
-      )
-      const attendanceSnapshot = await getDocs(attendanceQuery)
-
-      if (!attendanceSnapshot.empty) {
-        const data = attendanceSnapshot.docs[0].data()
-        setTodayRecord({
-          id: attendanceSnapshot.docs[0].id,
-          ...data,
-          date: data.date?.toDate() || new Date(),
-          checkIn: {
-            ...data.checkIn,
-            time: data.checkIn?.time?.toDate() || new Date(),
-            location: data.checkIn?.location || null,
-            deviceInfo: data.checkIn?.deviceInfo || null
-          },
-          checkOut: data.checkOut ? {
-            ...data.checkOut,
-            time: data.checkOut.time?.toDate() || new Date(),
-            location: data.checkOut.location || null,
-            deviceInfo: data.checkOut.deviceInfo || null
-          } : undefined
-        })
-      }
-    } catch (error) {
-      console.error('Error fetching today\'s record:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const fetchAttendanceRecords = async () => {
-    if (!firebaseUser?.uid) {
-      setLoading(false)
-      return
-    }
-
-    try {
-      const attendanceRef = collection(db, 'attendance')
-      
-      // Build filters array
-      const filtersArray = []
-      
-      if (user?.role === 'employee') {
-        filtersArray.push(where('employeeId', '==', firebaseUser.uid))
-      } else if (user?.role === 'manager') {
-        filtersArray.push(where('managerId', '==', firebaseUser.uid))
-      }
-      
-      if (filters.startDate) {
-        filtersArray.push(where('date', '>=', Timestamp.fromDate(filters.startDate)))
-      }
-      
-      if (filters.endDate) {
-        filtersArray.push(where('date', '<=', Timestamp.fromDate(filters.endDate)))
-      }
-
-      // Build query with proper structure
-      let q
-      if (filtersArray.length > 0) {
-        q = query(attendanceRef, and(...filtersArray))
-      } else {
-        q = query(attendanceRef)
-      }
-
-      const querySnapshot = await getDocs(q)
-      const records = querySnapshot.docs.map(doc => {
-        const data = doc.data()
-        return {
-          id: doc.id,
-          ...data,
-          date: data.date?.toDate() || new Date(),
-          checkIn: {
-            ...data.checkIn,
-            time: data.checkIn?.time?.toDate() || new Date(),
-            location: data.checkIn?.location || null,
-            deviceInfo: data.checkIn?.deviceInfo || null
-          },
-          checkOut: data.checkOut ? {
-            ...data.checkOut,
-            time: data.checkOut.time?.toDate() || new Date(),
-            location: data.checkOut.location || null,
-            deviceInfo: data.checkOut.deviceInfo || null
-          } : undefined
-        }
-      }) as AttendanceRecord[]
-
-      setAttendanceRecords(records)
-      setStats(calculateAttendanceStats(records))
-    } catch (error) {
-      console.error('Error fetching attendance records:', error)
-      toast.error('Failed to fetch attendance records')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const fetchDepartments = async () => {
-    try {
-      // ... existing fetch logic ...
-    } catch (error) {
-      console.error('Error fetching departments:', error)
-    }
-  }
-
   const handleApprove = async (recordId: string, notes?: string) => {
     try {
-      const recordRef = doc(db, "attendance", recordId)
-      await updateDoc(recordRef, {
-        approvalStatus: 'approved',
-        approvedBy: user?.id,
-        approvedAt: new Date(),
-        ...(notes && { approvalNotes: notes })
+      const res = await fetch(`/api/attendance/records/${recordId}/approval`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'approved', notes }),
       })
-      toast.success("Attendance record approved")
+      if (!res.ok) throw new Error('Approval failed')
+      toast.success('Attendance record approved')
+      await loadAttendanceData()
     } catch (error) {
-      console.error("Error approving attendance record:", error)
-      toast.error("Failed to approve attendance record")
+      console.error('Error approving attendance record:', error)
+      toast.error('Failed to approve attendance record')
     }
   }
 
   const handleReject = async (recordId: string, notes?: string) => {
     try {
-      const recordRef = doc(db, "attendance", recordId)
-      await updateDoc(recordRef, {
-        approvalStatus: 'rejected',
-        approvedBy: user?.id,
-        approvedAt: new Date(),
-        ...(notes && { approvalNotes: notes })
+      const res = await fetch(`/api/attendance/records/${recordId}/approval`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'rejected', notes }),
       })
-      toast.success("Attendance record rejected")
+      if (!res.ok) throw new Error('Rejection failed')
+      toast.success('Attendance record rejected')
+      await loadAttendanceData()
     } catch (error) {
-      console.error("Error rejecting attendance record:", error)
-      toast.error("Failed to reject attendance record")
+      console.error('Error rejecting attendance record:', error)
+      toast.error('Failed to reject attendance record')
     }
   }
 
@@ -410,9 +277,8 @@ export default function AttendancePage() {
     setShowFilterPanel(false)
   }
 
-  const handleSuccess = () => {
-    fetchTodayRecord()
-    fetchAttendanceRecords()
+  const handleSuccess = async () => {
+    setTimeout(() => loadAttendanceData(), 500)
   }
 
   // Check extension status
@@ -583,15 +449,15 @@ export default function AttendancePage() {
             <Clock className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            {extensionStatus.installed && extensionStatus.tracking ? (
+            {todayRecord?.checkIn && !todayRecord?.checkOut ? (
               <AttendanceCheckOut
                 record={todayRecord}
-                onSuccess={handleExtensionCheckOut}
+                onSuccess={handleSuccess}
               />
             ) : (
               <AttendanceCheckIn
                 location={location}
-                onSuccess={handleExtensionCheckIn}
+                onSuccess={handleSuccess}
               />
             )}
           </CardContent>

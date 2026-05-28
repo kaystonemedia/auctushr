@@ -2,8 +2,10 @@ import { NextResponse } from 'next/server'
 
 export async function POST() {
   try {
-    // Clear the session cookie by setting it to expire in the past
     const response = NextResponse.json({ status: 'success' })
+    response.cookies.set('sb-access-token', '', { expires: new Date(0), path: '/' })
+    response.cookies.set('sb-refresh-token', '', { expires: new Date(0), path: '/' })
+    // Keep compatibility with legacy Firebase cookie during transition.
     response.cookies.set('session', '', { expires: new Date(0), path: '/' })
     return response
   } catch (error) {

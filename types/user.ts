@@ -7,8 +7,23 @@ export interface User {
   name: string
   role: UserRole
   department?: string
+  position?: string
   managerId?: string | null
+  phone?: string
+  mobileNumber?: string | null
+  bankAccount?: {
+    accountNumber?: string
+    bankCode?: string
+    accountName?: string
+  } | null
+  emergencyContact?: {
+    name?: string
+    relationship?: string
+    phone?: string
+  } | null
   photoURL?: string | null
+  collection?: 'users' | 'employees' | 'managers'
+  firestoreId?: string
   createdAt?: Date
   updatedAt?: Date
 }

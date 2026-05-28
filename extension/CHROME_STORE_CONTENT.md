@@ -3,17 +3,17 @@
 ## 1. EXTENSION DESCRIPTION (Chrome Web Store)
 
 ### Short Description (132 characters max)
-Track attendance, monitor productivity, and manage work activities for KaystoneHR employees with automated time tracking.
+Track attendance, monitor productivity, and manage work activities for Auctushr employees with automated time tracking.
 
 ### Detailed Description
-KaystoneHR Attendance is a professional time tracking and productivity monitoring extension designed for KaystoneHR employees to streamline their work management and attendance tracking.
+Auctushr Attendance is a professional time tracking and productivity monitoring extension designed for Auctushr employees to streamline their work management and attendance tracking.
 
 **Key Features:**
 • **Seamless Check-In/Check-Out**: Track your work hours with location-based attendance recording
 • **Productivity Monitoring**: Automatic tracking of active work time vs idle time
 • **Smart Notifications**: Get reminders for breaks, meetings, and prolonged idle periods
 • **Activity Insights**: Monitor website usage and work patterns to optimize productivity
-• **Real-Time Sync**: Automatic synchronization with your KaystoneHR dashboard
+• **Real-Time Sync**: Automatic synchronization with your Auctushr dashboard
 • **Location Tracking**: GPS-based location verification for accurate attendance records
 • **Focus Time Tracking**: Track deep work sessions and break patterns
 • **Meeting Integration**: Automatic detection and logging of meeting activities
@@ -26,33 +26,33 @@ KaystoneHR Attendance is a professional time tracking and productivity monitorin
 - Employees wanting to optimize their work patterns
 
 **How it works:**
-1. Install the extension and authenticate with your KaystoneHR account
+1. Install the extension and authenticate with your Auctushr account
 2. Click the extension icon to check in/out of work
 3. The extension automatically tracks your activity and productivity
-4. View real-time stats and sync data with your KaystoneHR dashboard
+4. View real-time stats and sync data with your Auctushr dashboard
 5. Receive helpful notifications to maintain optimal productivity
 
 **Privacy & Security:**
-Your data is encrypted and only shared with your authorized KaystoneHR account. All tracking is transparent and can be configured through the extension settings.
+Your data is encrypted and only shared with your authorized Auctushr account. All tracking is transparent and can be configured through the extension settings.
 
 **Technical Requirements:**
-- Valid KaystoneHR employee account
+- Valid Auctushr employee account
 - Chrome browser with location services enabled
 - Internet connection for real-time synchronization
 
-Transform your work tracking experience with KaystoneHR Attendance - where productivity meets simplicity.
+Transform your work tracking experience with Auctushr Attendance - where productivity meets simplicity.
 
 ---
 
 ## 2. PRIVACY POLICY
 
-### KaystoneHR Attendance Extension Privacy Policy
+### Auctushr Attendance Extension Privacy Policy
 
 **Effective Date:** [Current Date]
 **Last Updated:** [Current Date]
 
 #### 1. Introduction
-This Privacy Policy explains how the KaystoneHR Attendance Extension ("Extension", "we", "us", "our") collects, uses, and protects your personal information when you use our Chrome extension.
+This Privacy Policy explains how the Auctushr Attendance Extension ("Extension", "we", "us", "our") collects, uses, and protects your personal information when you use our Chrome extension.
 
 #### 2. Information We Collect
 
@@ -87,7 +87,7 @@ This Privacy Policy explains how the KaystoneHR Attendance Extension ("Extension
 - Monitor productivity and work patterns
 - Generate attendance reports for HR purposes
 - Provide productivity insights and recommendations
-- Sync data with your KaystoneHR employee dashboard
+- Sync data with your Auctushr employee dashboard
 
 **3.2 Secondary Uses:**
 - Improve extension functionality and user experience
@@ -98,8 +98,8 @@ This Privacy Policy explains how the KaystoneHR Attendance Extension ("Extension
 #### 4. Data Sharing and Disclosure
 
 **4.1 Authorized Sharing:**
-- Your employer (KaystoneHR client) for attendance and productivity reporting
-- KaystoneHR platform for dashboard integration and analytics
+- Your employer (Auctushr client) for attendance and productivity reporting
+- Auctushr platform for dashboard integration and analytics
 - Third-party service providers for data processing and storage
 
 **4.2 Legal Compliance:**
@@ -239,7 +239,7 @@ https://kaystonehr.com/support/chrome-extension
 ### Common Issues and Solutions
 
 **Authentication Problems:**
-1. Ensure you have a valid KaystoneHR employee account
+1. Ensure you have a valid Auctushr employee account
 2. Check your internet connection
 3. Clear extension data and re-authenticate
 4. Contact your HR administrator for account verification
@@ -276,9 +276,9 @@ https://kaystonehr.com
 Chrome 88 (Manifest V3 support)
 
 ### Developer Information
-**Name:** KaystoneHR
-**Email:** developer@kaystonehr.com
-**Website:** https://kaystonehr.com
+**Name:** Auctushr
+**Email:** developer@auctushr.com
+**Website:** https://auctushr.com
 
 ---
 
@@ -287,7 +287,7 @@ Chrome 88 (Manifest V3 support)
 ### Key Benefits for Store Listing
 - ✅ **Accurate Time Tracking** - Never miss a check-in with location-based verification
 - ✅ **Productivity Insights** - Understand your work patterns and optimize efficiency
-- ✅ **Seamless Integration** - Works perfectly with your KaystoneHR dashboard
+- ✅ **Seamless Integration** - Works perfectly with your Auctushr dashboard
 - ✅ **Privacy-Focused** - Your data is secure and only shared with authorized parties
 - ✅ **Smart Notifications** - Get reminders for breaks, meetings, and idle time
 - ✅ **Real-Time Sync** - Automatic backup ensures no data loss
@@ -308,7 +308,7 @@ Chrome 88 (Manifest V3 support)
 
 ## 7. TERMS OF SERVICE
 
-### KaystoneHR Attendance Extension Terms of Service
+### Auctushr Attendance Extension Terms of Service
 
 By installing and using this extension, you agree to:
 
@@ -325,10 +325,10 @@ By installing and using this extension, you agree to:
 - Tampering with location or activity data
 
 ### Limitation of Liability
-The extension is provided "as is" without warranties. KaystoneHR is not liable for any direct, indirect, or consequential damages arising from use of the extension.
+The extension is provided "as is" without warranties. Auctushr is not liable for any direct, indirect, or consequential damages arising from use of the extension.
 
 ### Termination
-Your employer or KaystoneHR may terminate your access to the extension at any time for violation of these terms.
+Your employer or Auctushr may terminate your access to the extension at any time for violation of these terms.
 
 ---
 
@@ -339,7 +339,7 @@ Your employer or KaystoneHR may terminate your access to the extension at any ti
 - Basic attendance tracking with check-in/check-out
 - Location-based verification
 - Activity monitoring and productivity tracking
-- Real-time sync with KaystoneHR dashboard
+- Real-time sync with Auctushr dashboard
 - Smart notifications and reminders
 - Configurable privacy settings
 

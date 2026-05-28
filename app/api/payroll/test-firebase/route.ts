@@ -1,73 +1,53 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { supabaseAdmin } from '@/lib/supabase/admin'
+import { requireRole } from '@/lib/api-auth'
 
 export async function GET(request: NextRequest) {
+  const auth = await requireRole(request, ['admin'])
+  if (auth.error) return auth.error
+
   try {
-    console.log('=== Testing Firebase Admin Connection ===')
-    
-    // Test Firebase Admin initialization
-    let adminDb = null
-    let firebaseAdmin = null
-    let status: {
-      adminInitialized: boolean
+    void request
+    const status: {
       dbConnected: boolean
-      collections: string[]
+      tables: string[]
       error: string | null
-      sampleDocument?: any
+      sampleDocument?: Record<string, unknown>
     } = {
-      adminInitialized: false,
       dbConnected: false,
-      collections: [],
+      tables: [],
       error: null
     }
-    
+
     try {
-      const firebaseAdminModule = await import('@/lib/firebase-admin')
-      adminDb = firebaseAdminModule.adminDb
-      
-      if (!adminDb) {
-        throw new Error('Firebase Admin DB not initialized')
+      const { data: profileRows, error: profileError } = await supabaseAdmin
+        .from('profiles')
+        .select('id, email, role')
+        .limit(1)
+      if (profileError) {
+        throw profileError
       }
-      
-      status.adminInitialized = true
       status.dbConnected = true
-      
-      // Test database access by listing documents in 'users' collection
-      try {
-        const collectionsSnapshot = await (adminDb as any).collection('users').limit(1).get()
-        status.collections.push('users')
-        
-        // Try to get a sample document
-        if (!collectionsSnapshot.empty) {
-          const sampleDoc = collectionsSnapshot.docs[0]
-          status.sampleDocument = {
-            id: sampleDoc.id,
-            exists: sampleDoc.exists(),
-            data: sampleDoc.data()
-          }
-        }
-        
-      } catch (dbError) {
-        console.error('Database access error:', dbError)
-        status.error = dbError instanceof Error ? dbError.message : 'Unknown database error'
+      status.tables.push('profiles')
+      if (profileRows && profileRows.length > 0) {
+        status.sampleDocument = profileRows[0] as Record<string, unknown>
       }
-      
-    } catch (importError) {
-      console.error('Firebase Admin import error:', importError)
-      status.error = importError instanceof Error ? importError.message : 'Unknown import error'
+    } catch (dbError) {
+      console.error('Supabase access error:', dbError)
+      status.error = dbError instanceof Error ? dbError.message : 'Unknown database error'
     }
-    
+
     return NextResponse.json({
-      success: status.adminInitialized && status.dbConnected,
+      success: status.dbConnected,
       status,
       timestamp: new Date().toISOString()
     })
-    
   } catch (error) {
-    console.error('Error in Firebase test:', error)
+    console.error('Error in Supabase test:', error)
     return NextResponse.json(
       { 
         success: false,
-        error: 'Firebase test failed',
+        error: 'Supabase test failed',
         details: error instanceof Error ? error.message : 'Unknown error'
       },
       { status: 500 }

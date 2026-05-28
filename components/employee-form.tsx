@@ -4,8 +4,6 @@ import { useState, useEffect } from "react"
 import { Dialog } from "@headlessui/react"
 import { X, Loader2 } from "lucide-react"
 import { EmployeeFormData, Employee } from "@/types/employee"
-import { collection, query, where, getDocs, doc, getDoc } from "firebase/firestore"
-import { db } from "@/lib/firebase"
 import { format, isValid } from "date-fns"
 import { parsePhoneNumberFromString, isValidPhoneNumber } from 'libphonenumber-js'
 
@@ -16,91 +14,10 @@ interface EmployeeFormProps {
   initialData?: EmployeeFormData
 }
 
-// Department-specific positions
-const POSITIONS_BY_DEPARTMENT = {
-  'IT': [
-    'Software Engineer',
-    'DevOps Engineer',
-    'QA Engineer',
-    'UI/UX Designer',
-    'Product Manager',
-    'Technical Lead'
-  ],
-  'HR': [
-    'HR Manager',
-    'Recruiter',
-    'Training Specialist',
-    'Compensation Analyst',
-    'HR Generalist'
-  ],
-  'Finance': [
-    'Financial Analyst',
-    'Accountant',
-    'Controller',
-    'CFO',
-    'Financial Manager'
-  ],
-  'Marketing': [
-    'Marketing Manager',
-    'Content Writer',
-    'Social Media Specialist',
-    'SEO Specialist',
-    'Brand Manager'
-  ],
-  'Sales': [
-    'Sales Representative',
-    'Sales Manager',
-    'Account Executive',
-    'Business Development Manager'
-  ],
-  'Customer Support': [
-    'Support Agent',
-    'Support Team Lead',
-    'Customer Success Manager'
-  ],
-  'Operations': [
-    'Operations Manager',
-    'Logistics Coordinator',
-    'Supply Chain Manager'
-  ],
-  'Design': [
-    'Graphic Designer',
-    'UI/UX Designer',
-    'Art Director',
-    'Creative Director'
-  ],
-  'Management': [
-    'Project Manager',
-    'Program Manager',
-    'Department Head',
-    'Executive'
-  ],
-  'Research & Development': [
-    'Research Scientist',
-    'R&D Engineer',
-    'Innovation Manager'
-  ]
-} as const
-
-const MIN_SALARY = 30000 // Minimum annual salary
-const MIN_PASSWORD_LENGTH = 8
-
 interface FormState extends EmployeeFormData {
   role: 'admin' | 'manager' | 'employee';
   hasPassword: boolean;
   managerId: string | null;
-  address: {
-    street: string;
-    city: string;
-    state: string;
-    country: string;
-    postalCode: string;
-  };
-  emergencyContact: {
-    name: string;
-    relationship: string;
-    phone: string;
-  };
 }
 
 interface FormErrors {
@@ -115,12 +32,23 @@ interface FormErrors {
   password?: string;
   managerId?: string;
   role?: string;
-  'emergencyContact.name'?: string;
-  'emergencyContact.relationship'?: string;
-  'emergencyContact.phone'?: string;
+}
+
+interface Department {
+  id: string
+  name: string
+  description?: string
+}
+
+interface DepartmentResponseItem {
+  id: string
+  name: string
+  description?: string
 }
 
 export function EmployeeForm({ isOpen, onClose, onSubmit, initialData }: EmployeeFormProps) {
+  const [departments, setDepartments] = useState<Department[]>([])
+  const [loadingDepartments, setLoadingDepartments] = useState(false)
   const [managers, setManagers] = useState<Employee[]>([])
   const [loadingManagers, setLoadingManagers] = useState(false)
   const [formData, setFormData] = useState<FormState>({
@@ -136,6 +64,12 @@ export function EmployeeForm({ isOpen, onClose, onSubmit, initialData }: Employe
     hireDate: initialData?.hireDate || new Date(),
     salary: initialData?.salary || 0,
     status: initialData?.status || 'active',
+    mobileNumber: initialData?.mobileNumber || '',
+    bankAccount: initialData?.bankAccount || {
+      accountNumber: '',
+      bankCode: '',
+      accountName: ''
+    },
     address: initialData?.address || {
       street: '',
       city: '',
@@ -154,54 +88,78 @@ export function EmployeeForm({ isOpen, onClose, onSubmit, initialData }: Employe
   const [error, setError] = useState<string | null>(null)
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
 
+  // Sync form with initialData when opening/editing
+  useEffect(() => {
+    if (!isOpen || !initialData) return
+    const nextForm: FormState = {
+      firstName: initialData.firstName || '',
+      lastName: initialData.lastName || '',
+      email: initialData.email || '',
+      phone: initialData.phone || '',
+      department: initialData.department || '',
+      position: initialData.position || '',
+      role: initialData.role || 'employee',
+      managerId: initialData.managerId || null,
+      hasPassword: initialData.hasPassword || false,
+      hireDate: initialData.hireDate || new Date(),
+      salary: initialData.salary || 0,
+      status: (initialData as any).status || 'active',
+      mobileNumber: initialData.mobileNumber || '',
+      bankAccount: initialData.bankAccount || {
+        accountNumber: '',
+        bankCode: '',
+        accountName: ''
+      },
+      address: initialData.address || {
+        street: '',
+        city: '',
+        state: '',
+        country: '',
+        postalCode: ''
+      },
+      emergencyContact: initialData.emergencyContact || {
+        name: '',
+        relationship: '',
+        phone: ''
+      }
+    }
+    setFormData(nextForm)
+    setErrors({})
+    setHasUnsavedChanges(false)
+  }, [isOpen, initialData])
+
+  useEffect(() => {
+    const fetchDepartments = async () => {
+      try {
+        setLoadingDepartments(true)
+        const response = await fetch('/api/departments', { credentials: 'include' })
+        if (!response.ok) throw new Error('Failed to fetch departments')
+        const payload = await response.json()
+        const departmentsData = ((payload.departments || []) as DepartmentResponseItem[]).map((department) => ({
+          id: department.id,
+          name: department.name,
+          description: department.description
+        })) as Department[]
+        setDepartments(departmentsData)
+      } catch (error) {
+        console.error('Error fetching departments:', error)
+      } finally {
+        setLoadingDepartments(false)
+      }
+    }
+    
+    fetchDepartments()
+  }, [])
+
   useEffect(() => {
     const fetchManagers = async () => {
       try {
         setLoadingManagers(true)
-        
-        // Fetch managers from all possible collections
-        const [usersSnapshot, employeesSnapshot, managersSnapshot] = await Promise.all([
-          getDocs(query(collection(db, 'users'), where('role', 'in', ['manager', 'admin']))),
-          getDocs(query(collection(db, 'employees'), where('role', '==', 'manager'))),
-          getDocs(query(collection(db, 'managers')))
-        ])
-
-        // Get managers from users collection (admin/manager roles)
-        const managersFromUsers = usersSnapshot.docs.map(doc => ({ 
-          id: doc.id, 
-          ...doc.data() 
-        })) as Employee[]
-
-        // Get managers from employees collection (manager role)
-        const managersFromEmployees = employeesSnapshot.docs.map(doc => ({ 
-          id: doc.id, 
-          ...doc.data() 
-        })) as Employee[]
-
-        // Get managers from managers collection
-        const managersFromManagersCollection = managersSnapshot.docs.map(doc => ({ 
-          id: doc.id, 
-          ...doc.data() 
-        })) as Employee[]
-
-        // Combine all managers and deduplicate
-        const allManagers = [
-          ...managersFromUsers,
-          ...managersFromEmployees,
-          ...managersFromManagersCollection
-        ]
-        const uniqueManagers = allManagers.filter((manager, index, self) => 
-          index === self.findIndex(m => m.id === manager.id)
-        )
-
-        console.log('Fetched managers from all collections:', {
-          fromUsersCollection: managersFromUsers.length,
-          fromEmployeesCollection: managersFromEmployees.length,
-          fromManagersCollection: managersFromManagersCollection.length,
-          totalUnique: uniqueManagers.length,
-          managers: uniqueManagers
-        })
-
+        const response = await fetch('/api/employees', { credentials: 'include' })
+        if (!response.ok) throw new Error('Failed to fetch managers')
+        const payload = await response.json()
+        const employees = (payload.employees || []) as Employee[]
+        const uniqueManagers = employees.filter((employee) => employee.role === 'manager' || employee.role === 'admin')
         setManagers(uniqueManagers)
       } catch (error) {
         console.error('Error fetching managers:', error)
@@ -235,37 +193,14 @@ export function EmployeeForm({ isOpen, onClose, onSubmit, initialData }: Employe
       newErrors.phone = 'Invalid phone number format. Include country code (e.g., +234, +44)'
     }
 
-    if (!formData.department) {
-      newErrors.department = 'Department is required'
-    }
-
-    if (!formData.position) {
-      newErrors.position = 'Position is required'
-    }
-
-    if (formData.salary < MIN_SALARY) {
-      newErrors.salary = `Salary must be at least $${MIN_SALARY}`
+    if (formData.salary < 0) {
+      newErrors.salary = 'Salary cannot be negative'
     }
 
     if (!isValid(formData.hireDate)) {
       newErrors.hireDate = 'Invalid hire date'
     } else if (formData.hireDate > new Date()) {
       newErrors.hireDate = 'Hire date cannot be in the future'
-    }
-
-    // Validate emergency contact
-    if (formData.emergencyContact) {
-      if (!formData.emergencyContact.name.trim()) {
-        newErrors['emergencyContact.name'] = 'Emergency contact name is required'
-      }
-      if (!formData.emergencyContact.relationship.trim()) {
-        newErrors['emergencyContact.relationship'] = 'Relationship is required'
-      }
-      if (!formData.emergencyContact.phone.trim()) {
-        newErrors['emergencyContact.phone'] = 'Emergency contact phone is required'
-      } else if (!isValidPhoneNumber(formData.emergencyContact.phone)) {
-        newErrors['emergencyContact.phone'] = 'Invalid phone number format. Include country code (e.g., +234, +44)'
-      }
     }
 
     setErrors(newErrors)
@@ -284,6 +219,40 @@ export function EmployeeForm({ isOpen, onClose, onSubmit, initialData }: Employe
 
     try {
       // Prepare the data for submission
+      const cleanedMobile = formData.mobileNumber?.trim() || null
+      const cleanedBankAccount = (() => {
+        if (!formData.bankAccount) return null
+        const accountNumber = formData.bankAccount.accountNumber?.trim() || ''
+        const bankCode = formData.bankAccount.bankCode?.trim() || ''
+        const accountName = formData.bankAccount.accountName?.trim() || ''
+        if (!accountNumber && !bankCode && !accountName) {
+          return null
+        }
+        return { accountNumber, bankCode, accountName }
+      })()
+      const cleanedAddress = (() => {
+        if (!formData.address) return null
+        const street = formData.address.street?.trim() || ''
+        const city = formData.address.city?.trim() || ''
+        const state = formData.address.state?.trim() || ''
+        const country = formData.address.country?.trim() || ''
+        const postalCode = formData.address.postalCode?.trim() || ''
+        if (!street && !city && !state && !country && !postalCode) {
+          return null
+        }
+        return { street, city, state, country, postalCode }
+      })()
+      const cleanedEmergencyContact = (() => {
+        if (!formData.emergencyContact) return null
+        const name = formData.emergencyContact.name?.trim() || ''
+        const relationship = formData.emergencyContact.relationship?.trim() || ''
+        const phone = formData.emergencyContact.phone?.trim() || ''
+        if (!name && !relationship && !phone) {
+          return null
+        }
+        return { name, relationship, phone }
+      })()
+
       const submissionData = {
         ...formData,
         hireDate: formData.hireDate instanceof Date ? formData.hireDate : new Date(formData.hireDate),
@@ -293,9 +262,12 @@ export function EmployeeForm({ isOpen, onClose, onSubmit, initialData }: Employe
         uid: null, // Will be set after first login
         managerId: formData.managerId || null,
         role: formData.role || 'employee',
+        // Include payment details
+        mobileNumber: cleanedMobile,
+        bankAccount: cleanedBankAccount,
         // Include address and emergency contact
-        address: formData.address || null,
-        emergencyContact: formData.emergencyContact || null
+        address: cleanedAddress,
+        emergencyContact: cleanedEmergencyContact
       }
 
       console.log('Submitting form data:', submissionData)
@@ -519,20 +491,24 @@ export function EmployeeForm({ isOpen, onClose, onSubmit, initialData }: Employe
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Department
+                    Department <span className="text-gray-400">(optional)</span>
                   </label>
                   <select
                     name="department"
                     value={formData.department}
                     onChange={handleDepartmentChange}
+                    disabled={loadingDepartments}
                     className={`w-full px-3 py-2 border rounded-lg shadow-sm focus:ring-2 focus:ring-gray-400 focus:border-gray-400 transition-colors ${
                       errors.department ? 'border-red-500' : 'border-gray-300'
-                    }`}
+                    } ${loadingDepartments ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
-                    <option value="">Select Department</option>
-                    {Object.keys(POSITIONS_BY_DEPARTMENT).map(dept => (
-                      <option key={dept} value={dept}>{dept}</option>
+                    <option value="">{loadingDepartments ? 'Loading departments...' : 'Select Department'}</option>
+                    {departments.map(dept => (
+                      <option key={dept.id} value={dept.name}>{dept.name}</option>
                     ))}
+                    {!loadingDepartments && departments.length === 0 && (
+                      <option value="" disabled>No departments found. Create one in the Departments page.</option>
+                    )}
                   </select>
                   {errors.department && (
                     <p className="mt-1 text-sm text-red-600">{errors.department}</p>
@@ -541,25 +517,19 @@ export function EmployeeForm({ isOpen, onClose, onSubmit, initialData }: Employe
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Position
+                    Position <span className="text-gray-400">(optional)</span>
                   </label>
-                  <select
+                  <input
+                    type="text"
                     name="position"
                     value={formData.position}
                     onChange={handleChange}
-                    className={`w-full px-3 py-2 border rounded-lg shadow-sm focus:ring-2 focus:ring-gray-400 focus:border-gray-400 transition-colors ${
-                      errors.position ? 'border-red-500' : 'border-gray-300'
-                    }`}
-                    disabled={!formData.department}
-                  >
-                    <option value="">Select Position</option>
-                    {formData.department && POSITIONS_BY_DEPARTMENT[formData.department as keyof typeof POSITIONS_BY_DEPARTMENT].map(pos => (
-                      <option key={pos} value={pos}>{pos}</option>
-                    ))}
-                  </select>
-                  {errors.position && (
-                    <p className="mt-1 text-sm text-red-600">{errors.position}</p>
-                  )}
+                    placeholder="e.g. Product Manager"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-gray-400 focus:border-gray-400 transition-colors"
+                  />
+                  <p className="mt-1 text-sm text-gray-500">
+                    Leave blank if you don't want to set the position yet.
+                  </p>
                 </div>
 
                 <div>
@@ -586,7 +556,7 @@ export function EmployeeForm({ isOpen, onClose, onSubmit, initialData }: Employe
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Manager
+                    Manager <span className="text-gray-400">(optional)</span>
                   </label>
                   <div className="relative">
                     <select
@@ -610,9 +580,11 @@ export function EmployeeForm({ isOpen, onClose, onSubmit, initialData }: Employe
                       </div>
                     )}
                   </div>
-                  {formData.role === 'admin' && (
-                    <p className="mt-1 text-sm text-gray-500">Admins don't have managers assigned</p>
-                  )}
+                  <p className="mt-1 text-sm text-gray-500">
+                    {formData.role === 'admin'
+                      ? "Admins don't have managers assigned."
+                      : "You can assign a manager now or let the employee select one later."}
+                  </p>
                 </div>
 
                 <div>
@@ -626,7 +598,7 @@ export function EmployeeForm({ isOpen, onClose, onSubmit, initialData }: Employe
                       name="salary"
                       value={formData.salary}
                       onChange={handleChange}
-                      min={MIN_SALARY}
+                      min={0}
                       className={`w-full pl-8 px-3 py-2 border rounded-lg shadow-sm focus:ring-2 focus:ring-gray-400 focus:border-gray-400 transition-colors ${
                         errors.salary ? 'border-red-500' : 'border-gray-300'
                       }`}
@@ -657,110 +629,10 @@ export function EmployeeForm({ isOpen, onClose, onSubmit, initialData }: Employe
                 </div>
               </div>
 
-              {/* Emergency Contact Section */}
               <div className="border-t border-gray-200 pt-6">
-                <h3 className="text-lg font-medium text-gray-900 mb-4">Emergency Contact</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Contact Name
-                    </label>
-                    <input
-                      type="text"
-                      name="emergencyContact.name"
-                      value={formData.emergencyContact.name}
-                      onChange={(e) => {
-                        setFormData(prev => ({
-                          ...prev,
-                          emergencyContact: {
-                            ...prev.emergencyContact,
-                            name: e.target.value
-                          }
-                        }))
-                        setErrors(prev => ({ ...prev, 'emergencyContact.name': undefined }))
-                        setHasUnsavedChanges(true)
-                      }}
-                      className={`w-full px-3 py-2 border rounded-lg shadow-sm focus:ring-2 focus:ring-gray-400 focus:border-gray-400 transition-colors ${
-                        errors['emergencyContact.name'] ? 'border-red-500' : 'border-gray-300'
-                      }`}
-                    />
-                    {errors['emergencyContact.name'] && (
-                      <p className="mt-1 text-sm text-red-600">{errors['emergencyContact.name']}</p>
-                    )}
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Relationship
-                    </label>
-                    <select
-                      name="emergencyContact.relationship"
-                      value={formData.emergencyContact.relationship}
-                      onChange={(e) => {
-                        setFormData(prev => ({
-                          ...prev,
-                          emergencyContact: {
-                            ...prev.emergencyContact,
-                            relationship: e.target.value
-                          }
-                        }))
-                        setErrors(prev => ({ ...prev, 'emergencyContact.relationship': undefined }))
-                        setHasUnsavedChanges(true)
-                      }}
-                      className={`w-full px-3 py-2 border rounded-lg shadow-sm focus:ring-2 focus:ring-gray-400 focus:border-gray-400 transition-colors ${
-                        errors['emergencyContact.relationship'] ? 'border-red-500' : 'border-gray-300'
-                      }`}
-                    >
-                      <option value="">Select Relationship</option>
-                      <option value="spouse">Spouse</option>
-                      <option value="parent">Parent</option>
-                      <option value="sibling">Sibling</option>
-                      <option value="child">Child</option>
-                      <option value="relative">Other Relative</option>
-                      <option value="friend">Friend</option>
-                      <option value="other">Other</option>
-                    </select>
-                    {errors['emergencyContact.relationship'] && (
-                      <p className="mt-1 text-sm text-red-600">{errors['emergencyContact.relationship']}</p>
-                    )}
-                  </div>
-
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Contact Phone
-                    </label>
-                    <div className="relative">
-                      <input
-                        type="tel"
-                        name="emergencyContact.phone"
-                        value={formData.emergencyContact.phone}
-                        onChange={(e) => {
-                          const formatted = formatPhoneNumber(e.target.value)
-                          setFormData(prev => ({
-                            ...prev,
-                            emergencyContact: {
-                              ...prev.emergencyContact,
-                              phone: formatted
-                            }
-                          }))
-                          setErrors(prev => ({ ...prev, 'emergencyContact.phone': undefined }))
-                          setHasUnsavedChanges(true)
-                        }}
-                        placeholder="+1234567890"
-                        className={`w-full px-3 py-2 border rounded-lg shadow-sm focus:ring-2 focus:ring-gray-400 focus:border-gray-400 transition-colors ${
-                          errors['emergencyContact.phone'] ? 'border-red-500' : 'border-gray-300'
-                        }`}
-                      />
-                    </div>
-                    {errors['emergencyContact.phone'] ? (
-                      <p className="mt-1 text-sm text-red-600">{errors['emergencyContact.phone']}</p>
-                    ) : (
-                      <p className="mt-1 text-sm text-gray-500">
-                        Include country code (e.g., +234 for Nigeria, +44 for UK)
-                      </p>
-                    )}
-                  </div>
-                </div>
+                <p className="text-sm text-gray-600">
+                  Payment details, emergency contacts, and additional profile information can be completed later by the employee from their profile.
+                </p>
               </div>
 
               <div className="flex justify-end gap-3 pt-6 border-t border-gray-200">

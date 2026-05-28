@@ -15,7 +15,7 @@ import {
   QueryDocumentSnapshot,
   DocumentData,
   writeBatch
-} from 'firebase/firestore'
+} from '@/lib/data/firestore'
 import { db } from './firebase'
 import { 
   PerformanceReview, 

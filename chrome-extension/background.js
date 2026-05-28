@@ -1,22 +1,6 @@
-import { initializeApp } from 'firebase/app';
-import { getFirestore, doc, setDoc, collection, addDoc } from 'firebase/firestore';
-import { getAuth, signInWithCustomToken } from 'firebase/auth';
-
-// Firebase configuration
-const firebaseConfig = {
-  apiKey: "AIzaSyBYTSC2E_nqaUHISZ6ntU8kpG1JjN-Y8Cg",
-  authDomain: "kaystonemedia-c0f7c.firebaseapp.com",
-  projectId: "kaystonemedia-c0f7c",
-  storageBucket: "kaystonemedia-c0f7c.firebasestorage.app",
-  messagingSenderId: "464022249810",
-  appId: "1:464022249810:web:2abccbb6dd77915ea3da8b",
-  measurementId: "G-6JTQHHHWM4"
-};
-
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
-const auth = getAuth(app);
+const auth = { currentUser: null };
+const db = {};
+let currentProfile = null;
 
 // API configuration
 const API_BASE_URL = 'http://localhost:3000/api';
@@ -33,7 +17,9 @@ let currentActivity = {
   idleTime: 0,
   lastSync: null,
   employeeId: null,
-  departmentId: null
+  departmentId: null,
+  onBreak: false, // Added for break tracking
+  breakStart: null // Added for break tracking
 };
 
 let isTracking = false;
@@ -45,6 +31,118 @@ let userSettings = {
   collectUrls: true,
   collectTitles: true
 };
+
+let notificationUnsubscribe = null;
+
+function doc(_db, collectionName, id) {
+  return { collectionName, id };
+}
+
+async function getDoc(docRef) {
+  if (docRef.collectionName === 'users' && auth.currentUser && docRef.id === auth.currentUser.uid && currentProfile) {
+    return {
+      exists: () => true,
+      data: () => ({
+        ...currentProfile,
+        employeeId: currentProfile.id || currentProfile.uid || auth.currentUser.uid,
+        departmentId: currentProfile.department || null
+      })
+    };
+  }
+  return {
+    exists: () => false,
+    data: () => null
+  };
+}
+
+function collection(_db, collectionName) {
+  return { collectionName };
+}
+
+function query(collectionRef, ...constraints) {
+  return { collectionName: collectionRef.collectionName, constraints };
+}
+
+function where(field, op, value) {
+  return { type: 'where', field, op, value };
+}
+
+function orderBy(field, direction = 'desc') {
+  return { type: 'orderBy', field, direction };
+}
+
+function onSnapshot(_queryRef, callback) {
+  // Notifications are delivered through API polling in this migrated version.
+  // Keep the signature for compatibility.
+  void callback({
+    docChanges: () => []
+  });
+  return () => {};
+}
+
+async function signInWithCustomToken(authState, token) {
+  const response = await fetch(`${API_BASE_URL}/auth/user`, {
+    headers: {
+      Authorization: `Bearer ${token}`
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error('Unable to authenticate extension session');
+  }
+
+  const payload = await response.json();
+  const user = payload?.user;
+  if (!user) {
+    throw new Error('Unable to load user profile');
+  }
+
+  authState.currentUser = {
+    uid: user.uid || user.auth_user_id || user.id,
+    email: user.email
+  };
+  currentProfile = user;
+  return { user: authState.currentUser };
+}
+
+// Define working hours (e.g., 9am to 5pm)
+const WORK_START_HOUR = 9;
+const WORK_END_HOUR = 17;
+
+function isWithinWorkingHours() {
+  const now = new Date();
+  const hour = now.getHours();
+  return hour >= WORK_START_HOUR && hour < WORK_END_HOUR;
+}
+
+// Subscribe to Firestore notifications for the logged-in user
+async function subscribeToNotifications(userId) {
+  if (notificationUnsubscribe) {
+    notificationUnsubscribe();
+  }
+  const notificationsRef = collection(db, 'notifications');
+  const q = query(
+    notificationsRef,
+    where('employeeId', '==', userId),
+    orderBy('createdAt', 'desc')
+  );
+  notificationUnsubscribe = onSnapshot(q, (snapshot) => {
+    snapshot.docChanges().forEach((change) => {
+      if (change.type === 'added') {
+        const notification = change.doc.data();
+        // Send notification to all tabs
+        chrome.tabs.query({}, (tabs) => {
+          tabs.forEach((tab) => {
+            chrome.tabs.sendMessage(tab.id, {
+              type: 'showNotification',
+              notification
+            });
+          });
+        });
+      }
+    });
+  });
+}
 
 // Initialize extension
 chrome.runtime.onInstalled.addListener(async () => {
@@ -59,6 +157,20 @@ chrome.runtime.onInstalled.addListener(async () => {
   // Load user settings and authentication
   await loadUserSettings();
   await initializeAuth();
+
+  // Restore session state on startup
+  chrome.storage.local.get('workSessionState', (result) => {
+    const state = result.workSessionState;
+    if (state) {
+      currentActivity.startTime = state.startTime ? new Date(state.startTime) : null;
+      currentActivity.onBreak = state.onBreak || false;
+      currentActivity.breakStart = state.breakStart ? new Date(state.breakStart) : null;
+      // Optionally, resume timer overlay if checked in and not on break
+      if (currentActivity.startTime && !currentActivity.onBreak) {
+        notifyTabsStartTimerOverlay(currentActivity.startTime);
+      }
+    }
+  });
 });
 
 // Initialize authentication
@@ -80,6 +192,11 @@ async function initializeAuth() {
     
     currentActivity.employeeId = userData.employeeId;
     currentActivity.departmentId = userData.departmentId;
+
+    // Subscribe to notifications for this user
+    if (userData.employeeId) {
+      subscribeToNotifications(userData.employeeId);
+    }
   } catch (error) {
     console.error('Auth initialization failed:', error);
   }
@@ -91,6 +208,29 @@ async function loadUserSettings() {
   if (result.userSettings) {
     userSettings = { ...userSettings, ...result.userSettings };
   }
+}
+
+function notifyTabsStartTimerOverlay(startTime) {
+  chrome.tabs.query({}, (tabs) => {
+    tabs.forEach((tab) => {
+      chrome.tabs.sendMessage(tab.id, {
+        type: 'startTimerOverlay',
+        startTime
+      });
+      console.log('Sent startTimerOverlay to tab', tab.id, 'with startTime', startTime);
+    });
+  });
+}
+
+function notifyTabsStopTimerOverlay() {
+  chrome.tabs.query({}, (tabs) => {
+    tabs.forEach((tab) => {
+      chrome.tabs.sendMessage(tab.id, {
+        type: 'stopTimerOverlay'
+      });
+      console.log('Sent stopTimerOverlay to tab', tab.id);
+    });
+  });
 }
 
 // Track active tab changes
@@ -127,16 +267,67 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   }
 });
 
-// Update current activity
+// Set up periodic screen capture during working hours
+chrome.alarms.create('screenCapture', { periodInMinutes: 15 }); // every 15 minutes
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === 'screenCapture' && isWithinWorkingHours()) {
+    captureAndNotify();
+  }
+});
+
+async function captureAndNotify() {
+  // Capture the visible tab
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    if (tabs.length === 0) return;
+    const tab = tabs[0];
+    chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' }, async (dataUrl) => {
+      if (chrome.runtime.lastError || !dataUrl) return;
+      // Notify employee via overlay
+      chrome.tabs.sendMessage(tab.id, {
+        type: 'showNotification',
+        notification: {
+          type: 'screen_capture',
+          message: 'A screenshot was captured for productivity monitoring.'
+        }
+      });
+      // Send image to backend for storage/logging
+      await uploadCaptureToBackend(dataUrl);
+    });
+  });
+}
+
+async function uploadCaptureToBackend(dataUrl) {
+  try {
+    const user = auth.currentUser;
+    if (!user) return;
+    const token = await user.getIdToken();
+    await fetch(`${API_BASE_URL}/productivity/screencapture`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        image: dataUrl,
+        timestamp: new Date().toISOString()
+      })
+    });
+  } catch (error) {
+    console.error('Failed to upload screen capture:', error);
+  }
+}
+
+// When check-in occurs (startTime is set)
 function updateCurrentActivity(tab) {
   const now = new Date();
-  
   // If there's an existing activity, save it first
   if (currentActivity.startTime) {
     const duration = now - currentActivity.startTime;
     saveActivity(duration);
+    // Session ended, stop timer overlay
+    notifyTabsStopTimerOverlay();
   }
-
   // Start new activity
   const url = new URL(tab.url);
   currentActivity = {
@@ -148,9 +339,12 @@ function updateCurrentActivity(tab) {
     idleTime: 0,
     lastSync: now,
     employeeId: currentActivity.employeeId,
-    departmentId: currentActivity.departmentId
+    departmentId: currentActivity.departmentId,
+    onBreak: false, // Reset break state
+    breakStart: null // Reset break start
   };
-
+  // Start timer overlay for new session
+  notifyTabsStartTimerOverlay(now);
   // Check if domain is productive
   if (userSettings.productiveDomains.includes(currentActivity.domain)) {
     startProductiveTimeTracking();
@@ -191,7 +385,9 @@ async function saveActivity(duration) {
       duration: duration,
       productiveTime: currentActivity.productiveTime,
       idleTime: currentActivity.idleTime,
-      timestamp: new Date()
+      timestamp: new Date(),
+      onBreak: !!currentActivity.onBreak,
+      breakStart: currentActivity.breakStart || null
     };
 
     // Add to queue
@@ -259,9 +455,48 @@ function startProductiveTimeTracking() {
   }, 1000);
 }
 
+// Helper to persist session state
+function saveSessionState() {
+  const state = {
+    checkedIn: !!currentActivity.startTime,
+    startTime: currentActivity.startTime ? currentActivity.startTime.toISOString() : null,
+    onBreak: !!currentActivity.onBreak,
+    breakStart: currentActivity.breakStart ? currentActivity.breakStart.toISOString() : null
+  };
+  chrome.storage.local.set({ workSessionState: state });
+}
+
 // Listen for messages from popup or content script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   switch (request.type) {
+    case 'workCheckIn':
+      currentActivity.startTime = new Date(request.startTime);
+      currentActivity.onBreak = false;
+      currentActivity.breakStart = null;
+      saveSessionState();
+      notifyTabsStartTimerOverlay(request.startTime);
+      break;
+    case 'workCheckOut':
+      currentActivity.startTime = null;
+      currentActivity.onBreak = false;
+      currentActivity.breakStart = null;
+      saveSessionState();
+      notifyTabsStopTimerOverlay();
+      break;
+    case 'workBreakStart':
+      currentActivity.onBreak = true;
+      currentActivity.breakStart = new Date(request.breakStart);
+      saveSessionState();
+      notifyTabsStopTimerOverlay();
+      break;
+    case 'workBreakEnd':
+      currentActivity.onBreak = false;
+      currentActivity.breakStart = null;
+      saveSessionState();
+      if (currentActivity.startTime) {
+        notifyTabsStartTimerOverlay(currentActivity.startTime);
+      }
+      break;
     case 'getActivity':
       sendResponse(currentActivity);
       break;
@@ -272,6 +507,17 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     case 'toggleTracking':
       userSettings.trackingEnabled = request.enabled;
       chrome.storage.sync.set({ userSettings });
+      if (!request.enabled) {
+        notifyTabsStopTimerOverlay();
+      }
+      break;
+    case 'getSessionState':
+      sendResponse({
+        checkedIn: !!currentActivity.startTime,
+        startTime: currentActivity.startTime ? currentActivity.startTime.toISOString() : null,
+        onBreak: !!currentActivity.onBreak,
+        breakStart: currentActivity.breakStart ? currentActivity.breakStart.toISOString() : null
+      });
       break;
   }
 }); 

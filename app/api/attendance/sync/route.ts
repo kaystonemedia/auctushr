@@ -1,101 +1,239 @@
-import { NextResponse } from 'next/server'
-import { db } from '@/lib/firebase'
-import { collection, query, where, getDocs, updateDoc, doc, addDoc } from 'firebase/firestore'
-import { auth } from '@/lib/firebase'
-import { getAuth } from 'firebase/auth'
+import { NextRequest, NextResponse } from 'next/server'
+import { authenticateRequest } from '@/lib/api-auth'
+import { rateLimit } from '@/lib/rate-limit'
+import { SettingsService } from '@/lib/settings'
+import { supabaseAdmin } from '@/lib/supabase/admin'
 
-export async function POST(request: Request) {
+interface ActivityEntry {
+  type?: string
+  time?: string
+  location?: unknown
+  deviceInfo?: unknown
+}
+
+interface AttendanceSyncSession {
+  startTime?: string
+  activities?: ActivityEntry[]
+  idleTime?: number
+  activeTime?: number
+  isCheckOut?: boolean
+  checkInLocation?: unknown
+  deviceInfo?: unknown
+}
+
+async function writeAuditLog(action: string, payload: Record<string, unknown>) {
   try {
-    // Get request body
+    await supabaseAdmin.from('audit_logs').insert({
+      action,
+      entity_type: 'attendance',
+      details: payload
+    })
+  } catch (auditError) {
+    console.error('Failed to persist audit log:', auditError)
+  }
+}
+
+async function resolveTargetProfileId(
+  actingUser: { uid: string; role: 'admin' | 'manager' | 'employee'; profileId: string },
+  requestedUserId: string
+) {
+  if (requestedUserId === actingUser.uid || requestedUserId === actingUser.profileId) {
+    return actingUser.profileId
+  }
+
+  if (actingUser.role !== 'admin' && actingUser.role !== 'manager') {
+    return null
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from('profiles')
+    .select('id, auth_user_id')
+    .or(`id.eq.${requestedUserId},auth_user_id.eq.${requestedUserId}`)
+    .maybeSingle()
+
+  if (error || !data) {
+    return null
+  }
+
+  return data.id as string
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    // Rate limit attendance sync (can be called frequently)
+    const rateLimitResponse = await rateLimit({
+      windowMs: 60000, // 1 minute
+      maxRequests: 30, // 30 syncs per minute per IP
+    })(request)
+    if (rateLimitResponse) {
+      return rateLimitResponse
+    }
+    const authResult = await authenticateRequest(request)
+    if (authResult.error || !authResult.user) {
+      return authResult.error
+    }
+
     const { session: activitySession, userId } = await request.json()
     if (!activitySession || !userId) {
       return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
     }
 
-    const { startTime, activities, idleTime, activeTime, isCheckOut, checkInLocation, deviceInfo } = activitySession
+    const targetProfileId = await resolveTargetProfileId(authResult.user, userId)
+    if (!targetProfileId) {
+      return NextResponse.json({ error: 'Forbidden - userId mismatch' }, { status: 403 })
+    }
 
-    // Find today's attendance record
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    const attendanceQuery = query(
-      collection(db, 'attendance'),
-      where('employeeId', '==', userId),
-      where('date', '>=', today)
-    )
-    const attendanceSnapshot = await getDocs(attendanceQuery)
+    const {
+      startTime,
+      activities,
+      idleTime,
+      activeTime,
+      isCheckOut,
+      checkInLocation,
+      deviceInfo
+    } = activitySession as AttendanceSyncSession
 
-    if (attendanceSnapshot.empty) {
-      // Create new attendance record if none exists
-      const attendanceData = {
-        employeeId: userId,
-        date: new Date(),
-        checkIn: {
-          time: new Date(startTime),
-          location: checkInLocation,
-          deviceInfo
-        },
-        activities: activities || [],
-        idleTime: idleTime || 0,
-        activeTime: activeTime || 0,
+    const syncDate = startTime ? new Date(startTime) : new Date()
+    const attendanceDate = syncDate.toISOString().slice(0, 10)
+
+    // Pull current profile context once for status/manager updates.
+    const { data: profileData, error: profileError } = await supabaseAdmin
+      .from('profiles')
+      .select('id, manager_id')
+      .eq('id', targetProfileId)
+      .maybeSingle()
+
+    if (profileError || !profileData) {
+      return NextResponse.json({ error: 'Employee profile not found' }, { status: 404 })
+    }
+
+    const { data: existingAttendance, error: attendanceFetchError } = await supabaseAdmin
+      .from('attendance_records')
+      .select('*')
+      .eq('employee_id', targetProfileId)
+      .eq('date', attendanceDate)
+      .maybeSingle()
+
+    if (attendanceFetchError) {
+      throw attendanceFetchError
+    }
+
+    if (!existingAttendance) {
+      const insertPayload = {
+        employee_id: targetProfileId,
+        manager_id: profileData.manager_id || null,
+        date: attendanceDate,
         status: 'present',
-        approvalStatus: 'pending',
-        lastSync: new Date().toISOString()
+        check_in_time: startTime ? new Date(startTime).toISOString() : new Date().toISOString(),
+        check_in_location: checkInLocation || null,
+        check_in_device: deviceInfo || null,
+        idle_time_minutes: idleTime || 0,
+        active_time_minutes: activeTime || 0,
+        approval_status: 'pending',
+        notes: null,
+        flags: []
       }
 
-      await addDoc(collection(db, 'attendance'), attendanceData)
+      const { data: createdRecord, error: insertError } = await supabaseAdmin
+        .from('attendance_records')
+        .insert(insertPayload)
+        .select('id')
+        .single()
+
+      if (insertError) {
+        throw insertError
+      }
+
+      await writeAuditLog('attendance.check_in', {
+        actorProfileId: authResult.user.profileId,
+        targetProfileId,
+        attendanceId: createdRecord.id,
+        startTime
+      })
     } else {
-      // Update existing attendance record
-      const attendanceDoc = attendanceSnapshot.docs[0]
-      const attendanceData = attendanceDoc.data()
+      const previousIdle = Number(existingAttendance.idle_time_minutes || 0)
+      const previousActive = Number(existingAttendance.active_time_minutes || 0)
+      const mergedIdle = previousIdle + Number(idleTime || 0)
+      const mergedActive = previousActive + Number(activeTime || 0)
 
-      // Update activities
-      const updatedActivities = [
-        ...(attendanceData.activities || []),
-        ...(activities || [])
-      ].slice(-1000) // Keep last 1000 activities
+      const checkInTime = existingAttendance.check_in_time
+        ? new Date(existingAttendance.check_in_time)
+        : startTime
+          ? new Date(startTime)
+          : new Date()
 
-      // Update attendance record
-      const updateData: any = {
-        activities: updatedActivities,
-        idleTime: (attendanceData.idleTime || 0) + (idleTime || 0),
-        activeTime: (attendanceData.activeTime || 0) + (activeTime || 0),
-        lastSync: new Date().toISOString()
+      const checkOutActivity = (activities || []).find((a) => a.type === 'check_out')
+      const checkOutTime = isCheckOut && checkOutActivity?.time
+        ? new Date(checkOutActivity.time)
+        : new Date()
+
+      const workDurationMs = checkOutTime.getTime() - checkInTime.getTime()
+      const totalHours = Math.max(0, workDurationMs / (1000 * 60 * 60))
+      const totalMinutes = Math.max(0, workDurationMs / (1000 * 60))
+      const activeTimeMinutes = Math.max(0, totalMinutes - mergedIdle)
+
+      let slaThreshold = 3
+      try {
+        const settingsService = SettingsService.getInstance()
+        const settings = await settingsService.getSettings()
+        slaThreshold = settings.attendance.idleTimeSLAThreshold || 3
+      } catch (error) {
+        console.error('Error fetching settings for SLA threshold:', error)
       }
 
-      // Handle check-out
+      const updatePayload: Record<string, unknown> = {
+        idle_time_minutes: mergedIdle,
+        active_time_minutes: mergedActive,
+        total_hours: totalHours,
+        flags: existingAttendance.flags || []
+      }
+
+      if (isCheckOut && checkOutActivity?.time) {
+        updatePayload.check_out_time = new Date(checkOutActivity.time).toISOString()
+        updatePayload.check_out_location = checkOutActivity.location || null
+        updatePayload.check_out_device = checkOutActivity.deviceInfo || null
+      }
+
+      if (mergedIdle > slaThreshold) {
+        updatePayload.notes = `Idle SLA exceeded (${mergedIdle}m > ${slaThreshold}m)`
+      }
+
       if (isCheckOut) {
-        const checkOutActivity = activities?.find((a: { type: string; time: string; location?: any; deviceInfo?: any }) => a.type === 'check_out')
-        if (checkOutActivity) {
-          updateData.checkOut = {
-            time: new Date(checkOutActivity.time),
-            location: checkOutActivity.location,
-            deviceInfo: checkOutActivity.deviceInfo
-          }
-
-          // Calculate work duration
-          const checkInTime = new Date(attendanceData.checkIn.time)
-          const checkOutTime = new Date(checkOutActivity.time)
-          const workDuration = checkOutTime.getTime() - checkInTime.getTime()
-          const workHours = workDuration / (1000 * 60 * 60)
-
-          // Update status based on work hours
-          if (workHours < 4) {
-            updateData.status = 'half_day'
-          } else if (workHours < 8) {
-            updateData.status = 'early_leave'
-          }
+        if (totalHours < 4) {
+          updatePayload.status = 'half_day'
+        } else if (totalHours < 8) {
+          updatePayload.status = 'early_leave'
         }
       }
 
-      await updateDoc(doc(db, 'attendance', attendanceDoc.id), updateData)
+      const { error: updateError } = await supabaseAdmin
+        .from('attendance_records')
+        .update(updatePayload)
+        .eq('id', existingAttendance.id)
+
+      if (updateError) {
+        throw updateError
+      }
+
+      await writeAuditLog(isCheckOut ? 'attendance.check_out' : 'attendance.sync', {
+        actorProfileId: authResult.user.profileId,
+        targetProfileId,
+        attendanceId: existingAttendance.id,
+        isCheckOut: !!isCheckOut,
+        activeTimeMinutes
+      })
     }
 
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error('Error syncing attendance:', error)
+    await writeAuditLog('attendance.sync', {
+      outcome: 'failure',
+      error: error instanceof Error ? error.message : String(error)
+    })
     return NextResponse.json(
       { error: 'Failed to sync attendance data' },
       { status: 500 }
     )
   }
-} 
+}

@@ -82,7 +82,7 @@ class ConsentManager {
       <div style="background: white; padding: 30px; border-radius: 12px; max-width: 500px; box-shadow: 0 10px 30px rgba(0,0,0,0.3);">
         <h2 style="margin: 0 0 20px 0; color: #1a1a1a;">Data Collection Consent</h2>
         <p style="margin: 0 0 15px 0; color: #666; line-height: 1.5;">
-          KaystoneHR Attendance Extension needs your permission to track your work activity. This includes:
+          Auctushr Attendance Extension needs your permission to track your work activity. This includes:
         </p>
         <ul style="margin: 0 0 20px 0; color: #666; padding-left: 20px;">
           <li>Website activity and time tracking</li>

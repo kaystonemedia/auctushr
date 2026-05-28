@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,34 +18,76 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { PayrollForm } from "./payroll-form";
+import { EnhancedPayrollForm } from "./enhanced-payroll-form";
 import { PayrollSummary } from "./payroll-summary";
+import { Payslip } from "./payslip";
+import { BulkPayrollProcessor } from "./bulk-payroll-processor";
+import { PaymentStatusTracker } from "./payment-status-tracker";
+import { PaymentTestModeToggle } from "./payment-test-mode-toggle";
 import {
   PayrollEntry,
   PayrollDeduction,
   PayrollAllowance,
 } from "@/types/payroll";
-import {
-  collection,
-  query,
-  where,
-  getDocs,
-  orderBy,
-  addDoc,
-  updateDoc,
-  doc,
-} from "firebase/firestore";
-import { db, auth } from "@/lib/firebase";
-import { Loader2, CheckCircle2, AlertCircle } from "lucide-react";
-import { onAuthStateChanged } from "firebase/auth";
+import { Loader2, CheckCircle2, AlertCircle, FileText, Download, CreditCard, Users } from "lucide-react";
 import { format } from "date-fns";
 import { useRouter } from "next/navigation";
+import { useNewAuth } from "@/contexts/new-auth-context";
+
+/** Coerce Firestore Timestamp, ISO string, or Date from the Supabase shim. */
+function coerceToDate(value: unknown): Date | null {
+  if (value == null || value === "") return null;
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+  if (typeof value === "object" && value !== null && "toDate" in value) {
+    const maybe = (value as { toDate?: () => Date }).toDate?.();
+    if (maybe instanceof Date && !Number.isNaN(maybe.getTime())) return maybe;
+  }
+  if (typeof value === "object" && value !== null && "seconds" in value) {
+    const seconds = Number((value as { seconds: number }).seconds);
+    if (!Number.isNaN(seconds)) return new Date(seconds * 1000);
+  }
+  const parsed = new Date(value as string | number);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function formatPayrollPeriodLabel(entry: {
+  period?: string;
+  periodId?: string;
+  createdAt?: unknown;
+  processedAt?: unknown;
+  updatedAt?: unknown;
+}): string {
+  const periodKey = entry.period || entry.periodId;
+  if (typeof periodKey === "string" && /^\d{4}-\d{2}$/.test(periodKey)) {
+    const [year, month] = periodKey.split("-").map(Number);
+    return format(new Date(year, month - 1, 1), "MMMM yyyy");
+  }
+  const date =
+    coerceToDate(entry.processedAt) ??
+    coerceToDate(entry.createdAt) ??
+    coerceToDate(entry.updatedAt);
+  return date ? format(date, "MMMM yyyy") : "Unknown period";
+}
 
 interface User {
   uid: string;
   role: string;
   name: string;
   email: string;
+}
+
+interface Department {
+  id: string
+  name: string
+  employeeCount: number
+  color: string
+  status?: {
+    pending: number
+    processed: number
+    total: number
+  }
 }
 
 interface Employee {
@@ -61,6 +103,14 @@ interface Employee {
   lastPayrollDate?: string;
   deductions?: PayrollDeduction[];
   allowances?: PayrollAllowance[];
+  // Payment details for payroll
+  mobileNumber?: string;
+  bankAccount?: {
+    accountNumber: string;
+    bankCode: string;
+    accountName: string;
+  };
+  collection?: string; // Added for tracking source collection
 }
 
 // Add this before the PayrollDashboard component
@@ -88,6 +138,7 @@ const defaultReport = {
 };
 
 export function PayrollDashboard() {
+  const { user: authUser, isLoading: authLoading } = useNewAuth();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -103,7 +154,68 @@ export function PayrollDashboard() {
     null,
   );
   const [currentReport, setCurrentReport] = useState(defaultReport);
+  const [showPayslip, setShowPayslip] = useState(false);
+  const [selectedPayslipData, setSelectedPayslipData] = useState<any>(null);
+  const [payrollEntries, setPayrollEntries] = useState<any[]>([]);
+  const [showBulkProcessor, setShowBulkProcessor] = useState(false);
+  const [activeTab, setActiveTab] = useState<'payroll' | 'payments'>('payroll');
   const router = useRouter();
+
+  const loadPayrollData = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const [empRes, payrollRes] = await Promise.all([
+        fetch('/api/employees', { credentials: 'include' }),
+        fetch('/api/payroll/entries', { credentials: 'include' }),
+      ]);
+
+      if (!empRes.ok) throw new Error('Failed to load employees');
+      if (!payrollRes.ok) throw new Error('Failed to load payroll entries');
+
+      const empData = await empRes.json();
+      const payrollData = await payrollRes.json();
+
+      const uniqueEmployees = (empData.employees || []).map(
+        (e: {
+          id: string
+          firstName: string
+          lastName: string
+          email: string
+          department: string
+          salary: number
+          mobileNumber?: string
+          bankAccount?: unknown
+          role: string
+        }) => ({
+          id: e.id,
+          firstName: e.firstName || '',
+          lastName: e.lastName || '',
+          email: e.email || '',
+          department: e.department || '',
+          salary: e.salary || 0,
+          mobileNumber: e.mobileNumber || '',
+          bankAccount: e.bankAccount || null,
+          role: e.role,
+        })
+      ) as Employee[];
+
+      setEmployees(uniqueEmployees);
+      setPayrollEntries(payrollData.entries || []);
+
+      const periods = (payrollData.periods || []) as string[];
+      setPayrollPeriods(
+        periods.map((p) => ({ id: p, periodId: p, period: p } as PayrollEntry))
+      );
+
+      setLoading(false);
+    } catch (err) {
+      console.error('Error fetching data:', err);
+      setError('Failed to load payroll data. Please try again later.');
+      setLoading(false);
+    }
+  }, []);
 
   const calculateReport = (periods: PayrollEntry[]) => {
     const currentDate = new Date().toISOString();
@@ -207,69 +319,43 @@ export function PayrollDashboard() {
     }
   }, [payrollPeriods, employees]);
 
+  // Automatically select the most recent payroll period when available
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (!user) {
-        router.push("/auth/sign-in");
-        return;
+    if (!selectedPeriod && payrollPeriods.length > 0) {
+      setSelectedPeriod(payrollPeriods[0].id);
+      // Clear any stale "select a period" error once we have a selection
+      if (error === "Please select a payroll period first.") {
+        setError(null);
       }
+    }
+  }, [payrollPeriods, selectedPeriod, error]);
 
-      try {
-        // Get user data from Firestore
-        const userDoc = await getDocs(
-          query(collection(db, "users"), where("uid", "==", user.uid)),
-        );
-        const userData = userDoc.docs[0]?.data();
+  useEffect(() => {
+    if (authLoading) return;
 
-        if (!userData?.role || userData.role !== "admin") {
-          setError(
-            "You do not have permission to access the payroll dashboard.",
-          );
-          setLoading(false);
-          return;
-        }
+    if (!authUser) {
+      router.push("/auth/sign-in");
+      return;
+    }
 
-        setUser({
-          uid: user.uid,
-          role: userData.role,
-          name: userData.name || "",
-          email: userData.email || "",
-        });
+    if (authUser.role !== "admin") {
+      setError("You do not have permission to access the payroll dashboard.");
+      setLoading(false);
+      return;
+    }
 
-        // Fetch employees
-        const employeesQuery = query(
-          collection(db, "users"),
-          where("role", "==", "employee"),
-        );
-        const employeesSnapshot = await getDocs(employeesQuery);
-        const employeesData = employeesSnapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        })) as Employee[];
-        setEmployees(employeesData);
+    const sessionUser: User = {
+      uid: authUser.uid || authUser.id,
+      role: authUser.role,
+      name:
+        authUser.name ||
+        `${authUser.firstName || ""} ${authUser.lastName || ""}`.trim(),
+      email: authUser.email || "",
+    };
+    setUser(sessionUser);
 
-        // Fetch payroll periods
-        const payrollQuery = query(
-          collection(db, "payroll"),
-          orderBy("period", "desc"),
-        );
-        const payrollSnapshot = await getDocs(payrollQuery);
-        const payrollData = payrollSnapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        })) as PayrollEntry[];
-        setPayrollPeriods(payrollData);
-
-        setLoading(false);
-      } catch (error) {
-        console.error("Error fetching data:", error);
-        setError("Failed to load payroll data. Please try again later.");
-        setLoading(false);
-      }
-    });
-
-    return () => unsubscribe();
-  }, [router]);
+    void loadPayrollData();
+  }, [authUser, authLoading, router, loadPayrollData]);
 
   const handleProcessPayroll = async (employeeId: string) => {
     if (!selectedPeriod) {
@@ -303,30 +389,28 @@ export function PayrollDashboard() {
           : 0;
       const netSalary = grossSalary - deductions + allowances;
 
-      // Add payroll entry
-      const payrollEntry = {
-        employeeId,
-        employeeName: `${employee.firstName} ${employee.lastName}`,
-        department: employee.department || "Unassigned",
-        period: selectedPeriod,
-        grossSalary,
-        deductions,
-        allowances,
-        netSalary,
-        status: "processed",
-        processedAt: new Date().toISOString(),
-        processedBy: user?.uid || "",
-      };
-
-      await addDoc(collection(db, "payrollEntries"), payrollEntry);
-
-      // Update employee's last payroll date
-      await updateDoc(doc(db, "users", employeeId), {
-        lastPayrollDate: new Date().toISOString(),
+      const res = await fetch('/api/payroll/entries', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          employeeId,
+          periodMonth: selectedPeriod,
+          basicSalary: grossSalary,
+          grossSalary,
+          netSalary,
+          allowances: Array.isArray(employee.allowances) ? employee.allowances : [],
+          deductions: Array.isArray(employee.deductions) ? employee.deductions : [],
+          status: 'processed',
+        }),
       });
 
-      // Refresh data
-      router.refresh();
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Failed to process payroll');
+      }
+
+      await loadPayrollData();
     } catch (err) {
       console.error("Error processing payroll:", err);
       setError(
@@ -336,6 +420,41 @@ export function PayrollDashboard() {
       );
     } finally {
       setProcessingPayroll(null);
+    }
+  };
+
+  const handleViewPayslip = (employeeId: string) => {
+    const employee = employees.find(emp => emp.id === employeeId);
+    const payrollEntry = payrollEntries.find(entry => entry.employeeId === employeeId);
+    
+    if (employee && payrollEntry) {
+      const processedDate =
+        coerceToDate(payrollEntry.processedAt) ??
+        coerceToDate(payrollEntry.createdAt) ??
+        new Date();
+
+      // Transform payroll entry to payslip format
+      const payslipData = {
+        employeeName: payrollEntry.employeeName || `${employee.firstName} ${employee.lastName}`,
+        department: payrollEntry.department || employee.department,
+        baseSalary: payrollEntry.grossSalary || employee.salary,
+        performanceBonus: payrollEntry.bonus || 0,
+        attendanceBonus: 0, // Calculate from productivity data if available
+        totalBonus: payrollEntry.bonus || 0,
+        grossSalary: payrollEntry.grossSalary || employee.salary,
+        deductions: {
+          tax: payrollEntry.deductions?.tax || 0,
+          insurance: payrollEntry.deductions?.insurance || 0,
+          other: payrollEntry.deductions?.other || 0,
+        },
+        netPay: payrollEntry.netSalary || payrollEntry.grossSalary,
+        month: format(processedDate, "MM"),
+        year: processedDate.getFullYear(),
+        processedAt: payrollEntry.processedAt,
+      };
+      
+      setSelectedPayslipData(payslipData);
+      setShowPayslip(true);
     }
   };
 
@@ -425,11 +544,30 @@ export function PayrollDashboard() {
             <SelectContent>
               {payrollPeriods.map((period) => (
                 <SelectItem key={period.id} value={period.id}>
-                  {format(new Date(period.createdAt), "MMMM yyyy")}
+                  {formatPayrollPeriodLabel(period)}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
+          <Dialog open={showBulkProcessor} onOpenChange={setShowBulkProcessor}>
+            <DialogTrigger asChild>
+              <Button variant="outline" className="mr-2">
+                Bulk Process Payroll
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Bulk Payroll Processing</DialogTitle>
+              </DialogHeader>
+              <BulkPayrollProcessor
+                onSuccess={() => {
+                  setShowBulkProcessor(false)
+                  router.refresh()
+                }}
+                onCancel={() => setShowBulkProcessor(false)}
+              />
+            </DialogContent>
+          </Dialog>
           <Dialog open={showPayrollForm} onOpenChange={setShowPayrollForm}>
             <DialogTrigger asChild>
               <Button className="bg-primary hover:bg-primary/90">
@@ -440,7 +578,7 @@ export function PayrollDashboard() {
               <DialogHeader>
                 <DialogTitle>Add Payroll Entry</DialogTitle>
               </DialogHeader>
-              <PayrollForm
+              <EnhancedPayrollForm
                 employee={{
                   id: selectedEmployee?.id || "",
                   name: selectedEmployee
@@ -459,6 +597,8 @@ export function PayrollDashboard() {
           </Dialog>
         </div>
       </div>
+
+      <PaymentTestModeToggle />
 
       <Card className="border-primary/20 shadow-lg">
         <CardHeader>
@@ -515,12 +655,12 @@ export function PayrollDashboard() {
                         <div className="flex gap-2">
                           <span
                             className={`px-2 py-1 rounded-full text-xs ${
-                              (dept as any).status?.pending > 0
+                              dept.status?.pending > 0
                                 ? "bg-yellow-100 text-yellow-800"
                                 : "bg-green-100 text-green-800"
                             }`}
                           >
-                            {(dept as any).status?.pending > 0 ? "Pending" : "Processed"}
+                            {dept.status?.pending > 0 ? "Pending" : "Processed"}
                           </span>
                         </div>
                       </div>
@@ -528,13 +668,13 @@ export function PayrollDashboard() {
                         <div
                           className="bg-primary h-2 rounded-full"
                           style={{
-                            width: `${((dept as any).status?.processed / (dept as any).status?.total) * 100}%`,
+                            width: `${((dept.status?.processed || 0) / (dept.status?.total || 1)) * 100}%`,
                           }}
                         />
                       </div>
                       <div className="flex justify-between text-xs text-gray-500">
-                        <span>{(dept as any).status?.processed || 0} processed</span>
-                        <span>{(dept as any).status?.pending || 0} pending</span>
+                        <span>{dept.status?.processed || 0} processed</span>
+                        <span>{dept.status?.pending || 0} pending</span>
                       </div>
                     </div>
                   </div>
@@ -582,13 +722,13 @@ export function PayrollDashboard() {
                   .filter(
                     (employee) =>
                       searchQuery === "" ||
-                      `${employee.firstName} ${employee.lastName}`
+                      `${employee.firstName || ''} ${employee.lastName || ''}`
                         .toLowerCase()
                         .includes(searchQuery.toLowerCase()) ||
-                      employee.email
+                      (employee.email || '')
                         .toLowerCase()
                         .includes(searchQuery.toLowerCase()) ||
-                      employee.department
+                      (employee.department || '')
                         .toLowerCase()
                         .includes(searchQuery.toLowerCase()),
                   )
@@ -632,29 +772,44 @@ export function PayrollDashboard() {
                         </span>
                       </td>
                       <td className="p-4 align-middle">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            if (employee && employee.id) {
-                              setSelectedEmployee(employee);
-                              setShowPayrollForm(true);
-                            } else {
-                              setError("Invalid employee data");
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              if (employee?.id) {
+                                setSelectedEmployee(employee);
+                                setShowPayrollForm(true);
+                              } else {
+                                setError('Invalid employee data');
+                              }
+                            }}
+                            disabled={
+                              processingPayroll === employee.id ||
+                              !!employee.lastPayrollDate
                             }
-                          }}
-                          disabled={
-                            processingPayroll === employee.id ||
-                            !!employee.lastPayrollDate
-                          }
-                          className="h-8 bg-gradient-to-r from-primary to-primary/80 text-white hover:from-primary/90 hover:to-primary/70 shadow-sm transition-all duration-200 hover:shadow-md disabled:opacity-50"
-                        >
-                          {processingPayroll === employee.id ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            "Process Payroll"
+                            className="h-8 bg-gradient-to-r from-primary to-primary/80 text-white hover:from-primary/90 hover:to-primary/70 shadow-sm transition-all duration-200 hover:shadow-md disabled:opacity-50"
+                          >
+                            {processingPayroll === employee.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              "Process Payroll"
+                            )}
+                          </Button>
+                          
+                          {/* View Payslip Button */}
+                          {payrollEntries.some(entry => entry.employeeId === employee.id) && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleViewPayslip(employee.id)}
+                              className="h-8 bg-gradient-to-r from-green-500 to-green-600 text-white hover:from-green-600 hover:to-green-700 shadow-sm transition-all duration-200 hover:shadow-md"
+                            >
+                              <FileText className="h-4 w-4 mr-1" />
+                              Payslip
+                            </Button>
                           )}
-                        </Button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -664,18 +819,186 @@ export function PayrollDashboard() {
         </CardContent>
       </Card>
 
+      {/* Tab Navigation */}
+      <div className="flex space-x-1 bg-gray-100 p-1 rounded-lg">
+        <button
+          onClick={() => setActiveTab('payroll')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-md transition-colors ${
+            activeTab === 'payroll'
+              ? 'bg-white text-primary shadow-sm'
+              : 'text-gray-600 hover:text-gray-900'
+          }`}
+        >
+          <Users className="h-4 w-4" />
+          Payroll Management
+        </button>
+        <button
+          onClick={() => setActiveTab('payments')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-md transition-colors ${
+            activeTab === 'payments'
+              ? 'bg-white text-primary shadow-sm'
+              : 'text-gray-600 hover:text-gray-900'
+          }`}
+        >
+          <CreditCard className="h-4 w-4" />
+          Payment Status
+        </button>
+      </div>
+
+      {/* Tab Content */}
+      {activeTab === 'payroll' && (
+        <Card className="border-primary/20 shadow-lg">
+          <CardHeader>
+            <CardTitle className="text-primary">Employee Payroll</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <Input
+                    placeholder="Search employees..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-64"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {employees
+                  .filter((employee) =>
+                    (employee.firstName || '')
+                      .toLowerCase()
+                      .includes(searchQuery.toLowerCase()) ||
+                    (employee.lastName || '')
+                      .toLowerCase()
+                      .includes(searchQuery.toLowerCase()) ||
+                    (employee.department || '')
+                      .toLowerCase()
+                      .includes(searchQuery.toLowerCase())
+                  )
+                  .map((employee) => {
+                    const departmentColors = getDepartmentColor(employee.department || 'default');
+                    const isProcessed = payrollEntries.some(
+                      (entry) => entry.employeeId === employee.id
+                    );
+
+                    return (
+                      <Card
+                        key={employee.id}
+                        className={`border-2 transition-all duration-200 hover:shadow-md cursor-pointer ${
+                          isProcessed
+                            ? 'border-green-200 bg-green-50'
+                            : 'border-gray-200 hover:border-primary/30'
+                        }`}
+                        onClick={() => {
+                          setSelectedEmployee(employee);
+                          setShowPayrollForm(true);
+                        }}
+                      >
+                        <CardHeader className="pb-3">
+                          <div className="flex items-center justify-between">
+                            <CardTitle className="text-lg">
+                              {employee.firstName} {employee.lastName}
+                            </CardTitle>
+                            {isProcessed ? (
+                              <CheckCircle2 className="h-5 w-5 text-green-600" />
+                            ) : (
+                              <AlertCircle className="h-5 w-5 text-yellow-500" />
+                            )}
+                          </div>
+                          <div
+                            className={`inline-block px-2 py-1 rounded-full text-xs font-medium ${departmentColors.bg} ${departmentColors.text} ${departmentColors.border} border`}
+                          >
+                            {employee.department || 'Unassigned'}
+                          </div>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="space-y-2">
+                            <div className="flex justify-between items-center">
+                              <span className="text-sm text-gray-600">Salary:</span>
+                              <span className="font-medium">
+                                ${employee.salary?.toLocaleString() || '0'}
+                              </span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <span className="text-sm text-gray-600">Status:</span>
+                              <span
+                                className={`text-xs px-2 py-1 rounded-full ${
+                                  isProcessed
+                                    ? 'bg-green-100 text-green-800'
+                                    : 'bg-yellow-100 text-yellow-800'
+                                }`}
+                              >
+                                {isProcessed ? 'Processed' : 'Pending'}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="mt-4 flex gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="flex-1"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleProcessPayroll(employee.id);
+                              }}
+                              disabled={processingPayroll === employee.id}
+                            >
+                              {processingPayroll === employee.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                'Process Payroll'
+                              )}
+                            </Button>
+                            {isProcessed && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleViewPayslip(employee.id);
+                                }}
+                              >
+                                <FileText className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {activeTab === 'payments' && (
+        <PaymentStatusTracker period={selectedPeriod} />
+      )}
+
       <Dialog open={showPayrollForm} onOpenChange={setShowPayrollForm}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle>Process Payroll</DialogTitle>
           </DialogHeader>
           {selectedEmployee ? (
-            <PayrollForm
+            <>
+              {console.log('Rendering EnhancedPayrollForm with employee:', {
+                id: selectedEmployee.id,
+                name: `${selectedEmployee.firstName} ${selectedEmployee.lastName}`,
+                mobileNumber: selectedEmployee.mobileNumber,
+                bankAccount: selectedEmployee.bankAccount
+              })}
+            <EnhancedPayrollForm
               employee={{
                 id: selectedEmployee.id,
                 name: `${selectedEmployee.firstName} ${selectedEmployee.lastName}`,
                 department: selectedEmployee.department || "Unassigned",
                 salary: selectedEmployee.salary || 0,
+                mobileNumber: selectedEmployee.mobileNumber,
+                bankAccount: selectedEmployee.bankAccount,
               }}
               onSuccess={() => {
                 setShowPayrollForm(false);
@@ -683,6 +1006,7 @@ export function PayrollDashboard() {
               }}
               onCancel={() => setShowPayrollForm(false)}
             />
+            </>
           ) : (
             <div className="p-4 text-center">
               <p className="text-gray-600">Please select an employee first</p>
@@ -693,6 +1017,21 @@ export function PayrollDashboard() {
                 Close
               </Button>
             </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Payslip Dialog */}
+      <Dialog open={showPayslip} onOpenChange={setShowPayslip}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Employee Payslip</DialogTitle>
+          </DialogHeader>
+          {selectedPayslipData && (
+            <Payslip 
+              payroll={selectedPayslipData} 
+              onClose={() => setShowPayslip(false)} 
+            />
           )}
         </DialogContent>
       </Dialog>

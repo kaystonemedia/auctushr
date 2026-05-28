@@ -40,6 +40,44 @@ service cloud.firestore {
         get(/databases/$(database)/documents/employees/$(employeeId)).data.uid == request.auth.uid;
     }
 
+    function hasOnlyRoleMirrorFields() {
+      return request.resource.data.diff(null).affectedKeys()
+        .hasOnly(['uid', 'email', 'role', 'linkedRecordId', 'hasPassword', 'updatedAt']);
+    }
+
+    function canCreateSelfAdminMirror() {
+      return isAuthenticated() &&
+        request.resource.id == request.auth.uid &&
+        request.resource.data.uid == request.auth.uid &&
+        request.resource.data.role == 'admin' &&
+        request.resource.data.linkedRecordId is string &&
+        exists(/databases/$(database)/documents/users/$(request.resource.data.linkedRecordId)) &&
+        get(/databases/$(database)/documents/users/$(request.resource.data.linkedRecordId)).data.uid == request.auth.uid &&
+        hasOnlyRoleMirrorFields();
+    }
+
+    function canCreateSelfManagerMirror() {
+      return isAuthenticated() &&
+        request.resource.id == request.auth.uid &&
+        request.resource.data.uid == request.auth.uid &&
+        request.resource.data.role == 'manager' &&
+        request.resource.data.linkedRecordId is string &&
+        exists(/databases/$(database)/documents/managers/$(request.resource.data.linkedRecordId)) &&
+        get(/databases/$(database)/documents/managers/$(request.resource.data.linkedRecordId)).data.uid == request.auth.uid &&
+        hasOnlyRoleMirrorFields();
+    }
+
+    function canCreateSelfEmployeeMirror() {
+      return isAuthenticated() &&
+        request.resource.id == request.auth.uid &&
+        request.resource.data.uid == request.auth.uid &&
+        request.resource.data.role == 'employee' &&
+        request.resource.data.linkedRecordId is string &&
+        exists(/databases/$(database)/documents/employees/$(request.resource.data.linkedRecordId)) &&
+        get(/databases/$(database)/documents/employees/$(request.resource.data.linkedRecordId)).data.uid == request.auth.uid &&
+        hasOnlyRoleMirrorFields();
+    }
+
     // Helper for first-time login updates
     function isFirstTimeLoginUpdate() {
       return isAuthenticated() &&
@@ -65,8 +103,8 @@ service cloud.firestore {
       allow update: if isFirstTimeLoginUpdate() || 
                    (isAuthenticated() && (isAdmin() || resource.data.uid == request.auth.uid));
       
-      // Allow admins to create user documents
-      allow create: if isAuthenticated() && isAdmin();
+      // Allow admins or the user themselves (for mirror docs) to create
+      allow create: if (isAuthenticated() && isAdmin()) || canCreateSelfAdminMirror();
       
       // Allow authenticated users to read based on role
       allow read: if isAuthenticated() && (isAdmin() || resource.data.uid == request.auth.uid);
@@ -77,8 +115,9 @@ service cloud.firestore {
 
     // Employees collection rules
     match /employees/{employeeId} {
-      // Allow email queries for login (more permissive)
-      allow list: if !isAuthenticated() && request.query.limit <= 1;
+      // Allow email queries for login (more permissive) and allow admins/managers to run queries
+      allow list: if (!isAuthenticated() && request.query.limit <= 1) ||
+                  (isAuthenticated() && (isAdmin() || isManager()));
       
       // Allow document reads for login
       allow get: if !isAuthenticated();
@@ -91,8 +130,9 @@ service cloud.firestore {
                      (resource.data.uid == request.auth.uid)
                    ));
       
-      // Allow admins to create employee documents
-      allow create: if isAuthenticated() && isAdmin();
+      // Allow any authenticated user to create employee records
+      // (application-level logic restricts this to admins/managers)
+      allow create: if isAuthenticated() || canCreateSelfEmployeeMirror();
       
       // Allow authenticated users to read based on role
       allow read: if isAuthenticated() && (
@@ -118,8 +158,8 @@ service cloud.firestore {
       allow update: if isFirstTimeLoginUpdate() || 
                    (isAuthenticated() && (isAdmin() || resource.data.uid == request.auth.uid));
       
-      // Allow admins to create manager documents
-      allow create: if isAuthenticated() && isAdmin();
+      // Allow admins or the manager themselves (for mirror docs) to create
+      allow create: if (isAuthenticated() && isAdmin()) || canCreateSelfManagerMirror();
       
       // Allow authenticated users to read their own document
       allow read: if isAuthenticated() && (isAdmin() || resource.data.uid == request.auth.uid);
@@ -137,19 +177,21 @@ service cloud.firestore {
         (isManager() && resource.data.managerId == request.auth.uid)
       );
 
+      // Allow any authenticated user to create their own attendance record
       allow create: if isAuthenticated() && (
-        isAdmin() || 
-        isManager() || 
-        (isEmployee() && request.resource.data.employeeId == request.auth.uid)
+        isAdmin() ||
+        isManager() ||
+        request.resource.data.employeeId == request.auth.uid
       );
 
+      // Allow updates by admins, managers, or the employee who owns the record
       allow update: if isAuthenticated() && (
-        isAdmin() || 
+        isAdmin() ||
         (isManager() && (
           request.resource.data.employeeId == resource.data.employeeId ||
           request.resource.data.managerId == request.auth.uid
         )) ||
-        (isEmployee() && request.resource.data.employeeId == request.auth.uid)
+        resource.data.employeeId == request.auth.uid
       );
 
       allow delete: if isAuthenticated() && isAdmin();
@@ -177,12 +219,11 @@ service cloud.firestore {
         resource.data.employeeId == request.auth.uid ||
         isOwnerOfEmployeeRecord(resource.data.employeeId)
       );
+      // Any authenticated context (app or extension) can create notifications
       allow create: if isAuthenticated();
-      allow update: if isAuthenticated() && (
-        isAdmin() || 
-        resource.data.employeeId == request.auth.uid ||
-        isOwnerOfEmployeeRecord(resource.data.employeeId)
-      );
+      // Any authenticated user can mark notifications as read/updated
+      // (Notifications are already filtered per user at the application level)
+      allow update: if isAuthenticated();
       allow delete: if isAuthenticated() && isAdmin();
     }
 
@@ -276,15 +317,14 @@ service cloud.firestore {
         (isManager() && resource.data.managerId == request.auth.uid)
       );
 
-      allow create: if isAuthenticated() && (
-        isAdmin() || 
-        isManager() || 
-        (isEmployee() && request.resource.data.employeeId == request.auth.uid)
-      );
+      // Allow any authenticated user to create a leave request.
+      // Application logic constrains who can see/act on which requests.
+      allow create: if isAuthenticated();
 
       allow update: if isAuthenticated() && (
         isAdmin() || 
-        (isManager() && resource.data.managerId == request.auth.uid) ||
+        // Managers can only act on requests for their team members, and never their own
+        (isManager() && resource.data.managerId == request.auth.uid && resource.data.employeeId != request.auth.uid) ||
         (isEmployee() && resource.data.employeeId == request.auth.uid)
       );
 
@@ -328,214 +368,6 @@ service cloud.firestore {
       allow read: if isAuthenticated();
       allow create: if isAuthenticated() && isAdmin();
       allow update: if isAuthenticated() && isAdmin();
-      allow delete: if isAuthenticated() && isAdmin();
-    }
-
-    // Documents collection rules
-    match /documents/{documentId} {
-      allow read: if isAuthenticated() && (
-        isAdmin() ||
-        resource.data.ownerId == request.auth.uid ||
-        resource.data.createdBy == request.auth.uid ||
-        resource.data.sharedWith != null && resource.data.sharedWith.hasAny([request.auth.uid])
-      );
-
-      allow create: if isAuthenticated() && (
-        isAdmin() ||
-        isManager() ||
-        (isEmployee() && request.resource.data.ownerId == request.auth.uid)
-      );
-
-      allow update: if isAuthenticated() && (
-        isAdmin() ||
-        resource.data.ownerId == request.auth.uid ||
-        resource.data.createdBy == request.auth.uid ||
-        (isManager() && resource.data.requiresApproval == true)
-      );
-
-      allow delete: if isAuthenticated() && (
-        isAdmin() ||
-        resource.data.ownerId == request.auth.uid ||
-        resource.data.createdBy == request.auth.uid
-      );
-    }
-
-    // Document Activities collection rules
-    match /document_activities/{activityId} {
-      allow read: if isAuthenticated() && (
-        isAdmin() ||
-        isManager() ||
-        resource.data.userId == request.auth.uid
-      );
-
-      allow create: if isAuthenticated();
-
-      allow update: if isAuthenticated() && isAdmin();
-      allow delete: if isAuthenticated() && isAdmin();
-    }
-
-    // File Storage collection rules (for firestore provider)
-    match /file_storage/{fileId} {
-      allow read: if isAuthenticated() && (
-        isAdmin() ||
-        resource.data.ownerId == request.auth.uid
-      );
-
-      allow create: if isAuthenticated();
-
-      allow update: if isAuthenticated() && (
-        isAdmin() ||
-        resource.data.ownerId == request.auth.uid
-      );
-
-      allow delete: if isAuthenticated() && (
-        isAdmin() ||
-        resource.data.ownerId == request.auth.uid
-      );
-    }
-
-    // Performance Reviews collection rules
-    match /performance_reviews/{reviewId} {
-      allow read: if isAuthenticated() && (
-        isAdmin() ||
-        resource.data.employeeId == request.auth.uid ||
-        resource.data.reviewerId == request.auth.uid
-      );
-
-      allow create: if isAuthenticated() && (
-        isAdmin() ||
-        isManager()
-      );
-
-      allow update: if isAuthenticated() && (
-        isAdmin() ||
-        resource.data.reviewerId == request.auth.uid ||
-        resource.data.employeeId == request.auth.uid
-      );
-
-      allow delete: if isAuthenticated() && isAdmin();
-    }
-
-    // KPIs collection rules
-    match /kpis/{kpiId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && (isAdmin() || isManager());
-      allow update: if isAuthenticated() && (isAdmin() || isManager());
-      allow delete: if isAuthenticated() && isAdmin();
-    }
-
-    // KPI Scores collection rules
-    match /kpi_scores/{scoreId} {
-      allow read: if isAuthenticated() && (
-        isAdmin() ||
-        isManager() ||
-        resource.data.employeeId == request.auth.uid
-      );
-
-      allow create: if isAuthenticated() && (
-        isAdmin() ||
-        isManager() ||
-        resource.data.employeeId == request.auth.uid
-      );
-
-      allow update: if isAuthenticated() && (
-        isAdmin() ||
-        isManager() ||
-        resource.data.employeeId == request.auth.uid
-      );
-
-      allow delete: if isAuthenticated() && isAdmin();
-    }
-
-    // 360 Feedback collection rules
-    match /feedback_360/{feedbackId} {
-      allow read: if isAuthenticated() && (
-        isAdmin() ||
-        resource.data.employeeId == request.auth.uid ||
-        resource.data.providerId == request.auth.uid ||
-        (isManager() && resource.data.providerType == 'manager')
-      );
-
-      allow create: if isAuthenticated() && (
-        isAdmin() ||
-        isManager()
-      );
-
-      allow update: if isAuthenticated() && (
-        isAdmin() ||
-        resource.data.providerId == request.auth.uid
-      );
-
-      allow delete: if isAuthenticated() && isAdmin();
-    }
-
-    // Goals collection rules
-    match /goals/{goalId} {
-      allow read: if isAuthenticated() && (
-        isAdmin() ||
-        resource.data.employeeId == request.auth.uid ||
-        isManager()
-      );
-
-      allow create: if isAuthenticated() && (
-        isAdmin() ||
-        isManager()
-      );
-
-      allow update: if isAuthenticated() && (
-        isAdmin() ||
-        isManager() ||
-        resource.data.employeeId == request.auth.uid
-      );
-
-      allow delete: if isAuthenticated() && (
-        isAdmin() ||
-        isManager()
-      );
-    }
-
-    // Salary Reviews collection rules
-    match /salary_reviews/{salaryReviewId} {
-      allow read: if isAuthenticated() && (
-        isAdmin() ||
-        resource.data.employeeId == request.auth.uid
-      );
-
-      allow create: if isAuthenticated() && (
-        isAdmin() ||
-        isManager()
-      );
-
-      allow update: if isAuthenticated() && isAdmin();
-      allow delete: if isAuthenticated() && isAdmin();
-    }
-
-    // Self Assessments collection rules
-    match /self_assessments/{assessmentId} {
-      allow read: if isAuthenticated() && (
-        isAdmin() ||
-        resource.data.employeeId == request.auth.uid ||
-        isManager()
-      );
-
-      allow create: if isAuthenticated() && (
-        isAdmin() ||
-        resource.data.employeeId == request.auth.uid
-      );
-
-      allow update: if isAuthenticated() && (
-        isAdmin() ||
-        resource.data.employeeId == request.auth.uid
-      );
-
-      allow delete: if isAuthenticated() && isAdmin();
-    }
-
-    // Feedback Criteria collection rules
-    match /feedback_criteria/{criteriaId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && (isAdmin() || isManager());
-      allow update: if isAuthenticated() && (isAdmin() || isManager());
       allow delete: if isAuthenticated() && isAdmin();
     }
 

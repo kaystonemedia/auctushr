@@ -1,31 +1,23 @@
 {
   "manifest_version": 3,
-  "name": "KaystoneHR Attendance",
+  "name": "KaystoneHR Productivity Tracker",
   "version": "1.0.0",
-  "description": "Track attendance and productivity for KaystoneHR employees",
+  "description": "Track productivity and browser activity for KaystoneHR",
   "permissions": [
+    "tabs",
+    "activeTab",
     "storage",
     "idle",
-    "tabs",
-    "geolocation",
+    "alarms",
     "scripting",
-    "webNavigation",
-    "alarms"
+    "tabCapture"
   ],
   "host_permissions": [
-    "https://kaystonehr.com/*",
-    "https://www.googleapis.com/*"
+    "*://*/*"
   ],
   "background": {
     "service_worker": "background.js"
   },
-  "content_scripts": [
-    {
-      "matches": ["<all_urls>"],
-      "js": ["content-script.js"],
-      "run_at": "document_start"
-    }
-  ],
   "action": {
     "default_popup": "popup.html",
     "default_icon": {
@@ -39,8 +31,11 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
-  "web_accessible_resources": [{
-    "resources": ["content-script.js"],
-    "matches": ["<all_urls>"]
-  }]
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"]
+    }
+  ],
+  "options_page": "options.html"
 } 

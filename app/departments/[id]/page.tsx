@@ -20,18 +20,10 @@ import {
   Clock,
   AlertCircle
 } from 'lucide-react'
-import { collection, getDocs, doc, getDoc, query, where } from 'firebase/firestore'
-import { db } from '@/lib/firebase'
 import { toast } from 'react-hot-toast'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { 
-  sendCustomNotification, 
-  sendTaskAssignmentNotification,
-  sendBreakReminder,
-  sendCongratulationsNotification 
-} from '@/lib/notifications'
 
 interface Employee {
   id: string
@@ -76,59 +68,18 @@ export default function DepartmentDetailPage() {
     try {
       setIsLoading(true)
       
-      // Fetch department details
-      const departmentDoc = await getDoc(doc(db, 'departments', departmentId))
-      if (!departmentDoc.exists()) {
+      const res = await fetch(`/api/departments/${departmentId}`, { credentials: 'include' })
+      if (!res.ok) {
         toast.error('Department not found')
         return
       }
-
-      const departmentData = departmentDoc.data()
-      
-      // Get manager details if exists
-      let managerName = ''
-      if (departmentData.managerId) {
-        const managerDoc = await getDoc(doc(db, 'employees', departmentData.managerId))
-        if (managerDoc.exists()) {
-          const managerData = managerDoc.data()
-          managerName = `${managerData.firstName} ${managerData.lastName}`
-        }
-      }
-
-      const departmentInfo: Department = {
-        id: departmentDoc.id,
-        name: departmentData.name,
-        description: departmentData.description,
-        managerId: departmentData.managerId,
-        managerName,
-        employeeCount: 0
-      }
-
-      // Fetch employees in this department
-      const employeesRef = collection(db, 'employees')
-      const q = query(employeesRef, where('department', '==', departmentData.name))
-      const employeesSnapshot = await getDocs(q)
-      
-      const employeesData: Employee[] = employeesSnapshot.docs.map(doc => {
-        const data = doc.data()
-        return {
-          id: doc.id,
-          uid: data.uid || '',
-          firstName: data.firstName,
-          lastName: data.lastName,
-          email: data.email,
-          position: data.position,
-          role: data.role,
-          status: data.status,
-          department: data.department,
-          managerId: data.managerId,
-          avatar: data.avatar
-        }
+      const data = await res.json()
+      setDepartment({
+        ...data.department,
+        createdAt: new Date(data.department.createdAt),
+        updatedAt: new Date(data.department.updatedAt),
       })
-
-      departmentInfo.employeeCount = employeesData.length
-      setDepartment(departmentInfo)
-      setEmployees(employeesData)
+      setEmployees(data.employees || [])
     } catch (error) {
       console.error('Error fetching department data:', error)
       toast.error('Failed to load department data')
@@ -178,42 +129,37 @@ export default function DepartmentDetailPage() {
 
     setIsSending(true)
     try {
-      const targetEmployees = employees.filter(emp => selectedEmployees.includes(emp.id))
-      
-      for (const employee of targetEmployees) {
-        switch (notificationType) {
-          case 'custom':
-            await sendCustomNotification(
-              employee.uid || employee.id,
-              notificationTitle || 'Department Notification',
-              notificationMessage,
-              'info'
-            )
-            break
-          case 'task_assignment':
-            await sendTaskAssignmentNotification(
-              employee.uid || employee.id,
-              {
-                title: notificationTitle || 'New Task Assigned',
-                description: notificationMessage,
-                assignedBy: user?.name || user?.email || 'System',
-                priority: 'medium'
-              }
-            )
-            break
-          case 'break_reminder':
-            await sendBreakReminder(employee.uid || employee.id, 'lunch')
-            break
-          case 'congratulations':
-            await sendCongratulationsNotification(
-              employee.uid || employee.id,
-              notificationMessage
-            )
-            break
-        }
+      const userIds = selectedEmployees
+      const title =
+        notificationTitle ||
+        (notificationType === 'task_assignment'
+          ? 'New Task Assigned'
+          : notificationType === 'break_reminder'
+          ? 'Break Reminder'
+          : notificationType === 'congratulations'
+          ? 'Congratulations'
+          : 'Department Notification')
+
+      const res = await fetch('/api/notifications/send', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userIds,
+          title,
+          message: notificationMessage,
+          severity: notificationType === 'congratulations' ? 'info' : 'info',
+          type: notificationType,
+        }),
+      })
+
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || 'Send failed')
       }
 
-      toast.success(`Notification sent to ${targetEmployees.length} employee(s)`)
+      const { count } = await res.json()
+      toast.success(`Notification sent to ${count} employee(s)`)
       setIsNotificationDialogOpen(false)
       setNotificationMessage('')
       setNotificationTitle('')

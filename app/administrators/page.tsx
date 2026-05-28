@@ -19,10 +19,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { MoreHorizontal, Plus, Search } from 'lucide-react'
+import { MoreHorizontal, Plus, Search, Users, Building2 } from 'lucide-react'
 import { AddAdminModal } from '@/components/administrators/add-admin-modal'
-import { collection, getDocs, query, where, orderBy } from 'firebase/firestore'
-import { db } from '@/lib/firebase'
+import { OverviewTable } from '@/components/administrators/overview-table'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { useToast } from '@/components/ui/use-toast'
 
 // Define the admin type
@@ -58,23 +58,21 @@ export default function AdministratorsPage() {
 
       try {
         setIsLoadingAdmins(true)
-        const usersRef = collection(db, 'users')
-        const adminsQuery = query(
-          usersRef,
-          where('role', '==', 'admin'),
-          where('status', '==', 'active'),
-          orderBy('createdAt', 'desc')
-        )
-        
-        const snapshot = await getDocs(adminsQuery)
-        console.log('Raw admin documents:', snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })))
-        const adminsData = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data(),
-          createdAt: doc.data().createdAt?.toDate() || new Date()
-        })) as Administrator[]
-        console.log('Processed admin data:', adminsData)
-
+        const response = await fetch('/api/employees', { credentials: 'include' })
+        if (!response.ok) throw new Error('Failed to fetch administrators')
+        const data = await response.json()
+        const adminsData = ((data.employees || []) as any[])
+          .filter((employee) => employee.role === 'admin' && employee.status !== 'inactive')
+          .map((employee) => ({
+            id: employee.id,
+            firstName: employee.firstName || '',
+            lastName: employee.lastName || '',
+            email: employee.email || '',
+            department: employee.department || '',
+            position: employee.position || '',
+            status: employee.status || 'active',
+            createdAt: employee.createdAt ? new Date(employee.createdAt) : new Date(),
+          })) as Administrator[]
         setAdministrators(adminsData)
       } catch (error) {
         console.error('Error fetching administrators:', error)
@@ -118,7 +116,14 @@ export default function AdministratorsPage() {
   return (
     <div className="container mx-auto py-10">
       <div className="flex justify-between items-center mb-8">
-        <h1 className="text-3xl font-bold">Administrators</h1>
+        <div>
+          <h1 className="text-3xl font-bold">Administrators</h1>
+          <p className="text-muted-foreground mt-1">
+            <a href="/productivity" className="text-primary hover:underline">
+              Manage tasks and productivity →
+            </a>
+          </p>
+        </div>
         <div className="flex gap-4">
           <Button variant="outline" onClick={handleExport}>
             Export
@@ -130,6 +135,41 @@ export default function AdministratorsPage() {
         </div>
       </div>
 
+      <Tabs defaultValue="overview" className="space-y-6">
+        <TabsList>
+          <TabsTrigger value="overview" className="flex items-center gap-2">
+            <Building2 className="h-4 w-4" />
+            Overview
+          </TabsTrigger>
+          <TabsTrigger value="administrators" className="flex items-center gap-2">
+            <Users className="h-4 w-4" />
+            Administrators
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="overview">
+          <Tabs defaultValue="all" className="space-y-4">
+            <TabsList>
+              <TabsTrigger value="all">All</TabsTrigger>
+              <TabsTrigger value="managers">Managers</TabsTrigger>
+              <TabsTrigger value="employees">Employees</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="all">
+              <OverviewTable viewType="all" />
+            </TabsContent>
+
+            <TabsContent value="managers">
+              <OverviewTable viewType="managers" />
+            </TabsContent>
+
+            <TabsContent value="employees">
+              <OverviewTable viewType="employees" />
+            </TabsContent>
+          </Tabs>
+        </TabsContent>
+
+        <TabsContent value="administrators">
       <div className="flex items-center gap-4 mb-6">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -225,6 +265,8 @@ export default function AdministratorsPage() {
           </TableBody>
         </Table>
       </div>
+        </TabsContent>
+      </Tabs>
 
       <AddAdminModal
         isOpen={isAddModalOpen}

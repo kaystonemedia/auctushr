@@ -49,12 +49,12 @@ export function Header() {
           variant="ghost"
           size="sm"
           onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-          className="flex items-center space-x-2 text-gray-700 hover:text-gray-900"
+          className="flex items-center space-x-2 text-gray-700 hover:text-corporate-navy"
         >
           <div className="h-8 w-8 rounded-full bg-gray-200 flex items-center justify-center">
             <User className="h-5 w-5 text-gray-500" />
           </div>
-          <span className="text-sm font-medium hidden sm:block">{user?.name || user?.email}</span>
+          <span className="text-sm font-medium hidden sm:block">{user?.email}</span>
           <ChevronDown className={cn(
             "h-4 w-4 transition-transform",
             isDropdownOpen ? "transform rotate-180" : ""

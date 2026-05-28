@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getAdminAuth, getAdminDb } from '@/lib/firebase-admin'
+import { supabaseAdmin } from '@/lib/supabase/admin'
 
 export const dynamic = 'force-dynamic'
 
@@ -10,15 +10,28 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'No token provided' }, { status: 401 })
     }
 
-    const decodedToken = await getAdminAuth().verifyIdToken(token)
-    const userDoc = await getAdminDb().collection('users').doc(decodedToken.uid).get()
+    const { data: authData, error: authError } = await supabaseAdmin.auth.getUser(token)
+    if (authError || !authData.user) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
 
-    if (!userDoc.exists) {
+    const { data: profile, error: profileError } = await supabaseAdmin
+      .from('profiles')
+      .select('*')
+      .eq('auth_user_id', authData.user.id)
+      .single()
+
+    if (profileError || !profile) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
     }
 
-    const userData = userDoc.data()
-    return NextResponse.json({ user: { ...userData, id: userDoc.id } })
+    return NextResponse.json({
+      user: {
+        ...profile,
+        id: profile.id,
+        uid: profile.auth_user_id
+      }
+    })
   } catch (error) {
     console.error('Error fetching user:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

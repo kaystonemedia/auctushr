@@ -2,14 +2,11 @@
 
 import { useState, useEffect } from 'react'
 import { useNewAuth } from '@/contexts/new-auth-context'
-import { db } from '@/lib/firebase'
-import { collection, query, getDocs, where, orderBy, limit, Timestamp } from 'firebase/firestore'
 import { EmployeeWellnessReport } from "@/components/employee-wellness-report"
 import { Header } from "@/components/header"
 import { Sidebar } from "@/components/sidebar"
 import { WellnessChart } from "@/components/wellness-chart"
 import { Loader2 } from "lucide-react"
-import { Employee } from '@/types/employee'
 
 interface WellnessData {
   id: string
@@ -48,101 +45,17 @@ export default function WellnessCheckInPage() {
   const loadWellnessData = async () => {
     try {
       setLoading(true)
-      
-      // Get wellness data from the last 30 days
-      const thirtyDaysAgo = new Date()
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+      const response = await fetch('/api/wellness/summary', { credentials: 'include' })
+      if (!response.ok) throw new Error('Failed to load wellness data')
+      const data = await response.json()
 
-      // Get wellness check-ins
-      const wellnessSnapshot = await getDocs(query(
-        collection(db, 'wellness_checkins'),
-        where('timestamp', '>=', Timestamp.fromDate(thirtyDaysAgo)),
-        orderBy('timestamp', 'desc'),
-        limit(50)
-      ))
-
-      // Get employees for reference
-      const employeesSnapshot = await getDocs(collection(db, 'employees'))
-      const employeesData: Employee[] = employeesSnapshot.docs.map(doc => {
-        const data = doc.data() as Partial<Employee>
-        return {
-          id: doc.id,
-          firstName: data.firstName || '',
-          lastName: data.lastName || '',
-          email: data.email || '',
-          phone: data.phone || '',
-          department: data.department || '',
-          position: data.position || '',
-          role: data.role as 'admin' | 'manager' | 'employee' || 'employee',
-          managerId: data.managerId || null,
-          hasPassword: data.hasPassword ?? false,
-          hireDate: data.hireDate ? new Date(data.hireDate as any) : new Date(),
-          salary: data.salary || 0,
-          status: data.status as 'active' | 'inactive' | 'on_leave' || 'active',
-          photoURL: data.photoURL || '',
-          address: data.address || undefined,
-          emergencyContact: data.emergencyContact || undefined,
-          documents: data.documents || undefined,
-          createdAt: data.createdAt ? new Date(data.createdAt as any) : new Date(),
-          updatedAt: data.updatedAt ? new Date(data.updatedAt as any) : new Date(),
-        }
-      })
-
-      // Process wellness data
-      const wellnessData: WellnessData[] = []
-      const departmentScores = new Map<string, { total: number; count: number }>()
-
-      wellnessSnapshot.docs.forEach(doc => {
-        const wellness = doc.data()
-        const employee = employeesData.find(emp => emp.id === wellness.employeeId)
-        
-        if (!employee) return
-
-        const score = calculateWellnessScore(wellness.metrics)
-        const scoreColor = getScoreColor(score)
-
-        wellnessData.push({
-          id: doc.id,
-          employeeId: wellness.employeeId,
-          name: `${employee.firstName} ${employee.lastName}`,
-          position: employee.position,
-          avatar: employee.photoURL || `/placeholder.svg?height=40&width=40`,
-          score,
-          scoreColor,
-          metrics: wellness.metrics || [],
-          timestamp: wellness.timestamp?.toDate() || new Date()
-        })
-
-        // Aggregate department scores
-        const dept = employee.department
-        if (!departmentScores.has(dept)) {
-          departmentScores.set(dept, { total: 0, count: 0 })
-        }
-        const deptData = departmentScores.get(dept)!
-        deptData.total += score
-        deptData.count += 1
-      })
-
-      // Calculate department averages
-      const departmentColors = [
-        'bg-blue-500',
-        'bg-teal-500', 
-        'bg-indigo-500',
-        'bg-purple-500',
-        'bg-orange-500',
-        'bg-green-500'
-      ]
-
-      const departmentWellness: DepartmentWellness[] = Array.from(departmentScores.entries())
-        .map(([name, data], index) => ({
-          name,
-          score: Math.round(data.total / data.count),
-          color: departmentColors[index % departmentColors.length]
+      setEmployees(
+        ((data.employees || []) as WellnessData[]).map((employee) => ({
+          ...employee,
+          timestamp: new Date(employee.timestamp),
         }))
-        .sort((a, b) => b.score - a.score)
-
-      setEmployees(wellnessData)
-      setDepartments(departmentWellness)
+      )
+      setDepartments((data.departments || []) as DepartmentWellness[])
 
     } catch (error) {
       console.error('Error loading wellness data:', error)
@@ -150,25 +63,6 @@ export default function WellnessCheckInPage() {
     } finally {
       setLoading(false)
     }
-  }
-
-  const calculateWellnessScore = (metrics: any[]): number => {
-    if (!metrics || metrics.length === 0) return 0
-    
-    const totalScore = metrics.reduce((sum, metric) => {
-      const rating = metric.selectedRating || 0
-      const maxRating = Math.max(...(metric.ratings || [10]))
-      return sum + (rating / maxRating) * 100
-    }, 0)
-    
-    return Math.round(totalScore / metrics.length)
-  }
-
-  const getScoreColor = (score: number): string => {
-    if (score >= 80) return 'bg-teal-500'
-    if (score >= 60) return 'bg-blue-500'
-    if (score >= 40) return 'bg-yellow-500'
-    return 'bg-orange-500'
   }
 
   if (loading) {

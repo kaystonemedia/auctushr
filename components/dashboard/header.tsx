@@ -1,12 +1,14 @@
 'use client'
 
-import { User } from 'firebase/auth'
 import { LogOut, Bell, Settings } from 'lucide-react'
 import { useAuth } from '@/contexts/auth-context'
 import { useRouter } from 'next/navigation'
 
 interface HeaderProps {
-  user: User
+  user: {
+    uid: string
+    email?: string | null
+  }
   userData: {
     role: string
   }
@@ -30,7 +32,7 @@ export default function Header({ user, userData }: HeaderProps) {
       <div className="flex items-center justify-between px-6 py-4">
         <div className="flex items-center space-x-4">
           <h1 className="text-xl font-semibold text-gray-800">
-            KayStone HR
+            Auctushr
           </h1>
           <span className="px-2 py-1 text-sm font-medium text-gray-600 bg-gray-100 rounded-full">
             {userData.role.charAt(0).toUpperCase() + userData.role.slice(1)}

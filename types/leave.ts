@@ -4,6 +4,7 @@ export type LeaveStatus = 'pending' | 'approved' | 'rejected' | 'cancelled'
 export interface LeaveRequest {
   id: string
   employeeId: string
+  managerId?: string | null
   employeeName: string
   department: string
   type: LeaveType

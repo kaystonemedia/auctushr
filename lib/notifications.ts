@@ -1,4 +1,4 @@
-import { db } from '@/lib/firebase'
+import { db } from './firebase'
 import {
   collection,
   addDoc,
@@ -13,9 +13,22 @@ import {
   or,
   and,
   deleteDoc
-} from 'firebase/firestore'
+} from '@/lib/data/firestore'
 import { AttendanceNotification, AttendanceRecord, AttendanceSettings } from '@/types/attendance'
 import { toast } from 'react-hot-toast'
+
+function toNotificationDate(value: unknown): Date {
+  if (!value) return new Date()
+  if (value instanceof Date) return value
+  if (typeof value === 'object' && value !== null && 'toDate' in value && typeof (value as { toDate: () => Date }).toDate === 'function') {
+    return (value as { toDate: () => Date }).toDate()
+  }
+  if (typeof value === 'string' || typeof value === 'number') {
+    const parsed = new Date(value)
+    return Number.isNaN(parsed.getTime()) ? new Date() : parsed
+  }
+  return new Date()
+}
 
 interface NotificationOptions {
   type: 'break' | 'meeting' | 'idle' | 'late' | 'early' | 'custom'
@@ -25,7 +38,7 @@ interface NotificationOptions {
   data?: any
 }
 
-export async function createNotification(options: NotificationOptions): Promise<void> {
+export async function createNotification(options: NotificationOptions): Promise<any> {
   try {
     // Validate that we have a valid employee ID
     if (!options.employeeId || options.employeeId.trim() === '') {
@@ -34,7 +47,6 @@ export async function createNotification(options: NotificationOptions): Promise<
     }
 
     const notification = {
-      // Don't include id field - Firestore will auto-generate it
       type: options.type,
       employeeId: options.employeeId,
       message: options.message,
@@ -42,11 +54,31 @@ export async function createNotification(options: NotificationOptions): Promise<
       read: false,
       createdAt: new Date(),
       updatedAt: new Date(),
-      data: options.data || null // Ensure data is never undefined
+      data: options.data || null
     }
 
+    // Check if we're running on the server-side
+    if (typeof window === 'undefined') {
+      // Server-side: try to use admin DB
+      try {
+        const { getAdminDb, isFirebaseAdminInitialized } = await import('./firebase-admin')
+        if (isFirebaseAdminInitialized()) {
+          const adminDb = getAdminDb()
+          const docRef = await adminDb.collection('notifications').add(notification)
+          const notificationWithId = { id: docRef.id, ...notification }
+          console.log('Notification created with ID (admin):', docRef.id)
+          return notificationWithId
+        }
+      } catch (adminError) {
+        console.warn('Firebase Admin not available, falling back to client SDK:', adminError)
+      }
+    }
+
+    // Client-side or fallback: use client DB
     const docRef = await addDoc(collection(db, 'notifications'), notification)
-    console.log('Notification created with ID:', docRef.id)
+    const notificationWithId = { id: docRef.id, ...notification }
+    console.log('Notification created with ID (client):', docRef.id)
+    return notificationWithId
   } catch (error) {
     console.error('Error creating notification:', error)
     throw error
@@ -67,20 +99,25 @@ export function subscribeToNotifications(
   )
 
   return onSnapshot(q, (snapshot) => {
-    snapshot.docChanges().forEach((change) => {
+    const changes =
+      typeof snapshot.docChanges === 'function'
+        ? snapshot.docChanges()
+        : snapshot.docs.map((doc) => ({ type: 'added' as const, doc }))
+
+    changes.forEach((change) => {
       if (change.type === 'added') {
         const docId = change.doc.id
         if (!docId || docId.trim() === '') {
           console.warn('Skipping notification with invalid ID:', change.doc.data())
           return
         }
-        
+
         const docData = change.doc.data()
         const notification = {
           id: docId,
           ...docData,
-          createdAt: docData.createdAt?.toDate() || new Date(),
-          updatedAt: docData.updatedAt?.toDate() || new Date()
+          createdAt: toNotificationDate(docData.createdAt),
+          updatedAt: toNotificationDate(docData.updatedAt)
         } as AttendanceNotification
         onNotification(notification)
       }
@@ -116,11 +153,14 @@ export async function getUnreadNotifications(employeeId: string): Promise<Attend
       orderBy('createdAt', 'desc')
     )
     const snapshot = await getDocs(q)
-    return snapshot.docs.map(doc => ({ 
-      id: doc.id, 
-      ...doc.data(),
-      createdAt: doc.data().createdAt?.toDate() || new Date()
-    } as AttendanceNotification))
+    return snapshot.docs.map(doc => {
+      const data = doc.data()
+      return {
+        id: doc.id,
+        ...data,
+        createdAt: toNotificationDate(data.createdAt)
+      } as AttendanceNotification
+    })
   } catch (error) {
     console.error('Error fetching notifications:', error)
     throw error

@@ -69,6 +69,26 @@
       </div>
     </div>
 
+    <div class="bg-white rounded-lg shadow p-4 mb-4">
+      <h2 class="text-lg font-semibold mb-2">Work Session</h2>
+      <div class="space-y-2">
+        <p class="text-sm">
+          <span class="text-gray-600">Status:</span>
+          <span id="workStatus" class="ml-2 font-semibold">Not checked in</span>
+        </p>
+        <p class="text-sm">
+          <span class="text-gray-600">Timer:</span>
+          <span id="workTimer" class="ml-2">00:00:00</span>
+        </p>
+        <div class="flex gap-2 mt-2">
+          <button id="checkInBtn" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">Check In</button>
+          <button id="checkOutBtn" class="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 hidden">Check Out</button>
+          <button id="breakBtn" class="bg-yellow-500 text-white px-4 py-2 rounded hover:bg-yellow-600 hidden">Start Break</button>
+        </div>
+      </div>
+      <div id="workToast" class="fixed bottom-4 right-4 bg-green-600 text-white px-4 py-2 rounded shadow-lg hidden"></div>
+    </div>
+
     <div class="mt-auto text-center">
       <p class="text-xs text-gray-500">Last synced: <span id="lastSync">Never</span></p>
     </div>

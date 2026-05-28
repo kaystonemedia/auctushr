@@ -32,6 +32,16 @@ yarn-error.log*
 # vercel
 .vercel
 
+# electron build artifacts and temporary bundles
+/dist-electron/
+/electron/
+*.exe
+*.dll
+*.pak
+/tmp-logs/
+/kaystonehr-attendance-extension/
+/kaystonehr-attendance-extension.zip
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
@@ -45,5 +55,9 @@ next-env.d.ts
 firebase-debug.log
 firebase-debug.*.log
 *firebase-adminsdk*.json
+
+.vercel
+
+.vercel
 
 .vercel

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useNewAuth } from '@/contexts/new-auth-context'
-import { SettingsService } from '@/lib/settings'
+import { SettingsClientService } from '@/lib/settings-client'
 import { Settings, PayrollSettings, ProductivityBonusTier, AttendanceBonusTier } from '@/types/settings'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -30,16 +30,23 @@ import {
   Globe,
   MapPin,
   Target,
-  AlertCircle
+  AlertCircle,
+  CreditCard,
+  Key,
+  Check,
+  X
 } from 'lucide-react'
 import { toast } from '@/components/ui/use-toast'
 import { cleanupInvalidNotifications } from '@/lib/notifications'
+import { ToolsPolicySettings } from '@/components/settings/tools-policy-settings'
 
 export default function SettingsPage() {
   const { user } = useNewAuth()
   const [settings, setSettings] = useState<Settings | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [testingEmail, setTestingEmail] = useState(false)
+  const [testEmailAddress, setTestEmailAddress] = useState('')
 
   useEffect(() => {
     loadSettings()
@@ -47,7 +54,7 @@ export default function SettingsPage() {
 
   const loadSettings = async () => {
     try {
-      const currentSettings = await SettingsService.getInstance().getSettings()
+      const currentSettings = await SettingsClientService.getInstance().getSettings()
       setSettings(currentSettings)
     } catch (error) {
       console.error('Error loading settings:', error)
@@ -66,7 +73,7 @@ export default function SettingsPage() {
     
     setSaving(true)
     try {
-      await SettingsService.getInstance().updateSettings(settings)
+      await SettingsClientService.getInstance().updateSettings(settings)
       toast({
         title: "Success",
         description: "Settings saved successfully"
@@ -88,8 +95,8 @@ export default function SettingsPage() {
     
     setSaving(true)
     try {
-      await SettingsService.getInstance().resetToDefaults()
-      await loadSettings()
+      const defaultSettings = SettingsClientService.getInstance().getDefaultSettings()
+      setSettings(defaultSettings)
       toast({
         title: "Success",
         description: "Settings reset to defaults"
@@ -108,7 +115,8 @@ export default function SettingsPage() {
 
   const exportSettings = async () => {
     try {
-      const settingsJson = await SettingsService.getInstance().exportSettings()
+      if (!settings) return
+      const settingsJson = JSON.stringify(settings, null, 2)
       const blob = new Blob([settingsJson], { type: 'application/json' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -132,7 +140,8 @@ export default function SettingsPage() {
 
     try {
       const text = await file.text()
-      await SettingsService.getInstance().importSettings(text)
+      const importedSettings = JSON.parse(text) as Settings
+      await SettingsClientService.getInstance().updateSettings(importedSettings)
       await loadSettings()
       toast({
         title: "Success",
@@ -169,6 +178,34 @@ export default function SettingsPage() {
     setSettings({
       ...settings,
       productivity: { ...settings.productivity, ...updates }
+    })
+  }
+
+  const updatePaymentFacilitatorSettings = (updates: Partial<Settings['paymentFacilitator']>) => {
+    if (!settings) return
+    setSettings({
+      ...settings,
+      paymentFacilitator: { ...settings.paymentFacilitator, ...updates }
+    })
+  }
+
+  const updatePaymentProvider = (
+    provider: 'paystack' | 'thunes' | 'flutterwave' | 'hubtel',
+    updates: Partial<Settings['paymentFacilitator']['providers'][typeof provider]>
+  ) => {
+    if (!settings) return
+    setSettings({
+      ...settings,
+      paymentFacilitator: {
+        ...settings.paymentFacilitator,
+        providers: {
+          ...settings.paymentFacilitator.providers,
+          [provider]: {
+            ...settings.paymentFacilitator.providers[provider],
+            ...updates
+          }
+        }
+      }
     })
   }
 
@@ -349,10 +386,14 @@ export default function SettingsPage() {
       </div>
 
       <Tabs defaultValue="payroll" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-1 h-auto">
+        <TabsList className="grid w-full grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-1 h-auto">
           <TabsTrigger value="payroll" className="flex items-center justify-center space-x-1 md:space-x-2 px-2 py-2 text-xs md:text-sm">
             <DollarSign className="h-3 w-3 md:h-4 md:w-4" />
             <span className="hidden sm:inline">Payroll</span>
+          </TabsTrigger>
+          <TabsTrigger value="payments" className="flex items-center justify-center space-x-1 md:space-x-2 px-2 py-2 text-xs md:text-sm">
+            <CreditCard className="h-3 w-3 md:h-4 md:w-4" />
+            <span className="hidden sm:inline">Payments</span>
           </TabsTrigger>
           <TabsTrigger value="company" className="flex items-center justify-center space-x-1 md:space-x-2 px-2 py-2 text-xs md:text-sm">
             <Users className="h-3 w-3 md:h-4 md:w-4" />
@@ -414,6 +455,17 @@ export default function SettingsPage() {
                     value={settings.payroll.insuranceRate}
                     onChange={(e) => updatePayrollSettings({ insuranceRate: Number(e.target.value) })}
                     placeholder="10"
+                  />
+                </div>
+                <div className="sm:col-span-2 lg:col-span-1">
+                  <Label htmlFor="exchangeRate">Exchange Rate</Label>
+                  <Input
+                    id="exchangeRate"
+                    type="number"
+                    step="0.0001"
+                    value={settings.payroll.exchangeRate ?? ''}
+                    onChange={(e) => updatePayrollSettings({ exchangeRate: Number(e.target.value) })}
+                    placeholder="1.00"
                   />
                 </div>
               </div>
@@ -1081,6 +1133,449 @@ export default function SettingsPage() {
           </Card>
         </TabsContent>
 
+        <TabsContent value="payments" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center">
+                <CreditCard className="mr-2 h-5 w-5" />
+                Payment Facilitator Settings
+              </CardTitle>
+              <CardDescription>
+                Configure payment providers for payroll processing
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Active Provider Selection */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-medium">Active Payment Provider</h3>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  {(['paystack', 'thunes', 'flutterwave', 'hubtel'] as const).map((provider) => (
+                    <Card 
+                      key={provider}
+                      className={`cursor-pointer transition-all ${
+                        settings.paymentFacilitator.activeProvider === provider 
+                          ? 'ring-2 ring-primary bg-primary/5' 
+                          : 'hover:bg-gray-50'
+                      }`}
+                      onClick={() => updatePaymentFacilitatorSettings({ activeProvider: provider })}
+                    >
+                      <CardContent className="p-4">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h4 className="font-medium capitalize">{provider}</h4>
+                            <p className="text-sm text-gray-600">
+                              {provider === 'paystack' && 'Nigerian & Ghanaian payments'}
+                              {provider === 'thunes' && 'Global money transfers'}
+                              {provider === 'flutterwave' && 'African payments'}
+                              {provider === 'hubtel' && 'Ghanaian payments'}
+                            </p>
+                          </div>
+                          {settings.paymentFacilitator.activeProvider === provider && (
+                            <Check className="h-5 w-5 text-primary" />
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* Paystack Configuration */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center justify-between">
+                    <span>Paystack Configuration</span>
+                    <Switch
+                      checked={settings.paymentFacilitator.providers.paystack.enabled}
+                      onCheckedChange={(checked) => updatePaymentProvider('paystack', { enabled: checked })}
+                    />
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="paystack-secret">Secret Key</Label>
+                      <Input
+                        id="paystack-secret"
+                        type="password"
+                        value={settings.paymentFacilitator.providers.paystack.credentials.secretKey}
+                        onChange={(e) => updatePaymentProvider('paystack', {
+                          credentials: {
+                            ...settings.paymentFacilitator.providers.paystack.credentials,
+                            secretKey: e.target.value
+                          }
+                        })}
+                        placeholder="sk_live_..."
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="paystack-public">Public Key</Label>
+                      <Input
+                        id="paystack-public"
+                        value={settings.paymentFacilitator.providers.paystack.credentials.publicKey}
+                        onChange={(e) => updatePaymentProvider('paystack', {
+                          credentials: {
+                            ...settings.paymentFacilitator.providers.paystack.credentials,
+                            publicKey: e.target.value
+                          }
+                        })}
+                        placeholder="pk_live_..."
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <Label>Default Currency</Label>
+                      <select
+                        value={settings.paymentFacilitator.providers.paystack.settings.defaultCurrency}
+                        onChange={(e) => updatePaymentProvider('paystack', {
+                          settings: {
+                            ...settings.paymentFacilitator.providers.paystack.settings,
+                            defaultCurrency: e.target.value as 'NGN' | 'GHS' | 'USD' | 'ZAR'
+                          }
+                        })}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                      >
+                        <option value="NGN">Nigerian Naira (NGN)</option>
+                        <option value="GHS">Ghanaian Cedi (GHS)</option>
+                        <option value="USD">US Dollar (USD)</option>
+                        <option value="ZAR">South African Rand (ZAR)</option>
+                      </select>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Switch
+                        checked={settings.paymentFacilitator.providers.paystack.settings.testMode}
+                        onCheckedChange={(checked) => updatePaymentProvider('paystack', {
+                          settings: {
+                            ...settings.paymentFacilitator.providers.paystack.settings,
+                            testMode: checked
+                          }
+                        })}
+                      />
+                      <Label>Test Mode</Label>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Thunes Configuration */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center justify-between">
+                    <span>Thunes Configuration</span>
+                    <Switch
+                      checked={settings.paymentFacilitator.providers.thunes.enabled}
+                      onCheckedChange={(checked) => updatePaymentProvider('thunes', { enabled: checked })}
+                    />
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <Label htmlFor="thunes-api">API Key</Label>
+                      <Input
+                        id="thunes-api"
+                        type="password"
+                        value={settings.paymentFacilitator.providers.thunes.credentials.apiKey}
+                        onChange={(e) => updatePaymentProvider('thunes', {
+                          credentials: {
+                            ...settings.paymentFacilitator.providers.thunes.credentials,
+                            apiKey: e.target.value
+                          }
+                        })}
+                        placeholder="API Key"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="thunes-secret">Secret Key</Label>
+                      <Input
+                        id="thunes-secret"
+                        type="password"
+                        value={settings.paymentFacilitator.providers.thunes.credentials.secretKey}
+                        onChange={(e) => updatePaymentProvider('thunes', {
+                          credentials: {
+                            ...settings.paymentFacilitator.providers.thunes.credentials,
+                            secretKey: e.target.value
+                          }
+                        })}
+                        placeholder="Secret Key"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="thunes-client">Client ID</Label>
+                      <Input
+                        id="thunes-client"
+                        value={settings.paymentFacilitator.providers.thunes.credentials.clientId}
+                        onChange={(e) => updatePaymentProvider('thunes', {
+                          credentials: {
+                            ...settings.paymentFacilitator.providers.thunes.credentials,
+                            clientId: e.target.value
+                          }
+                        })}
+                        placeholder="Client ID"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <Label>Region</Label>
+                      <select
+                        value={settings.paymentFacilitator.providers.thunes.settings.region}
+                        onChange={(e) => updatePaymentProvider('thunes', {
+                          settings: {
+                            ...settings.paymentFacilitator.providers.thunes.settings,
+                            region: e.target.value as 'global' | 'africa' | 'asia' | 'europe' | 'americas'
+                          }
+                        })}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                      >
+                        <option value="global">Global</option>
+                        <option value="africa">Africa</option>
+                        <option value="asia">Asia</option>
+                        <option value="europe">Europe</option>
+                        <option value="americas">Americas</option>
+                      </select>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Switch
+                        checked={settings.paymentFacilitator.providers.thunes.settings.testMode}
+                        onCheckedChange={(checked) => updatePaymentProvider('thunes', {
+                          settings: {
+                            ...settings.paymentFacilitator.providers.thunes.settings,
+                            testMode: checked
+                          }
+                        })}
+                      />
+                      <Label>Test Mode</Label>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Flutterwave Configuration */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center justify-between">
+                    <span>Flutterwave Configuration</span>
+                    <Switch
+                      checked={settings.paymentFacilitator.providers.flutterwave.enabled}
+                      onCheckedChange={(checked) => updatePaymentProvider('flutterwave', { enabled: checked })}
+                    />
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <Label htmlFor="flutterwave-secret">Secret Key</Label>
+                      <Input
+                        id="flutterwave-secret"
+                        type="password"
+                        value={settings.paymentFacilitator.providers.flutterwave.credentials.secretKey}
+                        onChange={(e) => updatePaymentProvider('flutterwave', {
+                          credentials: {
+                            ...settings.paymentFacilitator.providers.flutterwave.credentials,
+                            secretKey: e.target.value
+                          }
+                        })}
+                        placeholder="FLWSECK-..."
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="flutterwave-public">Public Key</Label>
+                      <Input
+                        id="flutterwave-public"
+                        value={settings.paymentFacilitator.providers.flutterwave.credentials.publicKey}
+                        onChange={(e) => updatePaymentProvider('flutterwave', {
+                          credentials: {
+                            ...settings.paymentFacilitator.providers.flutterwave.credentials,
+                            publicKey: e.target.value
+                          }
+                        })}
+                        placeholder="FLWPUBK-..."
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="flutterwave-encryption">Encryption Key</Label>
+                      <Input
+                        id="flutterwave-encryption"
+                        type="password"
+                        value={settings.paymentFacilitator.providers.flutterwave.credentials.encryptionKey}
+                        onChange={(e) => updatePaymentProvider('flutterwave', {
+                          credentials: {
+                            ...settings.paymentFacilitator.providers.flutterwave.credentials,
+                            encryptionKey: e.target.value
+                          }
+                        })}
+                        placeholder="FLWSECK_TEST-..."
+                      />
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Switch
+                      checked={settings.paymentFacilitator.providers.flutterwave.settings.testMode}
+                      onCheckedChange={(checked) => updatePaymentProvider('flutterwave', {
+                        settings: {
+                          ...settings.paymentFacilitator.providers.flutterwave.settings,
+                          testMode: checked
+                        }
+                      })}
+                    />
+                    <Label>Test Mode</Label>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Hubtel Configuration */}
+              {settings.paymentFacilitator.providers.hubtel && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center justify-between">
+                      <span>Hubtel Configuration</span>
+                      <Switch
+                        checked={settings.paymentFacilitator.providers.hubtel.enabled}
+                        onCheckedChange={(checked) => updatePaymentProvider('hubtel', { enabled: checked })}
+                      />
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="hubtel-client">Client ID</Label>
+                        <Input
+                          id="hubtel-client"
+                          type="text"
+                          value={settings.paymentFacilitator.providers.hubtel.credentials.clientId}
+                          onChange={(e) => updatePaymentProvider('hubtel', {
+                            credentials: {
+                              ...settings.paymentFacilitator.providers.hubtel.credentials,
+                              clientId: e.target.value
+                            }
+                          })}
+                          placeholder="HM..."
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="hubtel-secret">Client Secret</Label>
+                        <Input
+                          id="hubtel-secret"
+                          type="password"
+                          value={settings.paymentFacilitator.providers.hubtel.credentials.clientSecret}
+                          onChange={(e) => updatePaymentProvider('hubtel', {
+                            credentials: {
+                              ...settings.paymentFacilitator.providers.hubtel.credentials,
+                              clientSecret: e.target.value
+                            }
+                          })}
+                          placeholder="Client Secret"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Switch
+                        checked={settings.paymentFacilitator.providers.hubtel.settings.testMode}
+                        onCheckedChange={(checked) => updatePaymentProvider('hubtel', {
+                          settings: {
+                            ...settings.paymentFacilitator.providers.hubtel.settings,
+                            testMode: checked
+                          }
+                        })}
+                      />
+                      <Label>Test Mode</Label>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Default Settings */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Default Payment Settings</CardTitle>
+                  <CardDescription>
+                    Configure default settings for all payment providers
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div>
+                      <Label htmlFor="default-currency">Default Currency</Label>
+                      <Input
+                        id="default-currency"
+                        value={settings.paymentFacilitator.defaultSettings.currency}
+                        onChange={(e) => updatePaymentFacilitatorSettings({
+                          defaultSettings: {
+                            ...settings.paymentFacilitator.defaultSettings,
+                            currency: e.target.value
+                          }
+                        })}
+                        placeholder="USD"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="retry-attempts">Retry Attempts</Label>
+                      <Input
+                        id="retry-attempts"
+                        type="number"
+                        value={settings.paymentFacilitator.defaultSettings.retryAttempts}
+                        onChange={(e) => updatePaymentFacilitatorSettings({
+                          defaultSettings: {
+                            ...settings.paymentFacilitator.defaultSettings,
+                            retryAttempts: Number(e.target.value)
+                          }
+                        })}
+                        placeholder="3"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="timeout">Timeout (seconds)</Label>
+                      <Input
+                        id="timeout"
+                        type="number"
+                        value={settings.paymentFacilitator.defaultSettings.timeoutSeconds}
+                        onChange={(e) => updatePaymentFacilitatorSettings({
+                          defaultSettings: {
+                            ...settings.paymentFacilitator.defaultSettings,
+                            timeoutSeconds: Number(e.target.value)
+                          }
+                        })}
+                        placeholder="30"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="batch-size">Batch Size</Label>
+                      <Input
+                        id="batch-size"
+                        type="number"
+                        value={settings.paymentFacilitator.defaultSettings.batchSize}
+                        onChange={(e) => updatePaymentFacilitatorSettings({
+                          defaultSettings: {
+                            ...settings.paymentFacilitator.defaultSettings,
+                            batchSize: Number(e.target.value)
+                          }
+                        })}
+                        placeholder="50"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Switch
+                      checked={settings.paymentFacilitator.defaultSettings.enableNotifications}
+                      onCheckedChange={(checked) => updatePaymentFacilitatorSettings({
+                        defaultSettings: {
+                          ...settings.paymentFacilitator.defaultSettings,
+                          enableNotifications: checked
+                        }
+                      })}
+                    />
+                    <Label>Enable Payment Notifications</Label>
+                  </div>
+                </CardContent>
+              </Card>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
         <TabsContent value="company" className="space-y-6">
           <Card>
             <CardHeader>
@@ -1225,6 +1720,19 @@ export default function SettingsPage() {
                       placeholder="8"
                     />
                   </div>
+                  <div>
+                    <Label htmlFor="idleTimeSLAThreshold">Idle Time SLA Threshold (minutes)</Label>
+                    <Input
+                      id="idleTimeSLAThreshold"
+                      type="number"
+                      value={settings.attendance.idleTimeSLAThreshold || 3}
+                      onChange={(e) => updateAttendanceSettings({ idleTimeSLAThreshold: Number(e.target.value) })}
+                      placeholder="3"
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Idle time exceeding this threshold will trigger SLA warnings
+                    </p>
+                  </div>
                 </div>
               </div>
 
@@ -1261,6 +1769,8 @@ export default function SettingsPage() {
         </TabsContent>
 
         <TabsContent value="productivity" className="space-y-6">
+          <ToolsPolicySettings />
+
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center">
@@ -1397,7 +1907,7 @@ export default function SettingsPage() {
                         onChange={(e) => updateNotificationSettings({
                           email: { ...settings.notifications.email, from: e.target.value }
                         })}
-                        placeholder="noreply@company.com"
+                        placeholder="noreply@yourdomain.com"
                       />
                     </div>
                     <div>
@@ -1409,8 +1919,92 @@ export default function SettingsPage() {
                         onChange={(e) => updateNotificationSettings({
                           email: { ...settings.notifications.email, replyTo: e.target.value }
                         })}
-                        placeholder="hr@company.com"
+                        placeholder="hr@yourdomain.com"
                       />
+                    </div>
+                  </div>
+                  
+                  {/* SMTP Configuration */}
+                  <div className="mt-4 space-y-4 p-4 bg-gray-50 rounded-lg border">
+                    <h4 className="text-sm font-medium text-gray-900">SMTP Server Configuration</h4>
+                    <p className="text-xs text-gray-600 mb-4">
+                      Configure your SMTP server settings to send emails. For Hostinger Titan Mail, use the settings provided in the documentation.
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="smtpHost">SMTP Host</Label>
+                        <Input
+                          id="smtpHost"
+                          value={settings.notifications.email.smtp.host}
+                          onChange={(e) => updateNotificationSettings({
+                            email: { 
+                              ...settings.notifications.email, 
+                              smtp: { ...settings.notifications.email.smtp, host: e.target.value }
+                            }
+                          })}
+                          placeholder="smtp.titan.email"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="smtpPort">SMTP Port</Label>
+                        <Input
+                          id="smtpPort"
+                          type="number"
+                          value={settings.notifications.email.smtp.port}
+                          onChange={(e) => updateNotificationSettings({
+                            email: { 
+                              ...settings.notifications.email, 
+                              smtp: { ...settings.notifications.email.smtp, port: Number(e.target.value) }
+                            }
+                          })}
+                          placeholder="587"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="smtpUsername">SMTP Username</Label>
+                        <Input
+                          id="smtpUsername"
+                          type="email"
+                          value={settings.notifications.email.smtp.username}
+                          onChange={(e) => updateNotificationSettings({
+                            email: { 
+                              ...settings.notifications.email, 
+                              smtp: { ...settings.notifications.email.smtp, username: e.target.value }
+                            }
+                          })}
+                          placeholder="your-email@yourdomain.com"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="smtpPassword">SMTP Password</Label>
+                        <Input
+                          id="smtpPassword"
+                          type="password"
+                          value={settings.notifications.email.smtp.password}
+                          onChange={(e) => updateNotificationSettings({
+                            email: { 
+                              ...settings.notifications.email, 
+                              smtp: { ...settings.notifications.email.smtp, password: e.target.value }
+                            }
+                          })}
+                          placeholder="Your SMTP password"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Switch
+                        id="smtpSecure"
+                        checked={settings.notifications.email.smtp.secure}
+                        onCheckedChange={(checked) => updateNotificationSettings({
+                          email: { 
+                            ...settings.notifications.email, 
+                            smtp: { ...settings.notifications.email.smtp, secure: checked }
+                          }
+                        })}
+                      />
+                      <Label htmlFor="smtpSecure" className="text-sm font-normal">
+                        Use SSL/TLS (Enable for port 465, disable for port 587 with STARTTLS)
+                      </Label>
                     </div>
                   </div>
                 </div>

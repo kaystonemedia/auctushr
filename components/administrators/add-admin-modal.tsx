@@ -1,13 +1,12 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useToast } from '@/components/ui/use-toast'
-import { createAdmin } from '@/lib/firebase'
 
 interface Administrator {
   id: string
@@ -26,8 +25,22 @@ interface AddAdminModalProps {
   onSuccess: (admin: Administrator) => void
 }
 
+interface Department {
+  id: string
+  name: string
+  description?: string
+}
+
+interface DepartmentResponseItem {
+  id: string
+  name: string
+  description?: string
+}
+
 export function AddAdminModal({ isOpen, onClose, onSuccess }: AddAdminModalProps) {
   const [loading, setLoading] = useState(false)
+  const [departments, setDepartments] = useState<Department[]>([])
+  const [loadingDepartments, setLoadingDepartments] = useState(false)
   const [formData, setFormData] = useState({
     email: '',
     firstName: '',
@@ -43,6 +56,36 @@ export function AddAdminModal({ isOpen, onClose, onSuccess }: AddAdminModalProps
   })
   const { toast } = useToast()
 
+  useEffect(() => {
+    const fetchDepartments = async () => {
+      try {
+        setLoadingDepartments(true)
+        const response = await fetch('/api/departments', { credentials: 'include' })
+        if (!response.ok) throw new Error('Failed to load departments')
+        const payload = await response.json()
+        const departmentsData = ((payload.departments || []) as DepartmentResponseItem[]).map((department) => ({
+          id: department.id,
+          name: department.name,
+          description: department.description
+        })) as Department[]
+        setDepartments(departmentsData)
+      } catch (error) {
+        console.error('Error fetching departments:', error)
+        toast({
+          title: 'Error',
+          description: 'Failed to load departments',
+          variant: 'destructive'
+        })
+      } finally {
+        setLoadingDepartments(false)
+      }
+    }
+    
+    if (isOpen) {
+      fetchDepartments()
+    }
+  }, [isOpen, toast])
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
@@ -53,8 +96,35 @@ export function AddAdminModal({ isOpen, onClose, onSuccess }: AddAdminModalProps
         throw new Error('All required fields must be filled')
       }
 
-      // Create admin using the new createAdmin function
-      const result = await createAdmin(formData)
+      const trimmedEmergency = {
+        name: formData.emergencyContact.name.trim(),
+        relationship: formData.emergencyContact.relationship.trim(),
+        phone: formData.emergencyContact.phone.trim()
+      }
+      const hasEmergencyContact = Boolean(
+        trimmedEmergency.name || trimmedEmergency.relationship || trimmedEmergency.phone
+      )
+
+      const response = await fetch('/api/employees', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          firstName: formData.firstName,
+          lastName: formData.lastName,
+          email: formData.email,
+          phone: formData.phone,
+          department: formData.department,
+          position: formData.position,
+          role: 'admin',
+          emergencyContact: hasEmergencyContact ? trimmedEmergency : undefined
+        })
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        throw new Error(payload.error || 'Failed to create administrator')
+      }
+      const result = payload.employee as { id: string }
 
       const newAdmin: Administrator = {
         id: result.id,
@@ -89,11 +159,12 @@ export function AddAdminModal({ isOpen, onClose, onSuccess }: AddAdminModalProps
           phone: ''
         }
       })
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error adding administrator:', error)
+      const message = error instanceof Error ? error.message : 'Failed to add administrator'
       toast({
         title: 'Error',
-        description: error.message || 'Failed to add administrator',
+        description: message,
         variant: 'destructive',
       })
     } finally {
@@ -160,18 +231,21 @@ export function AddAdminModal({ isOpen, onClose, onSuccess }: AddAdminModalProps
 
             <div className="space-y-2">
               <Label htmlFor="department">Department</Label>
-              <Select value={formData.department} onValueChange={(value) => setFormData({ ...formData, department: value })}>
+              <Select 
+                value={formData.department} 
+                onValueChange={(value) => setFormData({ ...formData, department: value })}
+                disabled={loadingDepartments}
+              >
                 <SelectTrigger>
-                  <SelectValue placeholder="Select department" />
+                  <SelectValue placeholder={loadingDepartments ? "Loading departments..." : "Select department"} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="management">Management</SelectItem>
-                  <SelectItem value="hr">HR</SelectItem>
-                  <SelectItem value="engineering">Engineering</SelectItem>
-                  <SelectItem value="marketing">Marketing</SelectItem>
-                  <SelectItem value="sales">Sales</SelectItem>
-                  <SelectItem value="finance">Finance</SelectItem>
-                  <SelectItem value="operations">Operations</SelectItem>
+                  {departments.length === 0 && !loadingDepartments && (
+                    <SelectItem value="" disabled>No departments found. Create one in the Departments page.</SelectItem>
+                  )}
+                  {departments.map(dept => (
+                    <SelectItem key={dept.id} value={dept.name}>{dept.name}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

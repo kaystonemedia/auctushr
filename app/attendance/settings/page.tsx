@@ -4,8 +4,6 @@ import { useState, useEffect } from 'react'
 import { Header } from "@/components/header"
 import { Sidebar } from "@/components/sidebar"
 import { useNewAuth } from "@/contexts/new-auth-context"
-import { db } from "@/lib/firebase"
-import { doc, getDoc, updateDoc, collection, addDoc, getDocs, query, where, deleteDoc } from "firebase/firestore"
 import { toast } from "react-hot-toast"
 import { AttendanceSettings } from "@/types/attendance"
 import { Button } from "@/components/ui/button"
@@ -25,18 +23,6 @@ const DEFAULT_SETTINGS: AttendanceSettings = {
   requiredCheckInDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
   requireManagerApproval: true,
   autoApproveThreshold: 30
-}
-
-function flattenObject(obj: any, prefix = ''): { [key: string]: any } {
-  return Object.keys(obj).reduce((acc: { [key: string]: any }, k: string) => {
-    const pre = prefix.length ? prefix + '.' : '';
-    if (typeof obj[k] === 'object' && obj[k] !== null && !Array.isArray(obj[k])) {
-      Object.assign(acc, flattenObject(obj[k], pre + k));
-    } else {
-      acc[pre + k] = obj[k];
-    }
-    return acc;
-  }, {});
 }
 
 interface OfficeLocation {
@@ -78,15 +64,16 @@ export default function AttendanceSettingsPage() {
 
   const fetchSettings = async () => {
     try {
-      const settingsRef = doc(db, 'attendance_settings', 'default')
-      const settingsDoc = await getDoc(settingsRef)
-      
-      if (settingsDoc.exists()) {
-        setSettings(settingsDoc.data() as AttendanceSettings)
+      const res = await fetch('/api/settings', { credentials: 'include' })
+      if (!res.ok) throw new Error('Failed to load settings')
+      const data = await res.json()
+      const attendanceFromApi = data?.settings?.attendance
+      if (attendanceFromApi) {
+        setSettings({
+          ...DEFAULT_SETTINGS,
+          ...(attendanceFromApi as AttendanceSettings),
+        })
       } else {
-        // If no settings exist, create default settings
-        const flattenedSettings = flattenObject(DEFAULT_SETTINGS)
-        await updateDoc(settingsRef, flattenedSettings)
         setSettings(DEFAULT_SETTINGS)
       }
     } catch (error) {
@@ -99,11 +86,18 @@ export default function AttendanceSettingsPage() {
 
   const fetchOfficeLocations = async () => {
     try {
-      const q = query(collection(db, "officeLocations"))
-      const snapshot = await getDocs(q)
-      const locations = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
+      const res = await fetch('/api/attendance/office-locations', { credentials: 'include' })
+      if (!res.ok) throw new Error('Failed to fetch office locations')
+      const data = await res.json()
+      const locations = (data.locations || []).map((location: any) => ({
+        id: location.id,
+        name: location.name,
+        address: location.address,
+        city: location.city,
+        region: location.region || '',
+        coordinates: location.coordinates,
+        radius: location.radius,
+        isActive: location.isActive ?? true,
       })) as OfficeLocation[]
       setOfficeLocations(locations)
     } catch (error) {
@@ -115,9 +109,13 @@ export default function AttendanceSettingsPage() {
   const handleSave = async () => {
     try {
       setSaving(true)
-      const settingsRef = doc(db, 'attendance_settings', 'default')
-      const flattenedSettings = flattenObject(settings)
-      await updateDoc(settingsRef, flattenedSettings)
+      const res = await fetch('/api/settings', {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ attendance: settings }),
+      })
+      if (!res.ok) throw new Error('Failed to save settings')
       toast.success('Settings saved successfully')
     } catch (error) {
       console.error('Error saving settings:', error)
@@ -153,13 +151,16 @@ export default function AttendanceSettingsPage() {
         return
       }
 
-      const docRef = await addDoc(collection(db, "officeLocations"), {
-        ...newLocation,
-        createdAt: new Date(),
-        updatedAt: new Date()
+      const res = await fetch('/api/attendance/office-locations', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newLocation),
       })
+      if (!res.ok) throw new Error('Failed to add office location')
+      const data = await res.json()
 
-      setOfficeLocations(prev => [...prev, { id: docRef.id, ...newLocation } as OfficeLocation])
+      setOfficeLocations(prev => [...prev, data.location as OfficeLocation])
       setNewLocation({
         name: '',
         address: '',
@@ -181,13 +182,17 @@ export default function AttendanceSettingsPage() {
       const location = officeLocations.find(loc => loc.id === id)
       if (!location) return
 
-      await updateDoc(doc(db, "officeLocations", id), {
-        ...location,
-        updatedAt: new Date()
+      const res = await fetch('/api/attendance/office-locations', {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(location),
       })
+      if (!res.ok) throw new Error('Failed to update office location')
+      const data = await res.json()
 
       setOfficeLocations(prev => prev.map(loc => 
-        loc.id === id ? { ...loc, ...location } : loc
+        loc.id === id ? data.location : loc
       ))
       setIsEditing(false)
       setEditingId(null)
@@ -202,7 +207,11 @@ export default function AttendanceSettingsPage() {
     if (!window.confirm("Are you sure you want to delete this office location?")) return
 
     try {
-      await deleteDoc(doc(db, "officeLocations", id))
+      const res = await fetch(`/api/attendance/office-locations?id=${id}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      })
+      if (!res.ok) throw new Error('Failed to delete office location')
       setOfficeLocations(prev => prev.filter(loc => loc.id !== id))
       toast.success("Office location deleted successfully")
     } catch (error) {

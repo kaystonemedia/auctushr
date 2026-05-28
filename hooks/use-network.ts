@@ -1,6 +1,4 @@
 import { useState, useEffect } from 'react'
-import { db } from '@/lib/firebase'
-import { enableNetwork, disableNetwork } from 'firebase/firestore'
 
 export function useNetwork() {
   const [isOnline, setIsOnline] = useState(navigator.onLine)
@@ -13,34 +11,18 @@ export function useNetwork() {
     }
 
     setRetryCount((prev) => prev + 1)
-    try {
-      await enableNetwork(db)
-      setIsOnline(true)
-      return true
-    } catch (err) {
-      console.error("Error retrying connection:", err)
-      return false
-    }
+    setIsOnline(navigator.onLine)
+    return navigator.onLine
   }
 
   useEffect(() => {
-    const handleOnline = async () => {
+    const handleOnline = () => {
       setIsOnline(true)
       setRetryCount(0)
-      try {
-        await enableNetwork(db)
-      } catch (err) {
-        console.error("Error enabling network:", err)
-      }
     }
 
-    const handleOffline = async () => {
+    const handleOffline = () => {
       setIsOnline(false)
-      try {
-        await disableNetwork(db)
-      } catch (err) {
-        console.error("Error disabling network:", err)
-      }
     }
 
     window.addEventListener("online", handleOnline)

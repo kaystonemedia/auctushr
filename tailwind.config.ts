@@ -67,6 +67,10 @@ const config: Config = {
           4: "hsl(var(--chart-4))",
           5: "hsl(var(--chart-5))",
         },
+        // Custom brand colors
+        'deep-slate': '#344256',
+        'corporate-navy': '#00458a',
+        'emerald-mint': '#10b981',
       },
       borderRadius: {
         lg: "var(--radius)",

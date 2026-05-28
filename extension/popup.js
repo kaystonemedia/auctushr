@@ -23,6 +23,25 @@ let settings = {
   idleThreshold: 5
 };
 
+async function getCurrentPosition() {
+  return new Promise((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(resolve, reject, {
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 0
+    });
+  });
+}
+
+function getDeviceInfo() {
+  return {
+    userAgent: navigator.userAgent,
+    platform: navigator.platform,
+    language: navigator.language,
+    screenResolution: `${window.screen.width}x${window.screen.height}`
+  };
+}
+
 let updateInterval = null;
 
 // Format time for display
@@ -193,13 +212,7 @@ function setupEventListeners() {
   // Check in/out buttons
   checkInBtn.addEventListener('click', async () => {
     try {
-      const position = await new Promise((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject, {
-          enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 0
-        });
-      });
+      const position = await getCurrentPosition();
       
       const response = await chrome.runtime.sendMessage({
         type: 'CHECK_IN',
@@ -209,12 +222,7 @@ function setupEventListeners() {
             longitude: position.coords.longitude,
             accuracy: position.coords.accuracy
           },
-          deviceInfo: {
-            userAgent: navigator.userAgent,
-            platform: navigator.platform,
-            language: navigator.language,
-            screenResolution: `${window.screen.width}x${window.screen.height}`
-          }
+          deviceInfo: getDeviceInfo()
         }
       });
       
@@ -231,7 +239,25 @@ function setupEventListeners() {
 
   checkOutBtn.addEventListener('click', async () => {
     try {
-      const response = await chrome.runtime.sendMessage({ type: 'CHECK_OUT' });
+      let locationPayload = null;
+      try {
+        const position = await getCurrentPosition();
+        locationPayload = {
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          accuracy: position.coords.accuracy
+        };
+      } catch (locationError) {
+        console.warn('Unable to capture location for check-out:', locationError);
+      }
+
+      const response = await chrome.runtime.sendMessage({ 
+        type: 'CHECK_OUT',
+        data: {
+          location: locationPayload,
+          deviceInfo: getDeviceInfo()
+        }
+      });
       if (response.error) {
         throw new Error(response.error);
       }

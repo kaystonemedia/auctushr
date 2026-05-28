@@ -1,20 +1,19 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useToast } from '@/components/ui/use-toast'
-import { createManager } from '@/lib/firebase'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { AlertCircle } from 'lucide-react'
 
 interface AddManagerModalProps {
   isOpen: boolean
   onClose: () => void
-  onSuccess: (manager: any) => void
+  onSuccess: (manager: { id: string; firstName: string; lastName: string; email: string; department: string; position: string; status: string; createdAt: Date }) => void
 }
 
 interface FormData {
@@ -31,9 +30,23 @@ interface FormData {
   }
 }
 
+interface Department {
+  id: string
+  name: string
+  description?: string
+}
+
+interface DepartmentResponseItem {
+  id: string
+  name: string
+  description?: string
+}
+
 export function AddManagerModal({ isOpen, onClose, onSuccess }: AddManagerModalProps) {
   const { toast } = useToast()
   const [isLoading, setIsLoading] = useState(false)
+  const [departments, setDepartments] = useState<Department[]>([])
+  const [loadingDepartments, setLoadingDepartments] = useState(false)
   const [formData, setFormData] = useState<FormData>({
     firstName: '',
     lastName: '',
@@ -48,33 +61,118 @@ export function AddManagerModal({ isOpen, onClose, onSuccess }: AddManagerModalP
     }
   })
 
+  useEffect(() => {
+    const fetchDepartments = async () => {
+      try {
+        setLoadingDepartments(true)
+        const response = await fetch('/api/departments', { credentials: 'include' })
+        if (!response.ok) throw new Error('Failed to load departments')
+        const payload = await response.json()
+        const departmentsData = ((payload.departments || []) as DepartmentResponseItem[]).map((department) => ({
+          id: department.id,
+          name: department.name,
+          description: department.description
+        })) as Department[]
+        setDepartments(departmentsData)
+      } catch (error) {
+        console.error('Error fetching departments:', error)
+        toast({
+          title: 'Error',
+          description: 'Failed to load departments',
+          variant: 'destructive'
+        })
+      } finally {
+        setLoadingDepartments(false)
+      }
+    }
+    
+    if (isOpen) {
+      fetchDepartments()
+    }
+  }, [isOpen, toast])
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
 
     try {
-      const result = await createManager(formData)
+      const trimmedEmergency = {
+        name: formData.emergencyContact.name.trim(),
+        relationship: formData.emergencyContact.relationship.trim(),
+        phone: formData.emergencyContact.phone.trim()
+      }
+      const hasEmergencyContact = Boolean(
+        trimmedEmergency.name || trimmedEmergency.relationship || trimmedEmergency.phone
+      )
 
-      toast({
-        title: 'Manager added successfully',
-        description: 'The manager will receive an email with instructions to set up their account.',
+      const response = await fetch('/api/employees', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          firstName: formData.firstName,
+          lastName: formData.lastName,
+          email: formData.email,
+          phone: formData.phone,
+          department: formData.department,
+          position: formData.position,
+          role: 'manager',
+          emergencyContact: hasEmergencyContact ? trimmedEmergency : undefined
+        })
       })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        throw new Error(payload.error || 'Failed to create manager')
+      }
+      const result = payload.employee as { id: string; emailFailed?: boolean }
+
+      // Check if the error message indicates email failure but manager was created
+      const emailFailed = Boolean((result as { emailFailed?: boolean } | null | undefined)?.emailFailed)
+      
+      if (emailFailed) {
+        toast({
+          title: 'Manager added successfully',
+          description: 'Manager created, but onboarding email failed to send. Please check your SMTP configuration in Settings → Notifications → Email.',
+          variant: 'default',
+        })
+      } else {
+        toast({
+          title: 'Manager added successfully',
+          description: 'The manager will receive an email with instructions to set up their account.',
+        })
+      }
 
       onSuccess({
         id: result.id,
-        name: `${formData.firstName} ${formData.lastName}`,
+        firstName: formData.firstName,
+        lastName: formData.lastName,
         email: formData.email,
         department: formData.department,
+        position: formData.position,
         status: 'active',
-        createdAt: new Date(),
+        createdAt: new Date()
       })
 
       handleClose()
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error adding manager:', error)
+      const message = error instanceof Error ? error.message : 'Failed to add manager. Please try again.'
+
+      // Check if error is specifically about email
+      if (message.includes('onboarding email') || message.includes('Failed to send')) {
+        toast({
+          title: 'Manager created',
+          description: 'Manager was created successfully, but the onboarding email failed. Please check your SMTP settings in Settings → Notifications → Email.',
+          variant: 'default',
+        })
+        // Still close and refresh - manager was created
+        handleClose()
+        return
+      }
+
       toast({
         title: 'Error',
-        description: error.message || 'Failed to add manager. Please try again.',
+        description: message,
         variant: 'destructive',
       })
     } finally {
@@ -147,16 +245,18 @@ export function AddManagerModal({ isOpen, onClose, onSuccess }: AddManagerModalP
             <Select
               value={formData.department}
               onValueChange={(value) => setFormData({ ...formData, department: value })}
+              disabled={loadingDepartments}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Select department" />
+                <SelectValue placeholder={loadingDepartments ? "Loading departments..." : "Select department"} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="it">IT</SelectItem>
-                <SelectItem value="hr">Human Resources</SelectItem>
-                <SelectItem value="finance">Finance</SelectItem>
-                <SelectItem value="marketing">Marketing</SelectItem>
-                <SelectItem value="operations">Operations</SelectItem>
+                {departments.length === 0 && !loadingDepartments && (
+                  <SelectItem value="" disabled>No departments found. Create one in the Departments page.</SelectItem>
+                )}
+                {departments.map(dept => (
+                  <SelectItem key={dept.id} value={dept.name}>{dept.name}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -183,7 +283,10 @@ export function AddManagerModal({ isOpen, onClose, onSuccess }: AddManagerModalP
           </div>
 
           <div className="space-y-4 pt-4 border-t">
-            <h3 className="font-medium">Emergency Contact</h3>
+            <div className="flex items-center justify-between">
+              <h3 className="font-medium">Emergency Contact</h3>
+              <span className="text-xs text-muted-foreground">Optional</span>
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="emergencyName">Contact Name</Label>
@@ -194,7 +297,7 @@ export function AddManagerModal({ isOpen, onClose, onSuccess }: AddManagerModalP
                     ...formData,
                     emergencyContact: { ...formData.emergencyContact, name: e.target.value }
                   })}
-                  required
+                  placeholder="e.g., Jane Doe"
                 />
               </div>
               <div className="space-y-2">
@@ -206,7 +309,7 @@ export function AddManagerModal({ isOpen, onClose, onSuccess }: AddManagerModalP
                     ...formData,
                     emergencyContact: { ...formData.emergencyContact, relationship: e.target.value }
                   })}
-                  required
+                  placeholder="e.g., Spouse, Parent"
                 />
               </div>
             </div>
@@ -220,8 +323,11 @@ export function AddManagerModal({ isOpen, onClose, onSuccess }: AddManagerModalP
                   ...formData,
                   emergencyContact: { ...formData.emergencyContact, phone: e.target.value }
                 })}
-                required
+                placeholder="+233XXXXXXXXX"
               />
+              <p className="text-xs text-muted-foreground">
+                Include country code (e.g., +233 for Ghana). You can provide these details later from your profile.
+              </p>
             </div>
           </div>
 

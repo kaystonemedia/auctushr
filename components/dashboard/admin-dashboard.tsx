@@ -2,20 +2,6 @@
 
 import { useState, useEffect } from 'react'
 import { useNewAuth } from '@/contexts/new-auth-context'
-import { db } from '@/lib/firebase'
-import { 
-  collection, 
-  query, 
-  where, 
-  orderBy, 
-  limit, 
-  Timestamp,
-  onSnapshot,
-  Unsubscribe,
-  getDocs,
-  doc,
-  getDoc
-} from 'firebase/firestore'
 import { StatsCard } from '@/components/ui/stats-card'
 import { DepartmentChart } from '@/components/ui/department-chart'
 import { QuickActionCard } from '@/components/ui/quick-action-card'
@@ -43,6 +29,7 @@ interface Department {
   name: string
   employeeCount: number
   color: string
+  status?: string
 }
 
 export default function AdminDashboard() {
@@ -76,220 +63,43 @@ export default function AdminDashboard() {
     user: string
   }>>([])
 
-  // Store unsubscribe functions
-  const [unsubscribers, setUnsubscribers] = useState<Unsubscribe[]>([])
-
-  useEffect(() => {
-    const initializeDashboard = async () => {
-      try {
-        // If auth is still initializing, wait
-        if (authLoading) {
-          console.log('Auth is still initializing...')
-          return
-        }
-
-        // If no user, redirect to login
-        if (!user) {
-          console.log('No user found, redirecting to login...')
-          router.push('/auth/sign-in')
-          return
-        }
-
-        // Check if user is admin
-        if (user.role !== 'admin') {
-          console.log('User is not an admin, redirecting...')
-          router.push('/dashboard')
-          return
-        }
-
-        console.log('Admin access granted, setting up dashboard...')
-        setupRealtimeListeners()
-
-      } catch (error) {
-        console.error('Error initializing dashboard:', error)
-        setError('Failed to initialize dashboard. Please try again.')
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    initializeDashboard()
-
-    // Cleanup function
-    return () => {
-      console.log('Cleaning up dashboard listeners...')
-      unsubscribers.forEach(unsubscribe => unsubscribe())
-    }
-  }, [user, authLoading, router])
-
-  const setupRealtimeListeners = () => {
-    if (!user || user.role !== 'admin') {
-      console.warn("Cannot setup listeners: Invalid user or role")
-      return
-    }
-
-    console.log('Setting up admin dashboard listeners...', {
-      userId: user.id,
-      email: user.email,
-      role: user.role
-    })
-
-    // Listen to employees collection
-    const employeesUnsubscribe = onSnapshot(
-      query(collection(db, 'employees')),
-      (employeesSnapshot) => {
-        const employees = employeesSnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }))
-        console.log('Employees fetched:', {
-          count: employeesSnapshot.size,
-          employees: employees
-        })
-        updateStats()
-      },
-      (error) => {
-        console.error('Error in employees listener:', error)
-      }
-    )
-
-    // Listen to attendance collection for today
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    const todayEnd = new Date(today)
-    todayEnd.setHours(23, 59, 59, 999)
-
-    const attendanceUnsubscribe = onSnapshot(
-      query(
-        collection(db, 'attendance'),
-        where('date', '>=', Timestamp.fromDate(today)),
-        where('date', '<=', Timestamp.fromDate(todayEnd))
-      ),
-      (attendanceSnapshot) => {
-        const attendance = attendanceSnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }))
-        console.log('Today\'s attendance fetched:', {
-          count: attendanceSnapshot.size,
-          attendance: attendance
-        })
-        updateStats()
-      },
-      (error) => {
-        console.error('Error in attendance listener:', error)
-      }
-    )
-
-    // Listen to leave requests
-    const leaveUnsubscribe = onSnapshot(
-      query(
-        collection(db, 'leave_requests'),
-        where('status', '==', 'pending')
-      ),
-      (leaveSnapshot) => {
-        const leaveRequests = leaveSnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }))
-        console.log('Leave requests fetched:', {
-          count: leaveSnapshot.size,
-          requests: leaveRequests
-        })
-        updateStats()
-      },
-      (error) => {
-        console.error('Error in leave requests listener:', error)
-      }
-    )
-
-    // Store unsubscribe functions
-    setUnsubscribers([employeesUnsubscribe, attendanceUnsubscribe, leaveUnsubscribe])
-  }
-
-  const updateStats = async () => {
+  const loadDashboard = async () => {
     try {
       setLoading(true)
-      
-      // Store current stats before updating
       setPreviousStats(stats)
-
-      console.log('Starting stats update...')
-
-      // Get latest data from all collections
-      const [employeesSnapshot, attendanceSnapshot, leaveSnapshot] = await Promise.all([
-        getDocs(collection(db, 'employees')),
-        (() => {
-          const today = new Date()
-          today.setHours(0, 0, 0, 0)
-          const todayEnd = new Date(today)
-          todayEnd.setHours(23, 59, 59, 999)
-          return getDocs(query(
-            collection(db, 'attendance'),
-            where('date', '>=', Timestamp.fromDate(today)),
-            where('date', '<=', Timestamp.fromDate(todayEnd))
-          ))
-        })(),
-        getDocs(query(
-          collection(db, 'leave_requests'),
-          where('status', '==', 'pending')
-        ))
-      ])
-
-      // Calculate statistics
-      const totalEmployees = employeesSnapshot.size
-      const departments = new Set(employeesSnapshot.docs.map(doc => doc.data().department)).size
-      const attendance = attendanceSnapshot.docs.map(doc => doc.data())
-      const presentToday = attendance.filter(a => a.status === 'present').length
-      const lateToday = attendance.filter(a => a.status === 'late').length
-      const absentToday = attendance.filter(a => a.status === 'absent').length
-      const onLeaveToday = attendance.filter(a => a.status === 'leave').length
-      const pendingApprovals = leaveSnapshot.size
-
-      // Update department data
-      const deptData = Array.from(new Set(employeesSnapshot.docs.map(doc => doc.data().department)))
-        .map((dept, index) => ({
-          department: dept,
-          value: employeesSnapshot.docs.filter(doc => doc.data().department === dept).length,
-          color: DEPARTMENT_COLORS[index % DEPARTMENT_COLORS.length]
+      const res = await fetch('/api/dashboard/summary', { credentials: 'include' })
+      if (!res.ok) throw new Error('Failed to load dashboard')
+      const data = await res.json()
+      setStats(data.stats)
+      setDepartmentData(data.departmentData || [])
+      setRecentActivity(
+        (data.recentActivity || []).map((item: { timestamp: string }) => ({
+          ...item,
+          timestamp: new Date(item.timestamp),
         }))
-
-      // Update state
-      setStats({
-        totalEmployees,
-        departments,
-        activeProjects: 0, // TODO: Implement project tracking
-        pendingApprovals,
-        presentToday,
-        lateToday,
-        absentToday,
-        onLeaveToday,
-        averageProductivityScore: 0, // Placeholder for average productivity score
-        topPerformers: 0, // Placeholder for top performers
-        productivityTrend: 0 // Placeholder for productivity trend
-      })
-      setDepartmentData(deptData)
-
-      // Update recent activity
-      const activity = attendanceSnapshot.docs
-        .map(doc => ({
-          type: 'attendance',
-          description: `${doc.data().userName} marked as ${doc.data().status}`,
-          timestamp: doc.data().date.toDate(),
-          user: doc.data().userName
-        }))
-        .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
-        .slice(0, 5)
-
-      setRecentActivity(activity)
-
-    } catch (error) {
-      console.error('Error updating stats:', error)
+      )
+    } catch (err) {
+      console.error('Dashboard load error:', err)
       setError('Failed to update dashboard statistics')
     } finally {
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    if (authLoading) return
+    if (!user) {
+      router.push('/auth/sign-in')
+      return
+    }
+    if (user.role !== 'admin') {
+      router.push('/dashboard')
+      return
+    }
+    loadDashboard()
+    const interval = setInterval(loadDashboard, 60_000)
+    return () => clearInterval(interval)
+  }, [user, authLoading, router])
 
   const calculateTrend = (current: number, previous: number) => {
     if (previous === 0) return 0

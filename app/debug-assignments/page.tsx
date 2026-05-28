@@ -2,17 +2,16 @@
 
 import { useState, useEffect } from 'react'
 import { useNewAuth } from '@/contexts/new-auth-context'
-import { db } from '@/lib/firebase'
-import { collection, getDocs, query, where } from 'firebase/firestore'
 
 interface Employee {
   id: string
   firstName: string
   lastName: string
   email: string
+  uid?: string | null
   managerId?: string
   role?: string
-  [key: string]: any
+  [key: string]: unknown
 }
 
 interface Manager {
@@ -21,14 +20,23 @@ interface Manager {
   lastName: string
   email: string
   uid?: string
-  collection: string
-  [key: string]: any
+  collection?: string
+  [key: string]: unknown
 }
 
 interface DebugData {
   managers: Manager[]
   employees: Employee[]
-  assignments: any[]
+  assignments: Array<{
+    employeeId: string
+    employeeName: string
+    employeeEmail: string
+    managerId?: string
+    managerFound: boolean
+    managerName: string
+    managerCollection: string
+    managerUID: string
+  }>
 }
 
 export default function DebugAssignmentsPage() {
@@ -46,26 +54,12 @@ export default function DebugAssignmentsPage() {
     try {
       setLoading(true)
       
-      // Fetch all managers from all collections
-      const [usersSnapshot, managersSnapshot, employeesWithManagerRole] = await Promise.all([
-        getDocs(query(collection(db, 'users'), where('role', 'in', ['manager', 'admin']))),
-        getDocs(collection(db, 'managers')),
-        getDocs(query(collection(db, 'employees'), where('role', '==', 'manager')))
-      ])
-
-      // Fetch all employees
-      const employeesSnapshot = await getDocs(collection(db, 'employees'))
-
-      const managers = [
-        ...usersSnapshot.docs.map(doc => ({ id: doc.id, collection: 'users', ...doc.data() })),
-        ...managersSnapshot.docs.map(doc => ({ id: doc.id, collection: 'managers', ...doc.data() })),
-        ...employeesWithManagerRole.docs.map(doc => ({ id: doc.id, collection: 'employees', ...doc.data() }))
-      ] as Manager[]
-
-      const employees = employeesSnapshot.docs.map(doc => ({ 
-        id: doc.id, 
-        ...doc.data() 
-      })) as Employee[]
+      const response = await fetch('/api/employees', { credentials: 'include' })
+      if (!response.ok) throw new Error('Failed to load employees')
+      const payload = await response.json()
+      const allPeople = (payload.employees || []) as Employee[]
+      const managers = allPeople.filter((person) => person.role === 'manager' || person.role === 'admin')
+      const employees = allPeople.filter((person) => person.role === 'employee')
 
       // Create assignment analysis
       const assignments = employees
@@ -79,7 +73,7 @@ export default function DebugAssignmentsPage() {
             managerId: emp.managerId,
             managerFound: !!manager,
             managerName: manager ? `${manager.firstName} ${manager.lastName}` : 'NOT FOUND',
-            managerCollection: manager?.collection || 'N/A',
+            managerCollection: manager?.collection || 'profiles',
             managerUID: manager?.uid || 'N/A'
           }
         })

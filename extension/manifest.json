@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "KaystoneHR Attendance",
+  "name": "Auctushr Attendance",
   "version": "1.0.0",
-  "description": "Track attendance and productivity for KaystoneHR employees",
+  "description": "Track attendance and productivity for Auctushr employees",
   "permissions": [
     "storage",
     "idle",
@@ -13,7 +13,9 @@
     "alarms"
   ],
   "host_permissions": [
-    "https://kaystonehr.com/*",
+    "https://auctushr.com/*",
+    "https://auctushr.vercel.app/*",
+    "http://localhost:3000/*",
     "https://www.googleapis.com/*"
   ],
   "background": {

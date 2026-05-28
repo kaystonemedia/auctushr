@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNewAuth } from '@/contexts/new-auth-context'
 import { ProductivityService } from '@/lib/productivity'
 import { ProductivitySettings } from '@/types/productivity'
-import { settingsService } from '@/lib/settings'
+import { settingsClientService } from '@/lib/settings-client'
 import { Settings } from '@/types/settings'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
@@ -28,7 +28,7 @@ export function ProductivitySettingsComponent() {
   const fetchSettings = async () => {
     try {
       setLoading(true)
-      const currentSettings = await settingsService.getSettings()
+      const currentSettings = await settingsClientService.getSettings()
       setSettings(currentSettings)
     } catch (error) {
       console.error('Error fetching settings:', error)
@@ -43,7 +43,7 @@ export function ProductivitySettingsComponent() {
 
     try {
       setSaving(true)
-      await settingsService.updateSettings(settings)
+              await settingsClientService.updateSettings(settings)
       toast.success('Settings saved successfully')
     } catch (error) {
       console.error('Error saving settings:', error)

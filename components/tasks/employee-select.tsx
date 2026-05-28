@@ -2,9 +2,6 @@
 
 import { useState, useEffect } from 'react'
 import { useNewAuth } from '@/contexts/new-auth-context'
-import { collection, query, where, getDocs } from 'firebase/firestore'
-import { db } from '@/lib/firebase'
-
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Button } from '@/components/ui/button'
 import { Check, ChevronsUpDown, Users } from 'lucide-react'
@@ -32,19 +29,16 @@ export function EmployeeSelect({ value, onChange, disabled, className }: Employe
   const [employees, setEmployees] = useState<Employee[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null)
-  const [searchQuery, setSearchQuery] = useState("")
+  const [searchQuery, setSearchQuery] = useState('')
 
   useEffect(() => {
     fetchEmployees()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user])
 
   useEffect(() => {
     if (value && employees.length > 0) {
-      const selected = employees.find(emp => emp.id === value)
-      if (selected) {
-        setSelectedEmployee(selected)
-      }
+      const selected = employees.find((emp) => emp.id === value)
+      if (selected) setSelectedEmployee(selected)
     }
   }, [value, employees])
 
@@ -55,26 +49,26 @@ export function EmployeeSelect({ value, onChange, disabled, className }: Employe
     }
     try {
       setLoading(true)
-      let employeesQuery = query(collection(db, 'employees'))
-      if (user.role === 'manager') {
-        employeesQuery = query(
-          employeesQuery,
-          where('managerId', '==', user.id)
-        )
-      }
-      const snapshot = await getDocs(employeesQuery)
-      const employeesData = snapshot.docs.map(doc => {
-        const data = doc.data()
-        return {
-          id: doc.id, // Use Firestore document ID
-          name: data.name || `${data.firstName || ''} ${data.lastName || ''}`.trim(),
-          email: data.email,
-          role: data.role,
-          department: data.department
-        }
-      })
-      
-      setEmployees(employeesData)
+      const res = await fetch('/api/employees', { credentials: 'include' })
+      if (!res.ok) throw new Error('Failed to fetch employees')
+      const data = await res.json()
+      const employeesData = (data.employees || data || []).map(
+        (item: {
+          id: string
+          firstName?: string
+          lastName?: string
+          email: string
+          role: string
+          department?: string
+        }) => ({
+          id: item.id,
+          name: `${item.firstName || ''} ${item.lastName || ''}`.trim() || item.email,
+          email: item.email,
+          role: item.role,
+          department: item.department,
+        })
+      )
+      setEmployees(employeesData.filter((e: Employee) => e.role === 'employee' || e.role === 'manager'))
     } catch (error) {
       console.error('Error fetching employees:', error)
       toast.error('Failed to fetch employees')
@@ -83,15 +77,15 @@ export function EmployeeSelect({ value, onChange, disabled, className }: Employe
     }
   }
 
-  const filteredEmployees = employees.filter(employee => 
-    employee.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    employee.email.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredEmployees = employees.filter(
+    (employee) =>
+      employee.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      employee.email.toLowerCase().includes(searchQuery.toLowerCase())
   )
 
-  // If user is not available, show a warning and disable the dropdown
   if (!user) {
     return (
-      <div className="text-red-500 text-sm p-2 border border-red-300 rounded bg-red-50">
+      <div className="rounded border border-red-300 bg-red-50 p-2 text-sm text-red-500">
         No user context available. Please sign in again.
       </div>
     )
@@ -104,7 +98,7 @@ export function EmployeeSelect({ value, onChange, disabled, className }: Employe
           variant="outline"
           role="combobox"
           aria-expanded={open}
-          className={cn("w-full justify-between", className)}
+          className={cn('w-full justify-between', className)}
           disabled={disabled || loading}
         >
           {selectedEmployee ? (
@@ -139,17 +133,26 @@ export function EmployeeSelect({ value, onChange, disabled, className }: Employe
               filteredEmployees.map((employee) => (
                 <div
                   key={employee.id}
+                  role="button"
+                  tabIndex={0}
                   className="relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground"
                   onClick={() => {
                     setSelectedEmployee(employee)
                     onChange(employee.id, employee.name)
                     setOpen(false)
                   }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      setSelectedEmployee(employee)
+                      onChange(employee.id, employee.name)
+                      setOpen(false)
+                    }
+                  }}
                 >
                   <Check
                     className={cn(
-                      "mr-2 h-4 w-4",
-                      selectedEmployee?.id === employee.id ? "opacity-100" : "opacity-0"
+                      'mr-2 h-4 w-4',
+                      selectedEmployee?.id === employee.id ? 'opacity-100' : 'opacity-0'
                     )}
                   />
                   <div className="flex flex-col">
@@ -164,4 +167,4 @@ export function EmployeeSelect({ value, onChange, disabled, className }: Employe
       </PopoverContent>
     </Popover>
   )
-} 
+}

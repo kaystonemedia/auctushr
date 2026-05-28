@@ -1,15 +1,13 @@
-import { Timestamp } from 'firebase/firestore'
-
 export interface Event {
   id: string
   title: string
   description: string
-  startTime: Timestamp
-  endTime: Timestamp
+  startTime: Date
+  endTime: Date
   type: 'meeting' | 'deadline' | 'other'
   attendees: string[]
   organizer: string
   location?: string
-  createdAt: Timestamp
-  updatedAt: Timestamp
+  createdAt: Date
+  updatedAt: Date
 } 

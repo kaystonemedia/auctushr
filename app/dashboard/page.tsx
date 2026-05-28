@@ -5,17 +5,14 @@ import { Loader2, Users, Building2, BarChart3, Settings, FileText, Clock, Activi
 import { Button } from '@/components/ui/button'
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
-import { db } from '@/lib/firebase'
-import { collection, getDocs, query, where } from 'firebase/firestore'
-import { payrollService } from '@/lib/payroll'
-import { SettingsService } from '@/lib/settings'
-import { ProductivityService } from '@/lib/productivity-service'
-import type { ProductivitySettings } from '@/types/productivity'
+import { DesktopAppPopup } from '@/components/desktop-app-popup'
 
 export default function Dashboard() {
   const { user, isLoading } = useNewAuth()
   const [stats, setStats] = useState({
     totalEmployees: 0,
+    activeThisMonth: 0,
+    attendanceRate: 0,
     departments: 0,
     activeProjects: 0,
     pendingApprovals: 0,
@@ -30,185 +27,61 @@ export default function Dashboard() {
     topPerformers: 0
   })
   const [loadingStats, setLoadingStats] = useState(false)
+  const [showDesktopPopup, setShowDesktopPopup] = useState(false)
 
   useEffect(() => {
     if (user && !isLoading) {
       loadDashboardStats()
+      
+      // Show desktop app popup after successful login (only once per session)
+      const hasShownPopup = sessionStorage.getItem('desktopPopupShown')
+      if (!hasShownPopup) {
+        // Delay popup to let dashboard load first
+        setTimeout(() => {
+          setShowDesktopPopup(true)
+          sessionStorage.setItem('desktopPopupShown', 'true')
+        }, 2000)
+      }
     }
   }, [user, isLoading])
 
   const loadDashboardStats = async () => {
     setLoadingStats(true)
     try {
-      // Load basic stats
-      const employeesSnapshot = await getDocs(collection(db, 'employees'))
-      const totalEmployees = employeesSnapshot.size
+      const [dashboardRes, payrollRes] = await Promise.all([
+        fetch('/api/dashboard/summary', { credentials: 'include' }),
+        fetch('/api/payroll/insights', { credentials: 'include' }),
+      ])
 
-      // Load attendance stats for today
-      const today = new Date()
-      today.setHours(0, 0, 0, 0)
-      const tomorrow = new Date(today)
-      tomorrow.setDate(tomorrow.getDate() + 1)
+      if (!dashboardRes.ok) throw new Error('Failed to load dashboard summary')
+      const dashboardData = await dashboardRes.json()
+      const payrollData = payrollRes.ok ? await payrollRes.json() : {}
+      const s = dashboardData.stats || {}
 
-      const attendanceQuery = query(
-        collection(db, 'attendance'),
-        where('date', '>=', today),
-        where('date', '<', tomorrow)
-      )
-      const attendanceSnapshot = await getDocs(attendanceQuery)
-      const attendanceRecords = attendanceSnapshot.docs.map(doc => doc.data())
-
-      const presentToday = attendanceRecords.filter(record => record.status === 'present').length
-      const onLeaveToday = attendanceRecords.filter(record => 
-        record.status === 'early_leave' || record.status === 'half_day'
-      ).length
-
-      // Load productivity and payroll insights
-      let averageProductivityScore = 0
-      let totalPayrollThisMonth = 0
-      let totalBonusesDistributed = 0
-      let topPerformers = 0
-
-      try {
-        const payrollInsights = await payrollService.getPayrollInsights()
-        averageProductivityScore = payrollInsights.averageProductivity
-        totalPayrollThisMonth = payrollInsights.totalPayrollThisMonth
-        totalBonusesDistributed = payrollInsights.totalBonusesDistributed
-
-        // Calculate top performers (employees with 90%+ productivity)
-        const settingsService = SettingsService.getInstance()
-        const settings = await settingsService.getSettings()
-        const defaultProductivitySettings = settingsService['defaultSettings']?.productivity || {}
-        const loadedProductivitySettings = settings?.productivity || {}
-        // Define a complete fallback for ProductivitySettings
-        const fallbackProductivitySettings: ProductivitySettings = {
-          trackingEnabled: true,
-          idleThreshold: 15,
-          syncInterval: 5,
-          collectUrls: true,
-          collectTitles: true,
-          retentionPeriod: 30,
-          productiveDomains: [],
-          productiveSites: [],
-          unproductiveSites: [],
-          workingHours: { start: '09:00', end: '17:00' },
-          breakDuration: 5,
-          targetProductiveHours: 6,
-          focusSessionDuration: 25,
-          maxFocusSessionsPerDay: 8,
-          minFocusTimePercentage: 60,
-          maxMeetingTimePercentage: 30,
-          productivityThresholds: { low: 40, medium: 70, high: 90 },
-          notificationPreferences: {
-            focusReminders: true,
-            breakReminders: true,
-            productivityAlerts: true,
-            meetingReminders: true
-          }
-        }
-        const mergedProductivitySettings: ProductivitySettings = {
-          ...fallbackProductivitySettings,
-          ...(defaultProductivitySettings as Partial<ProductivitySettings>),
-          ...(loadedProductivitySettings as Partial<ProductivitySettings>),
-          workingHours: {
-            ...fallbackProductivitySettings.workingHours,
-            ...((defaultProductivitySettings as Partial<ProductivitySettings>).workingHours || {}),
-            ...((loadedProductivitySettings as Partial<ProductivitySettings>).workingHours || {})
-          },
-          productivityThresholds: {
-            ...fallbackProductivitySettings.productivityThresholds,
-            ...((defaultProductivitySettings as Partial<ProductivitySettings>).productivityThresholds || {}),
-            ...((loadedProductivitySettings as Partial<ProductivitySettings>).productivityThresholds || {})
-          },
-          notificationPreferences: {
-            ...fallbackProductivitySettings.notificationPreferences,
-            ...((defaultProductivitySettings as Partial<ProductivitySettings>).notificationPreferences || {}),
-            ...((loadedProductivitySettings as Partial<ProductivitySettings>).notificationPreferences || {})
-          },
-          productiveDomains: (loadedProductivitySettings as Partial<ProductivitySettings>).productiveDomains || (defaultProductivitySettings as Partial<ProductivitySettings>).productiveDomains || fallbackProductivitySettings.productiveDomains,
-          productiveSites: (loadedProductivitySettings as Partial<ProductivitySettings>).productiveSites || (defaultProductivitySettings as Partial<ProductivitySettings>).productiveSites || fallbackProductivitySettings.productiveSites,
-          unproductiveSites: (loadedProductivitySettings as Partial<ProductivitySettings>).unproductiveSites || (defaultProductivitySettings as Partial<ProductivitySettings>).unproductiveSites || fallbackProductivitySettings.unproductiveSites,
-        }
-        const productivityService = ProductivityService.getInstance(mergedProductivitySettings)
-        const allEmployees = employeesSnapshot.docs.map(doc => doc.data())
-        
-        let topPerformersCount = 0
-        for (const employee of allEmployees) {
-          if (employee.uid) {
-            try {
-              const startDate = new Date()
-              startDate.setDate(startDate.getDate() - 30) // Last 30 days
-              const analytics = await productivityService.calculateProductivityAnalytics(
-                employee.uid,
-                startDate,
-                new Date()
-              )
-              if (analytics.overview.averageProductivityScore >= 90) {
-                topPerformersCount++
-              }
-            } catch (error) {
-              console.warn(`Could not calculate productivity for employee ${employee.uid}:`, error)
-            }
-          }
-        }
-        topPerformers = topPerformersCount
-      } catch (error) {
-        console.warn('Could not load productivity/payroll insights:', error)
-      }
-
-      // Get projects data
-      const projectsQuery = query(
-        collection(db, 'projects'),
-        where('status', '==', 'active')
-      )
-      const projectsSnapshot = await getDocs(projectsQuery)
-      const activeProjects = projectsSnapshot.size
-
-      // Get leave requests for pending approvals
-      const leaveQuery = query(
-        collection(db, 'leave_requests'),
-        where('status', '==', 'pending')
-      )
-      const leaveSnapshot = await getDocs(leaveQuery)
-      const pendingApprovals = leaveSnapshot.size
-
-      // Load role-specific stats
-      let teamSize = 0
-      let pendingTeamApprovals = 0
-      let teamProjects = 0
-
-      if (user && user.role === 'manager') {
-        // For managers, get their team stats
-        const teamQuery = query(
-          collection(db, 'employees'),
-          where('managerId', '==', user.id)
-        )
-        const teamSnapshot = await getDocs(teamQuery)
-        teamSize = teamSnapshot.size
-
-        // Get pending approvals for team
-        const approvalsQuery = query(
-          collection(db, 'leave_requests'),
-          where('status', '==', 'pending')
-        )
-        const approvalsSnapshot = await getDocs(approvalsQuery)
-        pendingTeamApprovals = approvalsSnapshot.size
-      }
+      const totalEmployees = Number(s.totalEmployees || s.teamSize || 0)
+      const presentToday = Number(s.presentToday || 0)
+      const activeThisMonth = totalEmployees
+      const attendanceRate =
+        totalEmployees > 0 ? Math.round((presentToday / totalEmployees) * 100) : 0
 
       setStats({
         totalEmployees,
-        departments: new Set(employeesSnapshot.docs.map(doc => doc.data().department)).size,
-        activeProjects,
-        pendingApprovals,
-        teamSize,
+        activeThisMonth,
+        attendanceRate,
+        departments: Number(s.departments || 0),
+        activeProjects: Number(s.activeProjects || 0),
+        pendingApprovals: Number(s.pendingApprovals || 0),
+        teamSize: Number(s.teamSize || s.totalEmployees || 0),
         presentToday,
-        onLeaveToday,
-        pendingTeamApprovals,
-        teamProjects,
-        averageProductivityScore,
-        totalPayrollThisMonth,
-        totalBonusesDistributed,
-        topPerformers
+        onLeaveToday: Number(s.onLeaveToday || 0),
+        pendingTeamApprovals: Number(s.pendingApprovals || 0),
+        teamProjects: Number(s.activeProjects || 0),
+        averageProductivityScore: Number(
+          payrollData.averageProductivity || s.averageProductivityScore || 0
+        ),
+        totalPayrollThisMonth: Number(payrollData.totalPayrollThisMonth || 0),
+        totalBonusesDistributed: Number(payrollData.totalBonusesDistributed || 0),
+        topPerformers: Number(s.topPerformers || 0),
       })
     } catch (error) {
       console.error('Error loading dashboard stats:', error)
@@ -241,7 +114,7 @@ export default function Dashboard() {
   return (
     <div className="p-6 max-w-7xl mx-auto">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900">
+        <h1 className="text-3xl font-bold text-corporate-navy">
           Welcome back, {user.name || user.email}!
         </h1>
         <p className="text-gray-600 mt-2">
@@ -257,8 +130,19 @@ export default function Dashboard() {
                 <div>
                   <p className="text-sm font-medium text-gray-600">Total Employees</p>
                   <p className="text-2xl font-bold text-blue-600">{stats.totalEmployees}</p>
+                  <p className="text-xs text-gray-500 mt-1">{stats.activeThisMonth} active this month</p>
                 </div>
                 <Users className="h-8 w-8 text-blue-500" />
+              </div>
+            </div>
+            <div className="bg-white p-6 rounded-lg shadow-sm border">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">Attendance Rate</p>
+                  <p className="text-2xl font-bold text-green-600">{stats.attendanceRate}%</p>
+                  <p className="text-xs text-gray-500 mt-1">Last 30 days</p>
+                </div>
+                <Clock className="h-8 w-8 text-green-500" />
               </div>
             </div>
             <div className="bg-white p-6 rounded-lg shadow-sm border">
@@ -268,15 +152,6 @@ export default function Dashboard() {
                   <p className="text-2xl font-bold text-teal-600">{stats.departments}</p>
                 </div>
                 <Building2 className="h-8 w-8 text-teal-500" />
-              </div>
-            </div>
-            <div className="bg-white p-6 rounded-lg shadow-sm border">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Active Projects</p>
-                  <p className="text-2xl font-bold text-indigo-600">{stats.activeProjects}</p>
-                </div>
-                <BarChart3 className="h-8 w-8 text-indigo-500" />
               </div>
             </div>
             <div className="bg-white p-6 rounded-lg shadow-sm border">
@@ -400,9 +275,9 @@ export default function Dashboard() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-gray-600">Top Performers</p>
-                <p className="text-2xl font-bold text-emerald-600">{stats.topPerformers || 0}</p>
+                <p className="text-2xl font-bold text-emerald-mint">{stats.topPerformers || 0}</p>
               </div>
-              <Award className="h-8 w-8 text-emerald-500" />
+              <Award className="h-8 w-8 text-emerald-mint" />
             </div>
           </div>
           <div className="bg-white p-6 rounded-lg shadow-sm border">
@@ -437,7 +312,7 @@ export default function Dashboard() {
             <div className="flex items-center space-x-3">
               <Users className="h-6 w-6 text-blue-500" />
               <div>
-                <h3 className="font-medium text-gray-900">Employee Management</h3>
+                <h3 className="font-medium text-corporate-navy">Employee Management</h3>
                 <p className="text-sm text-gray-500">Manage your team</p>
               </div>
             </div>
@@ -449,7 +324,7 @@ export default function Dashboard() {
             <div className="flex items-center space-x-3">
               <Clock className="h-6 w-6 text-green-500" />
               <div>
-                <h3 className="font-medium text-gray-900">Attendance</h3>
+                <h3 className="font-medium text-corporate-navy">Attendance</h3>
                 <p className="text-sm text-gray-500">Track attendance</p>
               </div>
             </div>
@@ -461,7 +336,7 @@ export default function Dashboard() {
             <div className="flex items-center space-x-3">
               <Activity className="h-6 w-6 text-purple-500" />
               <div>
-                <h3 className="font-medium text-gray-900">Productivity</h3>
+                <h3 className="font-medium text-corporate-navy">Productivity</h3>
                 <p className="text-sm text-gray-500">Monitor performance</p>
               </div>
             </div>
@@ -473,13 +348,19 @@ export default function Dashboard() {
             <div className="flex items-center space-x-3">
               <Wallet className="h-6 w-6 text-orange-500" />
               <div>
-                <h3 className="font-medium text-gray-900">Payroll</h3>
+                <h3 className="font-medium text-corporate-navy">Payroll</h3>
                 <p className="text-sm text-gray-500">Process payments</p>
               </div>
             </div>
           </div>
         </Link>
       </div>
+
+      {/* Desktop App Popup */}
+      <DesktopAppPopup 
+        isOpen={showDesktopPopup} 
+        onClose={() => setShowDesktopPopup(false)} 
+      />
     </div>
   )
 } 

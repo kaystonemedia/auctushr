@@ -1,24 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { supabaseAdmin } from '@/lib/supabase/admin'
+import { requireRole } from '@/lib/api-auth'
 
 export async function GET(request: NextRequest) {
+  const auth = await requireRole(request, ['admin'])
+  if (auth.error) return auth.error
+
   try {
-    // Check if Firebase Admin is available, fallback to mock data if not
-    let adminDb = null
-    let firebaseAdmin = null
-    
-    try {
-      const firebaseAdminModule = await import('@/lib/firebase-admin')
-      adminDb = firebaseAdminModule.adminDb
-      firebaseAdmin = true
-      
-      // Check if Firebase Admin is properly initialized
-      if (!adminDb) {
-        throw new Error('Firebase Admin DB not initialized')
-      }
-    } catch (importError) {
-      console.warn('Firebase Admin not available, using mock data:', importError)
-    }
-    
     const { searchParams } = new URL(request.url)
     const employeeId = searchParams.get('employeeId')
     const month = searchParams.get('month')
@@ -31,76 +19,35 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // If Firebase Admin is not available, return mock data
-    if (!adminDb || !firebaseAdmin) {
-      const mockEmployee = {
-        firstName: 'John',
-        lastName: 'Doe',
-        department: 'Engineering',
-        salary: 50000
-      }
-
-      const mockPayrollEntry = {
-        employeeId,
-        employeeName: `${mockEmployee.firstName} ${mockEmployee.lastName}`,
-        department: mockEmployee.department,
-        baseSalary: mockEmployee.salary,
-        performanceBonus: 5000,
-        attendanceBonus: 2500,
-        totalBonus: 7500,
-        grossSalary: 57500,
-        deductions: { tax: 7500, insurance: 2500, other: 1000 },
-        netPay: 46500,
-        month,
-        year: parseInt(year),
-        processedAt: new Date().toISOString(),
-        productivityScore: 85,
-        attendanceRate: 95
-      }
-
-      return NextResponse.json({
-        success: true,
-        message: 'Using mock data (Firebase Admin not available)',
-        employee: {
-          id: employeeId,
-          name: `${mockEmployee.firstName} ${mockEmployee.lastName}`,
-          department: mockEmployee.department,
-          salary: mockEmployee.salary
-        },
-        hasPayrollEntry: true,
-        payrollEntry: mockPayrollEntry,
-        processedPayroll: null,
-        isMockData: true
-      })
-    }
-
-    // Test 1: Check if employee exists
-    const employeeDoc = await (adminDb as any).collection('users').doc(employeeId).get()
-    if (!employeeDoc.exists()) {
+    const { data: profile } = await supabaseAdmin
+      .from('profiles')
+      .select('id, first_name, last_name, department, salary')
+      .or(`id.eq.${employeeId},auth_user_id.eq.${employeeId}`)
+      .maybeSingle()
+    if (!profile) {
       return NextResponse.json(
         { error: 'Employee not found', employeeId },
         { status: 404 }
       )
     }
 
-    const employee = employeeDoc.data()
+    const periodMonth = `${year}-${String(month).padStart(2, '0')}`
+    const { data: payrollRows } = await supabaseAdmin
+      .from('payroll_entries')
+      .select('*')
+      .eq('employee_id', profile.id)
+      .eq('period_month', periodMonth)
+      .order('updated_at', { ascending: false })
+      .limit(1)
 
-    // Test 2: Check if payroll entry exists
-    const payrollQuery = (adminDb as any)
-      .collection('payrollEntries')
-      .where('employeeId', '==', employeeId)
-      .where('month', '==', month)
-      .where('year', '==', parseInt(year))
-    const payrollSnapshot = await payrollQuery.get()
-    
-    const hasPayrollEntry = !payrollSnapshot.empty
-    const payrollEntry = hasPayrollEntry ? payrollSnapshot.docs[0].data() : null
+    const hasPayrollEntry = !!payrollRows && payrollRows.length > 0
+    const payrollEntry = hasPayrollEntry ? payrollRows?.[0] : null
 
     // Test 3: Try to process payroll if it doesn't exist
-    let processedPayroll = null
+    let processedPayroll: Record<string, unknown> | null = null
     if (!hasPayrollEntry) {
       try {
-        const baseSalary = employee.salary || 0
+        const baseSalary = Number(profile.salary || 0)
         
         // Create a simple payroll entry (same logic as in payslip route)
         const productivityScore = 75 // Default score
@@ -120,8 +67,8 @@ export async function GET(request: NextRequest) {
         
         processedPayroll = {
           employeeId,
-          employeeName: `${employee.firstName || ''} ${employee.lastName || ''}`.trim() || 'Unknown Employee',
-          department: employee.department || 'Unassigned',
+          employeeName: `${profile.first_name || ''} ${profile.last_name || ''}`.trim() || 'Unknown Employee',
+          department: profile.department || 'Unassigned',
           baseSalary,
           performanceBonus,
           attendanceBonus,
@@ -151,13 +98,14 @@ export async function GET(request: NextRequest) {
       success: true,
       employee: {
         id: employeeId,
-        name: `${employee.firstName || ''} ${employee.lastName || ''}`.trim(),
-        department: employee.department,
-        salary: employee.salary
+        name: `${profile.first_name || ''} ${profile.last_name || ''}`.trim(),
+        department: profile.department,
+        salary: profile.salary
       },
       hasPayrollEntry,
       payrollEntry,
-      processedPayroll
+      processedPayroll,
+      source: 'supabase'
     })
 
   } catch (error) {

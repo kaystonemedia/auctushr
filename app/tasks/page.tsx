@@ -6,8 +6,6 @@ import { Task, TaskFilter } from '@/types/task'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Plus } from 'lucide-react'
-import { collection, query, where, getDocs, orderBy, Timestamp, and } from 'firebase/firestore'
-import { db } from '@/lib/firebase'
 import { useToast } from '@/components/ui/use-toast'
 import { CreateTaskModal } from '@/components/tasks/create-task-modal'
 import { TaskList } from '@/components/tasks/task-list'
@@ -33,61 +31,38 @@ export default function TasksPage() {
 
     try {
       setLoading(true)
-      const tasksRef = collection(db, 'tasks')
-      
-      // Build filters array
-      const filtersArray = []
-      
-      // Apply filters
-      if (filters.status?.length) {
-        filtersArray.push(where('status', 'in', filters.status))
-      }
-      if (filters.priority?.length) {
-        filtersArray.push(where('priority', 'in', filters.priority))
-      }
-      if (filters.category?.length) {
-        filtersArray.push(where('category', 'in', filters.category))
-      }
-      if (filters.assigneeId) {
-        filtersArray.push(where('assigneeId', '==', filters.assigneeId))
-      }
-      if (filters.assignerId) {
-        filtersArray.push(where('assignerId', '==', filters.assignerId))
-      }
-      if (dateRange.from) {
-        filtersArray.push(where('dueDate', '>=', Timestamp.fromDate(dateRange.from)))
-      }
-      if (dateRange.to) {
-        filtersArray.push(where('dueDate', '<=', Timestamp.fromDate(dateRange.to)))
-      }
+      const params = new URLSearchParams({ limit: '100' })
+      if (filters.status?.length) params.set('status', filters.status[0])
+      if (filters.priority?.length) params.set('priority', filters.priority[0])
+      if (filters.assigneeId) params.set('assigneeId', filters.assigneeId)
+      if (filters.search) params.set('search', filters.search)
 
-      // Build query with proper structure
-      let q
-      if (filtersArray.length > 0) {
-        q = query(tasksRef, and(...filtersArray), orderBy('dueDate', 'asc'))
-      } else {
-        q = query(tasksRef, orderBy('dueDate', 'asc'))
-      }
+      const res = await fetch(`/api/tasks?${params}`, { credentials: 'include' })
+      if (!res.ok) throw new Error('Failed to fetch tasks')
+      const data = await res.json()
 
-      const querySnapshot = await getDocs(q)
-      const tasksData = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        dueDate: doc.data().dueDate.toDate(),
-        createdAt: doc.data().createdAt.toDate(),
-        updatedAt: doc.data().updatedAt.toDate(),
-        completedAt: doc.data().completedAt?.toDate()
+      let tasksData = (data.tasks || []).map((task: Task) => ({
+        ...task,
+        dueDate: task.dueDate ? new Date(task.dueDate) : new Date(),
+        createdAt: task.createdAt ? new Date(task.createdAt) : new Date(),
+        updatedAt: task.updatedAt ? new Date(task.updatedAt) : new Date(),
+        completedAt: task.completedAt ? new Date(task.completedAt) : undefined,
       })) as Task[]
 
-      // Apply search filter if exists
-      const filteredTasks = filters.search
-        ? tasksData.filter(task =>
-            task.title.toLowerCase().includes(filters.search!.toLowerCase()) ||
-            task.description.toLowerCase().includes(filters.search!.toLowerCase())
-          )
-        : tasksData
+      if (filters.status && filters.status.length > 1) {
+        tasksData = tasksData.filter((t) => filters.status!.includes(t.status))
+      }
+      if (filters.priority && filters.priority.length > 1) {
+        tasksData = tasksData.filter((t) => filters.priority!.includes(t.priority))
+      }
+      if (dateRange.from) {
+        tasksData = tasksData.filter((t) => t.dueDate >= dateRange.from!)
+      }
+      if (dateRange.to) {
+        tasksData = tasksData.filter((t) => t.dueDate <= dateRange.to!)
+      }
 
-      setTasks(filteredTasks)
+      setTasks(tasksData)
     } catch (error) {
       console.error('Error fetching tasks:', error)
       toast({
@@ -116,7 +91,14 @@ export default function TasksPage() {
   return (
     <div className="container mx-auto py-6 space-y-6">
       <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-bold">Task Management</h1>
+        <div>
+          <h1 className="text-3xl font-bold">Task Management</h1>
+          <p className="text-muted-foreground mt-1">
+            <a href="/productivity" className="text-primary hover:underline">
+              Try the enhanced task management interface →
+            </a>
+          </p>
+        </div>
         <Button onClick={() => setShowCreateModal(true)}>
           <Plus className="mr-2 h-4 w-4" />
           Create Task

@@ -1,5 +1,6 @@
 import { AttendanceRecord, AttendanceStats } from "@/types/attendance"
 import { Clock, AlertCircle, MapPin, CheckCircle, XCircle, User } from "lucide-react"
+import { formatMinutesToHours, formatHours } from "@/lib/timesheet"
 
 interface AttendanceReportProps {
   records: AttendanceRecord[]
@@ -135,7 +136,13 @@ export function AttendanceReport({ records, stats, onApprove, onReject }: Attend
                   Check Out
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Hours
+                  Total Hours
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-green-600 uppercase tracking-wider">
+                  Active Time
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-orange-600 uppercase tracking-wider">
+                  Idle Time
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Location
@@ -185,9 +192,30 @@ export function AttendanceReport({ records, stats, onApprove, onReject }: Attend
                       <span className="text-gray-400">Not checked out</span>
                     )}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {record.checkOut ? (
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                    {record.totalHours !== undefined ? (
+                      <span>{formatHours(record.totalHours)} hrs</span>
+                    ) : record.checkOut ? (
                       <span>{calculateHours(record.checkIn?.time || new Date(), record.checkOut.time)} hrs</span>
+                    ) : (
+                      <span className="text-gray-400">-</span>
+                    )}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-green-600">
+                    {record.activeTime !== undefined ? (
+                      <span>{formatMinutesToHours(record.activeTime)}</span>
+                    ) : (
+                      <span className="text-gray-400">-</span>
+                    )}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-orange-600">
+                    {record.idleTimeTotal !== undefined ? (
+                      <div className="flex items-center">
+                        <span>{formatMinutesToHours(record.idleTimeTotal)}</span>
+                        {record.idleTimeSLAStatus === 'exceeded' && (
+                          <AlertCircle className="h-4 w-4 ml-1 text-red-500" title="SLA Threshold Exceeded" />
+                        )}
+                      </div>
                     ) : (
                       <span className="text-gray-400">-</span>
                     )}

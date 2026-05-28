@@ -14,8 +14,6 @@ import { format } from 'date-fns'
 import { CalendarIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'react-hot-toast'
-import { doc, updateDoc } from 'firebase/firestore'
-import { db } from '@/lib/firebase'
 
 interface EditTaskModalProps {
   task: Task
@@ -40,18 +38,27 @@ export function EditTaskModal({ task, isOpen, onClose, onSuccess }: EditTaskModa
 
     try {
       setLoading(true)
-      const taskRef = doc(db, 'tasks', task.id)
-      const updates = {
-        ...formData,
-        updatedAt: new Date(),
-        completedAt: formData.status === 'completed' ? new Date() : task.completedAt
-      }
-      await updateDoc(taskRef, updates)
-      
+      const res = await fetch(`/api/tasks/${task.id}`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: formData.title,
+          description: formData.description,
+          priority: formData.priority,
+          status: formData.status,
+          dueDate: formData.dueDate.toISOString(),
+        }),
+      })
+      if (!res.ok) throw new Error('Failed to update task')
+
+      const completedAt =
+        formData.status === 'completed' ? new Date() : task.completedAt
       onSuccess({
         ...task,
-        ...updates,
-        completedAt: updates.completedAt
+        ...formData,
+        updatedAt: new Date(),
+        completedAt,
       })
       
       toast.success('Task updated successfully')

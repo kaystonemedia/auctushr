@@ -1,4 +1,3 @@
-import { Timestamp } from 'firebase/firestore'
 import { AttendanceRecord } from './attendance'
 
 export interface Task {
@@ -14,11 +13,11 @@ export interface Task {
 export interface ProductivityLog {
   id?: string
   userId: string
-  date: Timestamp
+  date: Date
   tasks: Task[]
   notes?: string
-  createdAt: Timestamp
-  updatedAt: Timestamp
+  createdAt: Date
+  updatedAt: Date
 }
 
 export interface ProductivitySettings {
@@ -259,6 +258,24 @@ export interface ProductivityFilters {
   minProductivityScore?: number
   maxProductivityScore?: number
   search?: string
+}
+
+export interface MeetingRecord {
+  id: string
+  userId: string
+  title: string
+  startTime: Date
+  endTime: Date
+  duration: number // minutes
+  type: MeetingType
+  participants: string[]
+  agenda: string
+  outcomes: string[]
+  status: MeetingStatus
+  notes?: string
+  tags?: string[]
+  createdAt: Date
+  updatedAt: Date
 }
 
 export interface ProductivityInsights {

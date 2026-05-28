@@ -1,256 +1,116 @@
 // DOM Elements
-const statusIndicator = document.getElementById('statusIndicator');
-const statusText = document.getElementById('statusText');
-const syncStatus = document.getElementById('syncStatus');
-const activeTime = document.getElementById('activeTime');
-const idleTime = document.getElementById('idleTime');
-const locationStatus = document.getElementById('locationStatus');
-const flagCount = document.getElementById('flagCount');
-const checkInBtn = document.getElementById('checkInBtn');
-const checkOutBtn = document.getElementById('checkOutBtn');
-const notifications = document.getElementById('notifications');
-const breakReminders = document.getElementById('breakReminders');
-const meetingNotifications = document.getElementById('meetingNotifications');
-const idleWarnings = document.getElementById('idleWarnings');
+const statusEl = document.getElementById('status');
+const trackingToggleEl = document.getElementById('trackingToggle');
+const settingsBtnEl = document.getElementById('settingsBtn');
+const currentSiteEl = document.getElementById('currentSite');
+const currentDurationEl = document.getElementById('currentDuration');
+const productiveTimeEl = document.getElementById('productiveTime');
+const totalActiveEl = document.getElementById('totalActive');
+const totalProductiveEl = document.getElementById('totalProductive');
+const totalIdleEl = document.getElementById('totalIdle');
+const sitesVisitedEl = document.getElementById('sitesVisited');
+const lastSyncEl = document.getElementById('lastSync');
 
 // State
-let currentStatus = null;
-let settings = {
-  breakReminders: true,
-  meetingNotifications: true,
-  idleWarnings: true,
-  syncInterval: 5,
-  idleThreshold: 5
-};
-
+let currentActivity = null;
 let updateInterval = null;
 
-// Format time for display
-function formatTime(timestamp) {
-  if (!timestamp) return 'Never';
-  const date = new Date(timestamp);
-  if (isNaN(date.getTime())) return 'Invalid date';
+// Initialize popup
+document.addEventListener('DOMContentLoaded', async () => {
+  // Load tracking state
+  const { userSettings } = await chrome.storage.sync.get('userSettings');
+  trackingToggleEl.checked = userSettings?.trackingEnabled ?? true;
+  updateStatus();
+
+  // Get current activity
+  chrome.runtime.sendMessage({ type: 'getActivity' }, (response) => {
+    currentActivity = response;
+    updateDisplay();
+  });
+
+  // Start periodic updates
+  updateInterval = setInterval(updateDisplay, 1000);
+});
+
+// Event Listeners
+trackingToggleEl.addEventListener('change', (e) => {
+  chrome.runtime.sendMessage({ 
+    type: 'toggleTracking', 
+    enabled: e.target.checked 
+  });
+  updateStatus();
+});
+
+settingsBtnEl.addEventListener('click', () => {
+  chrome.runtime.openOptionsPage();
+});
+
+// Update status text
+function updateStatus() {
+  statusEl.textContent = trackingToggleEl.checked 
+    ? 'Tracking activity...' 
+    : 'Tracking paused';
   
-  const now = new Date();
-  const diff = now - date;
-  
-  // If less than a minute ago
-  if (diff < 60000) {
-    return 'Just now';
-  }
-  
-  // If less than an hour ago
-  if (diff < 3600000) {
-    const minutes = Math.floor(diff / 60000);
-    return `${minutes}m ago`;
-  }
-  
-  // If less than a day ago
-  if (diff < 86400000) {
-    const hours = Math.floor(diff / 3600000);
-    return `${hours}h ago`;
-  }
-  
-  // Otherwise show date and time
-  return date.toLocaleString();
+  statusEl.className = `text-sm ${
+    trackingToggleEl.checked ? 'text-green-600' : 'text-gray-600'
+  }`;
 }
 
-// Format duration for display
-function formatDuration(seconds) {
-  if (!seconds) return '0h 0m';
+// Format duration in HH:MM:SS
+function formatDuration(ms) {
+  if (!ms) return '00:00:00';
+  
+  const seconds = Math.floor(ms / 1000);
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
-  return `${hours}h ${minutes}m`;
+  const remainingSeconds = seconds % 60;
+
+  return [hours, minutes, remainingSeconds]
+    .map(n => n.toString().padStart(2, '0'))
+    .join(':');
 }
 
-// Show notification
-function showNotification(message, type = 'info') {
-  const notification = document.createElement('div');
-  notification.className = `notification ${type}`;
-  notification.textContent = message;
+// Format duration in hours and minutes
+function formatDurationHM(ms) {
+  if (!ms) return '0h 0m';
   
-  notifications.insertBefore(notification, notifications.firstChild);
-  
-  // Remove after 5 seconds
-  setTimeout(() => {
-    notification.remove();
-  }, 5000);
+  const minutes = Math.floor(ms / 60000);
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+
+  return `${hours}h ${remainingMinutes}m`;
 }
 
-// Update status UI
-function updateStatusUI() {
-  if (!currentStatus) return;
+// Update display with current activity
+function updateDisplay() {
+  if (!currentActivity) return;
 
-  // Update status indicator
-  statusIndicator.className = 'status-dot';
-  if (currentStatus.isCheckedIn) {
-    statusIndicator.classList.add('checked-in');
-    statusText.textContent = 'Checked In';
-    checkInBtn.disabled = true;
-    checkOutBtn.disabled = false;
-  } else {
-    statusIndicator.classList.add('checked-out');
-    statusText.textContent = 'Checked Out';
-    checkInBtn.disabled = false;
-    checkOutBtn.disabled = true;
-  }
+  const now = new Date();
+  const duration = currentActivity.startTime 
+    ? now - new Date(currentActivity.startTime) 
+    : 0;
 
-  // Update sync status
-  if (currentStatus.isSyncing) {
-    syncStatus.innerHTML = 'Syncing...';
-    statusIndicator.classList.add('syncing');
-  } else {
-    syncStatus.textContent = `Last sync: ${formatTime(currentStatus.lastSync)}`;
-    statusIndicator.classList.remove('syncing');
-  }
+  // Update current activity
+  currentSiteEl.textContent = currentActivity.domain || 'None';
+  currentDurationEl.textContent = formatDuration(duration);
+  productiveTimeEl.textContent = formatDuration(currentActivity.productiveTime);
 
-  // Update stats
-  if (currentStatus.currentSession) {
-    const session = currentStatus.currentSession;
-    const startTime = session.startTime ? new Date(session.startTime) : null;
-    const now = new Date();
-    
-    // Calculate active time
-    let activeTimeSeconds = session.activeTime || 0;
-    if (startTime && currentStatus.isCheckedIn) {
-      activeTimeSeconds += Math.floor((now - startTime) / 1000);
-    }
-    
-    activeTime.textContent = formatDuration(activeTimeSeconds);
-    idleTime.textContent = formatDuration(session.idleTime || 0);
-    locationStatus.textContent = session.locationHistory?.length > 0 ? 'Tracking' : 'Not tracking';
-    flagCount.textContent = session.flags?.length || 0;
-  } else {
-    activeTime.textContent = '0h 0m';
-    idleTime.textContent = '0h 0m';
-    locationStatus.textContent = 'Not tracking';
-    flagCount.textContent = '0';
+  // Update today's summary
+  // Note: These values would need to be calculated from the background script
+  // For now, we'll just show the current session's values
+  totalActiveEl.textContent = formatDurationHM(duration);
+  totalProductiveEl.textContent = formatDurationHM(currentActivity.productiveTime);
+  totalIdleEl.textContent = formatDurationHM(currentActivity.idleTime);
+  sitesVisitedEl.textContent = '1'; // This should be calculated from history
+
+  // Update last sync time
+  if (currentActivity.lastSync) {
+    const lastSync = new Date(currentActivity.lastSync);
+    lastSyncEl.textContent = lastSync.toLocaleTimeString();
   }
 }
 
-// Fetch current status
-async function fetchStatus() {
-  try {
-    const response = await chrome.runtime.sendMessage({ type: 'GET_STATUS' });
-    currentStatus = response;
-    updateStatusUI();
-  } catch (error) {
-    console.error('Error fetching status:', error);
-  }
-}
-
-// Load settings
-async function loadSettings() {
-  try {
-    const { settings: savedSettings } = await chrome.storage.local.get('settings');
-    if (savedSettings) {
-      settings = savedSettings;
-      breakReminders.checked = settings.breakReminders;
-      meetingNotifications.checked = settings.meetingNotifications;
-      idleWarnings.checked = settings.idleWarnings;
-    }
-  } catch (error) {
-    console.error('Error loading settings:', error);
-  }
-}
-
-// Save settings
-async function saveSettings() {
-  try {
-    settings = {
-      ...settings,
-      breakReminders: breakReminders.checked,
-      meetingNotifications: meetingNotifications.checked,
-      idleWarnings: idleWarnings.checked
-    };
-
-    await chrome.runtime.sendMessage({
-      type: 'UPDATE_SETTINGS',
-      data: settings
-    });
-
-    await chrome.storage.local.set({ settings });
-    showNotification('Settings saved', 'success');
-  } catch (error) {
-    console.error('Error saving settings:', error);
-    showNotification('Failed to save settings', 'error');
-  }
-}
-
-// Setup event listeners
-function setupEventListeners() {
-  // Check in/out buttons
-  checkInBtn.addEventListener('click', async () => {
-    try {
-      const position = await new Promise((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject, {
-          enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 0
-        });
-      });
-      
-      const response = await chrome.runtime.sendMessage({
-        type: 'CHECK_IN',
-        data: {
-          location: {
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude,
-            accuracy: position.coords.accuracy
-          },
-          deviceInfo: {
-            userAgent: navigator.userAgent,
-            platform: navigator.platform,
-            language: navigator.language,
-            screenResolution: `${window.screen.width}x${window.screen.height}`
-          }
-        }
-      });
-      
-      if (response.error) {
-        throw new Error(response.error);
-      }
-      
-      await fetchStatus();
-    } catch (error) {
-      console.error('Check-in error:', error);
-      alert(error.message || 'Failed to check in');
-    }
-  });
-
-  checkOutBtn.addEventListener('click', async () => {
-    try {
-      const response = await chrome.runtime.sendMessage({ type: 'CHECK_OUT' });
-      if (response.error) {
-        throw new Error(response.error);
-      }
-      await fetchStatus();
-    } catch (error) {
-      console.error('Check-out error:', error);
-      alert(error.message || 'Failed to check out');
-    }
-  });
-
-  // Settings toggles
-  breakReminders.addEventListener('change', saveSettings);
-  meetingNotifications.addEventListener('change', saveSettings);
-  idleWarnings.addEventListener('change', saveSettings);
-}
-
-// Initialize popup
-async function initialize() {
-  await loadSettings();
-  setupEventListeners();
-  await fetchStatus();
-
-  // Set up periodic updates
-  updateInterval = setInterval(fetchStatus, 5000);
-}
-
-// Start initialization when popup loads
-document.addEventListener('DOMContentLoaded', initialize);
-
-// Clean up on popup close
+// Cleanup
 window.addEventListener('unload', () => {
   if (updateInterval) {
     clearInterval(updateInterval);

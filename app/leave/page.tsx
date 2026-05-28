@@ -26,7 +26,7 @@ export default function LeavePage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-2">
         <div className="flex items-center gap-3">
-          <div className="bg-blue-100 text-blue-600 rounded-full p-2">
+          <div className="bg-emerald-mint/10 text-emerald-mint rounded-full p-2">
             <CalendarDays className="h-7 w-7" />
           </div>
           <div>

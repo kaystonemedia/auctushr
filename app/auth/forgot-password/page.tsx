@@ -1,8 +1,6 @@
 "use client"
 
 import { useState } from 'react'
-import { sendPasswordResetEmail } from 'firebase/auth'
-import { auth } from '@/lib/firebase'
 import { Logo } from '@/components/logo'
 import Link from 'next/link'
 
@@ -19,15 +17,20 @@ export default function ForgotPasswordPage() {
     setSuccess(false)
 
     try {
-      await sendPasswordResetEmail(auth, email)
-      setSuccess(true)
-    } catch (error: any) {
-      console.error('Error sending password reset:', error)
-      if (error.code === 'auth/user-not-found') {
-        setError('No account found with this email address.')
-      } else {
-        setError('An error occurred. Please try again.')
+      const response = await fetch('/api/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      })
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}))
+        throw new Error(body.error || 'Failed to send reset email')
       }
+      setSuccess(true)
+    } catch (error: unknown) {
+      console.error('Error sending password reset:', error)
+      const message = error instanceof Error ? error.message : 'An error occurred. Please try again.'
+      setError(message)
     } finally {
       setLoading(false)
     }
@@ -58,7 +61,7 @@ export default function ForgotPasswordPage() {
           <div className="mb-8">
             <h1 className="text-4xl font-bold mb-4">Reset your password</h1>
             <p className="text-gray-600">
-              Enter your email address and we'll send you a link to reset your password.
+              Enter your email address and we&apos;ll send you a link to reset your password.
             </p>
           </div>
 

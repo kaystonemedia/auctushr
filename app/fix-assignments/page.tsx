@@ -2,8 +2,6 @@
 
 import { useState } from 'react'
 import { useNewAuth } from '@/contexts/new-auth-context'
-import { db } from '@/lib/firebase'
-import { collection, getDocs, query, where, updateDoc, doc } from 'firebase/firestore'
 
 interface FixResult {
   employeeId: string
@@ -27,24 +25,26 @@ export default function FixAssignmentsPage() {
     const fixResults: FixResult[] = []
     
     try {
-      // Get all managers from all collections
-      const [usersSnapshot, managersSnapshot, employeesWithManagerRole] = await Promise.all([
-        getDocs(query(collection(db, 'users'), where('role', 'in', ['manager', 'admin']))),
-        getDocs(collection(db, 'managers')),
-        getDocs(query(collection(db, 'employees'), where('role', '==', 'manager')))
-      ])
+      // Load all profiles once and derive managers/employees.
+      const employeesResponse = await fetch('/api/employees', { credentials: 'include' })
+      if (!employeesResponse.ok) {
+        throw new Error('Failed to load employees')
+      }
+      const employeesPayload = await employeesResponse.json()
+      const allProfiles = (employeesPayload.employees || []) as Array<{
+        id: string
+        uid?: string | null
+        role?: string
+        firstName?: string
+        lastName?: string
+        managerId?: string | null
+      }>
+      const allManagers = allProfiles.filter((profile) => profile.role === 'manager' || profile.role === 'admin')
+      const allEmployees = allProfiles.filter((profile) => profile.role === 'employee')
 
-      // Create a mapping of document ID to UID for all managers
+      // Create a mapping of profile ID to auth UID for managers.
       const managerIdToUid: Record<string, string> = {}
-      
-      // Process all manager collections
-      const allManagers = [
-        ...usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })),
-        ...managersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })),
-        ...employeesWithManagerRole.docs.map(doc => ({ id: doc.id, ...doc.data() }))
-      ] as Array<{ id: string; uid?: string; [key: string]: any }>
 
-      // Build the mapping
       allManagers.forEach(manager => {
         if (manager.uid) {
           managerIdToUid[manager.id] = manager.uid
@@ -53,13 +53,9 @@ export default function FixAssignmentsPage() {
 
       console.log('Manager ID to UID mapping:', managerIdToUid)
 
-      // Get all employees
-      const employeesSnapshot = await getDocs(collection(db, 'employees'))
-      
-      for (const employeeDoc of employeesSnapshot.docs) {
-        const employeeData = employeeDoc.data()
-        const employeeId = employeeDoc.id
-        const employeeName = `${employeeData.firstName} ${employeeData.lastName}`
+      for (const employeeData of allEmployees) {
+        const employeeId = employeeData.id
+        const employeeName = `${employeeData.firstName || ''} ${employeeData.lastName || ''}`.trim() || employeeId
         
         // Skip if no managerId assigned
         if (!employeeData.managerId) {
@@ -106,11 +102,19 @@ export default function FixAssignmentsPage() {
         if (newManagerId && newManagerId !== oldManagerId) {
           try {
             if (!previewMode) {
-              // Actually update the document
-              await updateDoc(doc(db, 'employees', employeeId), {
-                managerId: newManagerId,
-                updatedAt: new Date()
+              const updateResponse = await fetch('/api/employees', {
+                method: 'PUT',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  id: employeeId,
+                  managerId: newManagerId
+                })
               })
+              if (!updateResponse.ok) {
+                const payload = await updateResponse.json().catch(() => ({}))
+                throw new Error(payload.error || 'Failed to update employee manager')
+              }
             }
             
             fixResults.push({

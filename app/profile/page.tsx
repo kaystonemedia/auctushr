@@ -3,11 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNewAuth } from '@/contexts/new-auth-context'
 import { useOnlineStatus } from '@/hooks/use-online-status'
-import { User, Mail, Building, Calendar, Shield, Camera, Lock, Check, X } from 'lucide-react'
-import { doc, updateDoc } from 'firebase/firestore'
-import { updatePassword } from 'firebase/auth'
-import { db, auth } from '@/lib/firebase'
-import { uploadFile } from '@/lib/storage'
+import { User, Mail, Building, Calendar, Shield, Camera, Lock, Check, X, AlertCircle } from 'lucide-react'
 import { checkPasswordStrength, validatePassword, PASSWORD_REQUIREMENTS, PASSWORD_HINTS, type PasswordStrength } from '@/lib/password-validation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -74,7 +70,7 @@ const PASSWORD_SUGGESTIONS = {
 }
 
 export default function ProfilePage() {
-  const { user, isLoading } = useNewAuth()
+  const { user, isLoading, updateUser } = useNewAuth()
   const { toast } = useToast()
   const { isOnline } = useNetwork()
   const [isEditing, setIsEditing] = useState(false)
@@ -98,11 +94,39 @@ export default function ProfilePage() {
     }
   })
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [paymentDetails, setPaymentDetails] = useState({
+    mobileNumber: '',
+    bankAccount: {
+      accountNumber: '',
+      bankCode: '',
+      accountName: ''
+    }
+  })
+  const [emergencyDetails, setEmergencyDetails] = useState({
+    name: '',
+    relationship: '',
+    phone: ''
+  })
+  const [isSavingPayment, setIsSavingPayment] = useState(false)
+  const [isSavingEmergency, setIsSavingEmergency] = useState(false)
 
   useEffect(() => {
     if (user) {
       setName(user.name)
       setProfileImage(user.avatar || null)
+      setPaymentDetails({
+        mobileNumber: user.mobileNumber || '',
+        bankAccount: {
+          accountNumber: user.bankAccount?.accountNumber || '',
+          bankCode: user.bankAccount?.bankCode || '',
+          accountName: user.bankAccount?.accountName || ''
+        }
+      })
+      setEmergencyDetails({
+        name: user.emergencyContact?.name || '',
+        relationship: user.emergencyContact?.relationship || '',
+        phone: user.emergencyContact?.phone || ''
+      })
     }
   }, [user])
 
@@ -146,16 +170,19 @@ export default function ProfilePage() {
         throw new Error('Image size should be less than 5MB')
       }
 
-      // Upload image using our custom storage utility
-      const downloadURL = await uploadFile(file, `profile-images/${user.id}`)
-
-      // Update user document with new image URL
-      await updateDoc(doc(db, 'users', user.id), {
-        avatar: downloadURL,
-        updatedAt: new Date()
+      const formData = new FormData()
+      formData.append('file', file)
+      const uploadRes = await fetch('/api/profile/avatar', {
+        method: 'POST',
+        body: formData,
+        credentials: 'include',
       })
-
-      setProfileImage(downloadURL)
+      if (!uploadRes.ok) {
+        const errBody = await uploadRes.json().catch(() => ({}))
+        throw new Error(errBody.error || 'Failed to upload image')
+      }
+      const { avatarUrl } = await uploadRes.json()
+      setProfileImage(avatarUrl)
       setSuccess(true)
     } catch (err) {
       console.error('Error uploading image:', err)
@@ -182,9 +209,8 @@ export default function ProfilePage() {
         throw new Error('You are currently offline. Please check your internet connection.')
       }
 
-      await updateDoc(doc(db, 'users', user.id), {
-        name,
-        updatedAt: new Date()
+      await updateUser({
+        name: name.trim(),
       })
 
       setSuccess(true)
@@ -224,8 +250,19 @@ export default function ProfilePage() {
         throw new Error(passwordError)
       }
 
-      // Update password
-      await updatePassword(auth.currentUser!, newPassword)
+      const passwordResponse = await fetch('/api/auth/change-password', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          currentPassword,
+          newPassword,
+        }),
+      })
+      if (!passwordResponse.ok) {
+        const body = await passwordResponse.json().catch(() => ({}))
+        throw new Error(body.error || 'Failed to change password')
+      }
 
       toast({
         title: "Password Updated",
@@ -266,6 +303,68 @@ export default function ProfilePage() {
       }
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleSavePaymentDetails = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!user) return
+    setIsSavingPayment(true)
+    try {
+      const mobileNumber = paymentDetails.mobileNumber.trim()
+      const bankAccountInput = {
+        accountNumber: paymentDetails.bankAccount.accountNumber.trim(),
+        bankCode: paymentDetails.bankAccount.bankCode.trim(),
+        accountName: paymentDetails.bankAccount.accountName.trim()
+      }
+      const hasBankAccount = Object.values(bankAccountInput).some(value => value !== '')
+      await updateUser({
+        mobileNumber: mobileNumber || null,
+        bankAccount: hasBankAccount ? bankAccountInput : null
+      })
+      toast({
+        title: 'Payment details saved',
+        description: 'Your payroll information has been updated.'
+      })
+    } catch (err) {
+      console.error('Error updating payment details:', err)
+      toast({
+        title: 'Error',
+        description: err instanceof Error ? err.message : 'Failed to update payment details',
+        variant: 'destructive'
+      })
+    } finally {
+      setIsSavingPayment(false)
+    }
+  }
+
+  const handleSaveEmergencyContact = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!user) return
+    setIsSavingEmergency(true)
+    try {
+      const trimmed = {
+        name: emergencyDetails.name.trim(),
+        relationship: emergencyDetails.relationship.trim(),
+        phone: emergencyDetails.phone.trim()
+      }
+      const hasEmergency = Object.values(trimmed).some(value => value !== '')
+      await updateUser({
+        emergencyContact: hasEmergency ? trimmed : null
+      })
+      toast({
+        title: 'Emergency contact saved',
+        description: 'Your emergency contact information has been updated.'
+      })
+    } catch (err) {
+      console.error('Error updating emergency contact:', err)
+      toast({
+        title: 'Error',
+        description: err instanceof Error ? err.message : 'Failed to update emergency contact',
+        variant: 'destructive'
+      })
+    } finally {
+      setIsSavingEmergency(false)
     }
   }
 
@@ -359,6 +458,151 @@ export default function ProfilePage() {
                   {user.role?.charAt(0).toUpperCase() + user.role?.slice(1) || 'Employee'}
                 </Badge>
               </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Building className="w-5 h-5" />
+                Payment & Payroll Details
+              </CardTitle>
+              <CardDescription>
+                Provide payment information so payroll can process your payouts
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleSavePaymentDetails} className="space-y-4">
+                <div>
+                  <Label htmlFor="paymentMobile">Payment Phone / Mobile Money</Label>
+                  <Input
+                    id="paymentMobile"
+                    value={paymentDetails.mobileNumber}
+                    onChange={(e) =>
+                      setPaymentDetails(prev => ({ ...prev, mobileNumber: e.target.value }))
+                    }
+                    placeholder="+233XXXXXXXXX"
+                  />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <Label htmlFor="bankAccountNumber">Account Number</Label>
+                    <Input
+                      id="bankAccountNumber"
+                      value={paymentDetails.bankAccount.accountNumber}
+                      onChange={(e) =>
+                        setPaymentDetails(prev => ({
+                          ...prev,
+                          bankAccount: { ...prev.bankAccount, accountNumber: e.target.value }
+                        }))
+                      }
+                      placeholder="1234567890"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="bankCode">Bank Code</Label>
+                    <Input
+                      id="bankCode"
+                      value={paymentDetails.bankAccount.bankCode}
+                      onChange={(e) =>
+                        setPaymentDetails(prev => ({
+                          ...prev,
+                          bankAccount: { ...prev.bankAccount, bankCode: e.target.value }
+                        }))
+                      }
+                      placeholder="000001"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="accountName">Account Name</Label>
+                    <Input
+                      id="accountName"
+                      value={paymentDetails.bankAccount.accountName}
+                      onChange={(e) =>
+                        setPaymentDetails(prev => ({
+                          ...prev,
+                          bankAccount: { ...prev.bankAccount, accountName: e.target.value }
+                        }))
+                      }
+                      placeholder="John Doe"
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-end">
+                  <Button type="submit" disabled={isSavingPayment}>
+                    {isSavingPayment ? 'Saving...' : 'Save Payment Details'}
+                  </Button>
+                </div>
+              </form>
+              {!paymentDetails.mobileNumber &&
+                !Object.values(paymentDetails.bankAccount).some(value => value.trim() !== '') && (
+                  <p className="text-sm text-muted-foreground mt-4">
+                    Add payment information so finance knows where to send your payouts. You can update this anytime.
+                  </p>
+                )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <AlertCircle className="w-5 h-5" />
+                Emergency Contact
+              </CardTitle>
+              <CardDescription>
+                Tell us who to notify in case of an emergency
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleSaveEmergencyContact} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="emergencyName">Contact Name</Label>
+                    <Input
+                      id="emergencyName"
+                      value={emergencyDetails.name}
+                      onChange={(e) =>
+                        setEmergencyDetails(prev => ({ ...prev, name: e.target.value }))
+                      }
+                      placeholder="Jane Doe"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="emergencyRelationship">Relationship</Label>
+                    <Input
+                      id="emergencyRelationship"
+                      value={emergencyDetails.relationship}
+                      onChange={(e) =>
+                        setEmergencyDetails(prev => ({ ...prev, relationship: e.target.value }))
+                      }
+                      placeholder="Spouse, Parent, Friend"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <Label htmlFor="emergencyPhone">Contact Phone</Label>
+                  <Input
+                    id="emergencyPhone"
+                    value={emergencyDetails.phone}
+                    onChange={(e) =>
+                      setEmergencyDetails(prev => ({ ...prev, phone: e.target.value }))
+                    }
+                    placeholder="+233XXXXXXXXX"
+                  />
+                </div>
+                <div className="flex justify-end">
+                  <Button type="submit" disabled={isSavingEmergency}>
+                    {isSavingEmergency ? 'Saving...' : 'Save Emergency Contact'}
+                  </Button>
+                </div>
+              </form>
+              {!emergencyDetails.name &&
+                !emergencyDetails.relationship &&
+                !emergencyDetails.phone && (
+                  <p className="text-sm text-muted-foreground mt-4">
+                    Share an emergency contact so your team can reach someone quickly if needed.
+                  </p>
+                )}
             </CardContent>
           </Card>
 

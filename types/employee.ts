@@ -14,6 +14,15 @@ export interface Employee {
   salary: number;
   status: 'active' | 'inactive' | 'on_leave';
   photoURL?: string | null;
+  // Payment details for payroll
+  mobileNumber?: string; // E.164 format (e.g., 233XXXXXXXXX for Ghana)
+  bankAccount?: {
+    accountNumber: string;
+    bankCode: string;
+    accountName: string;
+  };
+  // Source collection this document lives in
+  collection?: 'users' | 'employees' | 'managers';
   address?: {
     street: string;
     city: string;

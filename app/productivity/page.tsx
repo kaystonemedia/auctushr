@@ -19,11 +19,11 @@ export default function ProductivityPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 -mx-4 sm:-mx-6 md:-mx-8 px-2">
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900">Productivity Analytics</h1>
-          <p className="text-gray-500">Track and analyze employee productivity metrics.</p>
+          <h1 className="text-2xl font-semibold text-gray-900">Productivity & Task Management</h1>
+          <p className="text-gray-500">Track productivity metrics and manage tasks with enhanced interface.</p>
         </div>
       </div>
 

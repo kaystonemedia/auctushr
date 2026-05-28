@@ -35,7 +35,7 @@ export function Logo({ className }: LogoProps) {
           />
         </svg>
       </div>
-      <span className="text-xl font-bold">KayStoneHR</span>
+      <span className="text-xl font-bold">Auctushr</span>
     </div>
   );
 }

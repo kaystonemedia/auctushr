@@ -1,6 +1,4 @@
 import { useState, useEffect } from 'react'
-import { db } from '@/lib/firebase'
-import { doc, getDoc } from 'firebase/firestore'
 import { SettingsData, AttendanceSettings, SystemSettings, PayrollSettings, LocationSettings } from '@/types/settings'
 
 const DEFAULT_ATTENDANCE_SETTINGS: AttendanceSettings = {
@@ -100,9 +98,14 @@ export function useSettings() {
   useEffect(() => {
     const fetchSettings = async () => {
       try {
-        const settingsDoc = await getDoc(doc(db, "settings", "company"))
-        if (settingsDoc.exists()) {
-          const data = settingsDoc.data() as SettingsData
+        const response = await fetch('/api/settings', { cache: 'no-store' })
+        if (!response.ok) {
+          throw new Error('Failed to load settings')
+        }
+
+        const payload = await response.json()
+        const data = payload?.settings as SettingsData | undefined
+        if (data) {
           setSettings({
             ...DEFAULT_ATTENDANCE_SETTINGS,
             ...data.attendance

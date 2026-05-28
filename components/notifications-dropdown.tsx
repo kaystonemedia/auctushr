@@ -25,6 +25,7 @@ export function NotificationsDropdown() {
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [loading, setLoading] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
+  const notificationsRef = useRef<Notification[]>([])
 
   // Load initial notifications
   useEffect(() => {
@@ -66,6 +67,7 @@ export function NotificationsDropdown() {
         })
         
         setNotifications(validNotifications)
+        notificationsRef.current = validNotifications
       } catch (error) {
         console.error('Error loading notifications:', error)
         toast.error('Failed to load notifications')
@@ -102,18 +104,15 @@ export function NotificationsDropdown() {
 
       // Only add notification if it has a valid ID
       if (convertedNotification.id && convertedNotification.id.trim() !== '') {
+        // Check if this is a new notification using ref (before state update)
+        const isNewNotification = !notificationsRef.current.find(n => n.id === convertedNotification.id)
+        
         setNotifications(prev => {
           // Check if this notification already exists
           const existingNotification = prev.find(n => n.id === convertedNotification.id)
           
           if (!existingNotification) {
-            // This is a truly new notification - show toast only for unread notifications
-            if (!convertedNotification.read) {
-              toast.success(convertedNotification.message, {
-                duration: 4000,
-                position: 'top-right'
-              })
-            }
+            // This is a truly new notification
             return [convertedNotification, ...prev]
           } else {
             // Update existing notification (in case read status changed)
@@ -122,6 +121,26 @@ export function NotificationsDropdown() {
             )
           }
         })
+        
+        // Update ref after state update
+        if (isNewNotification) {
+          notificationsRef.current = [convertedNotification, ...notificationsRef.current]
+        } else {
+          notificationsRef.current = notificationsRef.current.map(n => 
+            n.id === convertedNotification.id ? convertedNotification : n
+          )
+        }
+        
+        // Show toast for new unread notifications (outside of setState callback)
+        // Use setTimeout to defer to next tick, avoiding render phase issues
+        if (isNewNotification && !convertedNotification.read) {
+          setTimeout(() => {
+            toast.success(convertedNotification.message, {
+              duration: 4000,
+              position: 'top-right'
+            })
+          }, 0)
+        }
       } else {
         // Only log in development mode to avoid console spam
         if (process.env.NODE_ENV === 'development') {
@@ -154,11 +173,13 @@ export function NotificationsDropdown() {
       }
       
       await markNotificationAsRead(notificationId)
-      setNotifications(prev =>
-        prev.map(n =>
+      setNotifications(prev => {
+        const updated = prev.map(n =>
           n.id === notificationId ? { ...n, read: true } : n
         )
-      )
+        notificationsRef.current = updated
+        return updated
+      })
     } catch (error) {
       console.error('Error marking notification as read:', error)
       toast.error('Failed to mark notification as read')
@@ -175,9 +196,11 @@ export function NotificationsDropdown() {
       }
       
       await Promise.all(unreadNotifications.map(n => markNotificationAsRead(n.id)))
-      setNotifications(prev =>
-        prev.map(n => n.id && n.id.trim() !== '' ? { ...n, read: true } : n)
-      )
+      setNotifications(prev => {
+        const updated = prev.map(n => n.id && n.id.trim() !== '' ? { ...n, read: true } : n)
+        notificationsRef.current = updated
+        return updated
+      })
       toast.success('All notifications marked as read')
     } catch (error) {
       console.error('Error marking all notifications as read:', error)

@@ -11,8 +11,6 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Check, ChevronsUpDown, Users, Plus } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { toast } from "react-hot-toast"
-import { collection, query, where, getDocs, addDoc, updateDoc, doc, orderBy, limit, getDoc } from 'firebase/firestore'
-import { db } from '@/lib/firebase'
 import { useNewAuth } from '@/contexts/new-auth-context'
 import { Badge } from "@/components/ui/badge"
 import {
@@ -50,6 +48,11 @@ import { TaskList } from '@/components/tasks/task-list'
 import { CreateTaskModal } from '@/components/tasks/create-task-modal'
 import { Task } from '@/types/task'
 import { TaskProgressCards } from '@/components/ui/task-progress-cards'
+import { EnhancedTaskList } from '@/components/tasks/enhanced-task-list'
+import { EnhancedKanbanBoard } from '@/components/tasks/enhanced-kanban-board'
+import { EnhancedCalendarView } from '@/components/tasks/enhanced-calendar-view'
+import { EnhancedTaskDrawer } from '@/components/tasks/enhanced-task-drawer'
+import { EnhancedProductivityWidget } from '@/components/tasks/enhanced-productivity-widget'
 
 interface ActivityData {
   timestamp: string
@@ -176,6 +179,8 @@ export function ProductivityDashboard() {
     pending: 0,
   })
   const [employeeTasks, setEmployeeTasks] = useState([])
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null)
+  const [taskView, setTaskView] = useState('list')
 
   useEffect(() => {
     if (!user?.id) {
@@ -209,6 +214,41 @@ export function ProductivityDashboard() {
     }
   }
 
+  const getAssigneeIds = () => {
+    const ids = new Set<string>()
+    if (user?.firestoreId) {
+      ids.add(user.firestoreId)
+    }
+    if (user?.id) {
+      ids.add(user.id)
+    }
+    return Array.from(ids)
+  }
+
+  const fetchTasksForAssignees = async (assigneeIds: string[]) => {
+    if (!assigneeIds.length) {
+      return []
+    }
+
+    const tasksMap = new Map<string, any>()
+    for (const assigneeId of assigneeIds) {
+      if (!assigneeId) continue
+      try {
+        const response = await fetch(`/api/tasks?assigneeId=${encodeURIComponent(assigneeId)}&limit=200`, {
+          credentials: 'include',
+        })
+        if (!response.ok) continue
+        const data = await response.json()
+        ;(data.tasks || []).forEach((task: any) => {
+          tasksMap.set(task.id, task)
+        })
+      } catch (error) {
+        console.error(`Failed to fetch tasks for assignee ${assigneeId}:`, error)
+      }
+    }
+    return Array.from(tasksMap.values())
+  }
+
   const fetchTaskStats = async () => {
     if (!user?.id) {
       console.log('No user ID available for fetching tasks')
@@ -218,28 +258,30 @@ export function ProductivityDashboard() {
     try {
       console.log('Fetching tasks for user:', user.id, 'role:', user?.role)
       
-      // Fetch tasks based on user role
-      let tasksQuery
+      const userAssigneeIds = getAssigneeIds()
+      let taskDocs: any[] = []
+
       if (user?.role === 'admin') {
-        tasksQuery = collection(db, 'tasks')
-      } else if (user?.role === 'manager') {
-        // Get team members first from employees collection
-        const teamSnap = await getDocs(query(collection(db, 'employees'), where('managerId', '==', user.id)))
-        const teamIds = teamSnap.docs.map(doc => doc.id)
-        console.log('Manager team IDs:', teamIds)
-        
-        if (teamIds.length > 0) {
-          tasksQuery = query(collection(db, 'tasks'), where('assignedTo', 'in', teamIds))
-        } else {
-          // If no team members, also include tasks assigned to the manager directly
-          tasksQuery = query(collection(db, 'tasks'), where('assignedTo', '==', user.id))
+        const response = await fetch('/api/tasks?limit=300', { credentials: 'include' })
+        if (response.ok) {
+          const data = await response.json()
+          taskDocs = data.tasks || []
         }
+      } else if (user?.role === 'manager') {
+        const teamResponse = await fetch('/api/employees', { credentials: 'include' })
+        const teamData = teamResponse.ok ? await teamResponse.json() : { employees: [] }
+        const teamIds = (teamData.employees || []).map((employee: any) => employee.id)
+        console.log('Manager team IDs:', teamIds)
+
+        const combinedIds = Array.from(new Set([...teamIds, ...userAssigneeIds]))
+        const assigneeTaskDocs = await fetchTasksForAssignees(combinedIds)
+        taskDocs = assigneeTaskDocs
       } else {
-        tasksQuery = query(collection(db, 'tasks'), where('assignedTo', '==', user.id))
+        const assigneeTaskDocs = await fetchTasksForAssignees(userAssigneeIds)
+        taskDocs = assigneeTaskDocs
       }
 
-      const tasksSnap = await getDocs(tasksQuery)
-      const tasks = tasksSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+      const tasks = taskDocs
       
       console.log('Fetched tasks:', tasks.length, tasks)
 
@@ -263,6 +305,15 @@ export function ProductivityDashboard() {
         return taskData
       })
 
+      const assigneeMap = new Map<string, any>()
+      const assigneeResponse = await fetch('/api/employees', { credentials: 'include' })
+      if (assigneeResponse.ok) {
+        const assigneePayload = await assigneeResponse.json()
+        ;(assigneePayload.employees || []).forEach((employee: any) => {
+          assigneeMap.set(employee.id, employee)
+        })
+      }
+
       // Get employee tasks for the progress list
       const employeeTasksData = await Promise.all(
         normalizedTasks
@@ -270,27 +321,7 @@ export function ProductivityDashboard() {
           .filter(t => (t as any).assignedTo && typeof (t as any).assignedTo === 'string' && (t as any).assignedTo.trim() !== '')
           .map(async (task) => {
             try {
-              // Try to get user from employees collection first, then users
-              let userData = null
-              try {
-                const empSnap = await getDoc(doc(db, 'employees', (task as any).assignedTo))
-                if (empSnap.exists()) {
-                  userData = empSnap.data()
-                }
-              } catch (empError) {
-                console.log('Employee not found, trying users collection')
-              }
-              
-              if (!userData) {
-                try {
-                  const userSnap = await getDoc(doc(db, 'users', (task as any).assignedTo))
-                  if (userSnap.exists()) {
-                    userData = userSnap.data()
-                  }
-                } catch (userError) {
-                  console.log('User not found in users collection either')
-                }
-              }
+              const userData: any = assigneeMap.get((task as any).assignedTo)
               
               const name = userData?.name || 
                           `${userData?.firstName || ''} ${userData?.lastName || ''}`.trim() || 
@@ -359,6 +390,10 @@ export function ProductivityDashboard() {
     }
   }
 
+  const handleTaskSelect = (task: Task) => {
+    setSelectedTask(task)
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -368,7 +403,7 @@ export function ProductivityDashboard() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Date Range Selector */}
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-4">
@@ -404,12 +439,12 @@ export function ProductivityDashboard() {
 
       {/* Overview Cards and Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList>
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="trends">Trends</TabsTrigger>
-          <TabsTrigger value="projects">Projects</TabsTrigger>
-          <TabsTrigger value="team">Team</TabsTrigger>
-          <TabsTrigger value="tasks">Tasks</TabsTrigger>
+        <TabsList className="grid w-full grid-cols-5 h-12 bg-muted/50">
+          <TabsTrigger value="overview" className="text-sm font-medium data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Overview</TabsTrigger>
+          <TabsTrigger value="trends" className="text-sm font-medium data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Trends</TabsTrigger>
+          <TabsTrigger value="projects" className="text-sm font-medium data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Projects</TabsTrigger>
+          <TabsTrigger value="team" className="text-sm font-medium data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Team</TabsTrigger>
+          <TabsTrigger value="tasks" className="text-sm font-medium data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Tasks</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-6">
@@ -765,56 +800,87 @@ export function ProductivityDashboard() {
           )}
         </TabsContent>
 
-        <TabsContent value="tasks" className="space-y-6">
+        <TabsContent value="tasks" className="space-y-4">
           <div className="flex justify-between items-center">
             <div>
               <h2 className="text-lg font-semibold">Task Management</h2>
-              <p className="text-sm text-gray-500">Manage and track your tasks</p>
+              <p className="text-sm text-gray-500">Manage and track your tasks with enhanced interface</p>
             </div>
-            <Button onClick={() => setShowTaskModal(true)}>
-              <Plus className="mr-2 h-4 w-4" />
-              Create Task
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm">
+                <Plus className="w-4 h-4 mr-2" />
+                Filter
+              </Button>
+              <Button size="sm" onClick={() => setShowTaskModal(true)}>
+                <Plus className="w-4 h-4 mr-2" />
+                New Task
+              </Button>
+            </div>
           </div>
 
-          {/* Task Progress Cards */}
-          <TaskProgressCards stats={taskStats} employees={employeeTasks} />
 
-          {/* Task Overview Card */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Task Overview</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="p-4 bg-blue-50 rounded-lg">
-                  <h3 className="font-medium text-blue-700">Pending Tasks</h3>
-                  <p className="text-2xl font-bold text-blue-900">
-                    {taskStats.pending}
-                  </p>
-                </div>
-                <div className="p-4 bg-green-50 rounded-lg">
-                  <h3 className="font-medium text-green-700">Completed Tasks</h3>
-                  <p className="text-2xl font-bold text-green-900">
-                    {taskStats.completed}
-                  </p>
-                </div>
-                <div className="p-4 bg-purple-50 rounded-lg">
-                  <h3 className="font-medium text-purple-700">Completion Rate</h3>
-                  <p className="text-2xl font-bold text-purple-900">
-                    {taskStats.totalIssued > 0 ? Math.round((taskStats.completed / taskStats.totalIssued) * 100) : 0}%
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          {/* Enhanced Task Management with Right Sidebar */}
+          <div className="grid grid-cols-1 xl:grid-cols-5 gap-4">
+            <div className="xl:col-span-4">
+              <Card className="h-full">
+                <CardHeader className="pb-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="text-xl">Task Management</CardTitle>
+                      <p className="text-sm text-muted-foreground">
+                        Choose your preferred view to manage tasks
+                      </p>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="p-6">
+                  <Tabs value={taskView} onValueChange={setTaskView} className="w-full">
+                    <TabsList className="grid w-full grid-cols-3 mb-6 h-10 bg-muted/30">
+                      <TabsTrigger value="list" className="text-sm font-medium data-[state=active]:bg-accent data-[state=active]:text-accent-foreground">List View</TabsTrigger>
+                      <TabsTrigger value="kanban" className="text-sm font-medium data-[state=active]:bg-accent data-[state=active]:text-accent-foreground">Kanban</TabsTrigger>
+                      <TabsTrigger value="calendar" className="text-sm font-medium data-[state=active]:bg-accent data-[state=active]:text-accent-foreground">Calendar</TabsTrigger>
+                    </TabsList>
 
-          <TaskList
-            tasks={tasks}
-            loading={loading}
-            onTaskUpdate={handleTaskUpdated}
-            onTaskDelete={handleTaskDeleted}
-          />
+                    <TabsContent value="list" className="mt-0">
+                      <EnhancedTaskList
+                        tasks={tasks}
+                        loading={loading}
+                        onTaskSelect={handleTaskSelect}
+                        onTaskUpdate={handleTaskUpdated}
+                        onTaskDelete={handleTaskDeleted}
+                      />
+                    </TabsContent>
+
+                    <TabsContent value="kanban" className="mt-0">
+                      <EnhancedKanbanBoard
+                        tasks={tasks}
+                        loading={loading}
+                        onTaskSelect={handleTaskSelect}
+                        onTaskUpdate={handleTaskUpdated}
+                      />
+                    </TabsContent>
+
+                    <TabsContent value="calendar" className="mt-0">
+                      <EnhancedCalendarView
+                        tasks={tasks}
+                        loading={loading}
+                        onTaskSelect={handleTaskSelect}
+                      />
+                    </TabsContent>
+                  </Tabs>
+                </CardContent>
+              </Card>
+            </div>
+            
+            <div className="xl:col-span-1">
+              <EnhancedProductivityWidget 
+                tasks={tasks}
+                productivityScore={analytics?.overview?.averageProductivityScore || 0}
+                currentStreak={5}
+                weeklyGoal={40}
+              />
+            </div>
+          </div>
         </TabsContent>
       </Tabs>
 
@@ -832,6 +898,16 @@ export function ProductivityDashboard() {
         onClose={() => setShowTaskModal(false)}
         onSuccess={handleTaskCreated}
       />
+
+      {/* Task Drawer */}
+      {selectedTask && (
+        <EnhancedTaskDrawer
+          task={selectedTask}
+          open={!!selectedTask}
+          onClose={() => setSelectedTask(null)}
+          onTaskUpdate={handleTaskUpdated}
+        />
+      )}
     </div>
   )
 } 

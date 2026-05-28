@@ -1,8 +1,6 @@
 'use client'
 import { useEffect, useRef, useState } from "react"
 import { MapPin } from "lucide-react"
-import { db } from "@/lib/firebase"
-import { collection, query, where, getDocs } from "firebase/firestore"
 import type { FirebaseAttendance } from "@/types/database"
 
 // Import Google Maps types
@@ -22,6 +20,14 @@ declare global {
 
 interface AttendanceMapProps {
   date: Date
+}
+
+interface AttendanceApiRecord {
+  employeeId: string
+  date: string
+  checkIn?: { time?: string; location?: FirebaseAttendance['checkIn']['location'] }
+  checkOut?: { time?: string | null }
+  status: FirebaseAttendance['status']
 }
 
 export function AttendanceMap({ date }: AttendanceMapProps) {
@@ -44,21 +50,22 @@ export function AttendanceMap({ date }: AttendanceMapProps) {
   useEffect(() => {
     const fetchAttendance = async () => {
       try {
-        const startOfDay = new Date(date)
-        startOfDay.setHours(0, 0, 0, 0)
-        const endOfDay = new Date(date)
-        endOfDay.setHours(23, 59, 59, 999)
-
-        const q = query(
-          collection(db, "attendance"),
-          where("date", ">=", startOfDay),
-          where("date", "<=", endOfDay)
-        )
-
-        const querySnapshot = await getDocs(q)
-        const attendanceList = querySnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
+        const dateParam = date.toISOString().slice(0, 10)
+        const response = await fetch(`/api/attendance/records?date=${encodeURIComponent(dateParam)}`, {
+          credentials: 'include'
+        })
+        if (!response.ok) throw new Error('Failed to fetch attendance records')
+        const payload = await response.json()
+        const attendanceList = ((payload.records || []) as AttendanceApiRecord[]).map((record) => ({
+          ...record,
+          userId: record.employeeId,
+          checkIn: {
+            ...record.checkIn,
+            time: new Date(record.checkIn?.time || record.date)
+          },
+          checkOut: record.checkOut
+            ? { ...record.checkOut, time: new Date(record.checkOut.time) }
+            : null,
         })) as FirebaseAttendance[]
 
         setAttendance(attendanceList)

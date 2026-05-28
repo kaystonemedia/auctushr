@@ -2,8 +2,6 @@
 
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/contexts/auth-context'
-import { db } from '@/lib/firebase'
-import { collection, query, where, getDocs, orderBy } from 'firebase/firestore'
 import { Card } from '@/components/ui/card'
 import { Select } from '@/components/ui/select'
 import { BarChart } from '@/components/ui/charts'
@@ -43,21 +41,12 @@ export function AnalyticsDashboard({ viewMode = 'all', employeeId }: AnalyticsDa
     if (!user) return
 
     try {
-      // First get all departments managed by this user
-      const departmentsQuery = query(
-        collection(db, 'departments'),
-        where('managerId', '==', user.uid)
-      )
-      const departmentsSnapshot = await getDocs(departmentsQuery)
-      const departmentIds = departmentsSnapshot.docs.map(doc => doc.id)
-
-      // Then get all employees in these departments
-      const employeesQuery = query(
-        collection(db, 'users'),
-        where('departmentId', 'in', departmentIds)
-      )
-      const employeesSnapshot = await getDocs(employeesQuery)
-      const employeeIds = employeesSnapshot.docs.map(doc => doc.id)
+      const response = await fetch('/api/employees', { credentials: 'include' })
+      if (!response.ok) throw new Error('Failed to load managed employees')
+      const payload = await response.json()
+      const employeeIds = ((payload.employees || []) as Array<{ id: string; role?: string }>)
+        .filter((employee) => employee.role === 'employee')
+        .map((employee) => employee.id)
       setManagedEmployees(employeeIds)
     } catch (error) {
       console.error('Error fetching managed employees:', error)
@@ -70,39 +59,35 @@ export function AnalyticsDashboard({ viewMode = 'all', employeeId }: AnalyticsDa
     try {
       setLoading(true)
       const dateRange = getDateRange(timeframe)
-      
-      // Build query based on view mode
-      let attendanceQuery = query(
-        collection(db, 'attendance'),
-        where('date', '>=', dateRange.start),
-        where('date', '<=', dateRange.end),
-        orderBy('date', 'asc')
-      )
-
-      // Add filters based on view mode
-      switch (viewMode) {
-        case 'personal':
-          attendanceQuery = query(
-            attendanceQuery,
-            where('employeeId', '==', employeeId || user.uid)
-          )
-          break
-        case 'managed':
-          if (managedEmployees.length > 0) {
-            attendanceQuery = query(
-              attendanceQuery,
-              where('employeeId', 'in', managedEmployees)
-            )
-          }
-          break
-        // For 'all' viewMode, no additional filters needed
+      const params = new URLSearchParams({
+        fromDate: dateRange.start.toISOString().slice(0, 10),
+        toDate: dateRange.end.toISOString().slice(0, 10),
+      })
+      if (viewMode === 'personal') {
+        params.set('employeeId', employeeId || user.uid)
       }
-
-      const querySnapshot = await getDocs(attendanceQuery)
-      const records = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
+      const response = await fetch(`/api/attendance/records?${params.toString()}`, {
+        credentials: 'include',
+      })
+      if (!response.ok) throw new Error('Failed to fetch attendance analytics')
+      const payload = await response.json()
+      let records = ((payload.records || []) as AttendanceRecord[]).map((record) => ({
+        ...record,
+        date: new Date(record.date),
+        checkIn: {
+          ...record.checkIn,
+          time: new Date(record.checkIn.time),
+        },
+        checkOut: record.checkOut
+          ? {
+              ...record.checkOut,
+              time: new Date(record.checkOut.time),
+            }
+          : undefined,
       })) as AttendanceRecord[]
+      if (viewMode === 'managed' && managedEmployees.length > 0) {
+        records = records.filter((record) => managedEmployees.includes(record.employeeId))
+      }
 
       // Process analytics data
       const analyticsData = processAnalytics(records)

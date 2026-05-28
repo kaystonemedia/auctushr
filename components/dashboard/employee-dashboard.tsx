@@ -54,7 +54,7 @@ export function EmployeeDashboard() {
         <TabsContent value="attendance">
           <Card className="p-6">
             <h2 className="text-xl font-semibold mb-4">Attendance History</h2>
-            <EmployeeAttendanceHistory employeeId={user.id} />
+            <EmployeeAttendanceHistory employeeId={user.id} employeeName={user.name || user.email} />
           </Card>
         </TabsContent>
 

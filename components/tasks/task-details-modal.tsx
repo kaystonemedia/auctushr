@@ -8,8 +8,6 @@ import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { format } from 'date-fns'
 import { useToast } from '@/components/ui/use-toast'
-import { doc, updateDoc, arrayUnion } from 'firebase/firestore'
-import { db } from '@/lib/firebase'
 import { useNewAuth } from '@/contexts/new-auth-context'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
@@ -65,15 +63,18 @@ export function TaskDetailsModal({ task, isOpen, onClose, onTaskUpdate }: TaskDe
         createdAt: new Date()
       }
 
-      const taskRef = doc(db, 'tasks', task.id)
-      await updateDoc(taskRef, {
-        comments: arrayUnion(newComment),
-        updatedAt: new Date()
+      const res = await fetch(`/api/tasks/${task.id}`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: comment.trim() }),
       })
+      if (!res.ok) throw new Error('Failed to add comment')
+      const { comment: saved } = await res.json()
 
       const updatedTask = {
         ...task,
-        comments: [...(task.comments || []), newComment],
+        comments: [...(task.comments || []), { ...newComment, ...saved, createdAt: new Date(saved.createdAt || Date.now()) }],
         updatedAt: new Date()
       }
 

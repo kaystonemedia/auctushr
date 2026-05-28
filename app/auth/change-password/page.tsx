@@ -3,9 +3,6 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useNewAuth } from '@/contexts/new-auth-context'
-import { updatePassword } from 'firebase/auth'
-import { doc, updateDoc } from 'firebase/firestore'
-import { db } from '@/lib/firebase'
 import { validateSignUpPassword } from '@/lib/password-validation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -15,7 +12,7 @@ import { AlertCircle } from 'lucide-react'
 
 export default function ChangePasswordPage() {
   const router = useRouter()
-  const { user, firebaseUser, login } = useNewAuth()
+  const { user } = useNewAuth()
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -51,7 +48,7 @@ export default function ChangePasswordPage() {
       return
     }
 
-    if (!firebaseUser || !user) {
+    if (!user) {
       setError('You must be logged in to change your password')
       return
     }
@@ -59,18 +56,19 @@ export default function ChangePasswordPage() {
     setIsLoading(true)
 
     try {
-      // First verify the current password by attempting to sign in
-      await login(user.email, currentPassword, true)
-
-      // Update the password
-      await updatePassword(firebaseUser, newPassword)
-
-      // Update Firestore to remove the password change requirement
-      const collectionName = user.role === 'admin' ? 'users' : 'employees'
-      await updateDoc(doc(db, collectionName, user.id), {
-        requiresPasswordChange: false,
-        updatedAt: new Date()
+      const response = await fetch('/api/auth/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          currentPassword,
+          newPassword
+        })
       })
+
+      const payload = await response.json()
+      if (!response.ok) {
+        throw new Error(payload.error || 'Failed to change password')
+      }
 
       // Redirect based on role
       if (user.role === 'admin') {
@@ -82,13 +80,7 @@ export default function ChangePasswordPage() {
       }
     } catch (error: any) {
       console.error('Error changing password:', error)
-      if (error.code === 'auth/wrong-password') {
-        setError('Current password is incorrect')
-      } else if (error.code === 'auth/requires-recent-login') {
-        setError('Please sign out and sign in again before changing your password')
-      } else {
-        setError(error.message || 'Failed to change password')
-      }
+      setError(error.message || 'Failed to change password')
     } finally {
       setIsLoading(false)
     }

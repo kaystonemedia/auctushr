@@ -4,7 +4,6 @@ import type React from "react"
 
 import { useState } from "react"
 import { Logo } from "./logo"
-import { signUp } from "@/lib/firebase"
 import { useRouter } from "next/navigation"
 import { useNewAuth } from '@/contexts/new-auth-context'
 import { validateSignUpPassword } from "@/lib/password-validation"
@@ -69,7 +68,22 @@ export function SignUpForm() {
 
     try {
       console.log("Attempting to sign up with:", email, name, role)
-      await signUp(email.trim(), password, name.trim(), role)
+      const response = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: email.trim(),
+          password,
+          name: name.trim(),
+          role
+        })
+      })
+
+      const payload = await response.json()
+      if (!response.ok) {
+        throw new Error(payload.error || 'Failed to sign up')
+      }
+
       console.log("Sign up successful")
       setSuccess(true)
 
@@ -79,20 +93,19 @@ export function SignUpForm() {
       }, 1500)
     } catch (err: any) {
       console.error("Sign up error:", err)
-      if (err.code === "auth/email-already-in-use") {
+      const message = String(err?.message || '')
+      if (message.toLowerCase().includes('already') || message.toLowerCase().includes('exists')) {
         setError("This email is already registered. Please sign in instead.")
-      } else if (err.code === "auth/invalid-email") {
+      } else if (message.toLowerCase().includes('invalid email')) {
         setError("Please enter a valid email address")
-      } else if (err.code === "auth/weak-password") {
-        // Check specific password requirements and provide a detailed error message
+      } else if (message.toLowerCase().includes('password')) {
         const passwordError = validateSignUpPassword(password)
         if (passwordError) {
           setError(passwordError)
         } else {
           setError("Password is too weak. Please ensure your password meets all requirements.")
         }
-      } else if (err.message) {
-        // If the error message is from our validation, use it directly
+      } else if (err?.message) {
         if (err.message.includes("Password must")) {
           setError(err.message)
         } else {

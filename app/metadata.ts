@@ -1,6 +1,6 @@
 import { Metadata } from 'next'
 
 export const metadata: Metadata = {
-  title: "KayStone HR",
+  title: "Auctushr",
   description: "Employee Management System",
 } 

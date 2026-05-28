@@ -1,7 +1,10 @@
 // Constants
 const IDLE_THRESHOLD = 5 * 60; // 5 minutes in seconds
 const SYNC_INTERVAL = 5 * 60 * 1000; // 5 minutes in milliseconds
-const API_BASE_URL = 'https://kaystonehr.com/api';
+const DEFAULT_API_BASE_URL = 'https://auctushr.vercel.app/api';
+const PRODUCTION_API_BASE_URL = 'https://auctushr.com/api';
+const LOCAL_API_BASE_URL = 'http://localhost:3000/api';
+let API_BASE_URL = DEFAULT_API_BASE_URL;
 
 // Web activity tracking
 const WEB_ACTIVITY_TYPES = {
@@ -68,6 +71,7 @@ let state = {
 // Initialize extension state
 async function initializeState() {
   try {
+    await loadConfiguration();
     const storedState = await chrome.storage.local.get([
       'isCheckedIn',
       'currentSession',
@@ -112,6 +116,25 @@ async function initializeState() {
     await saveState();
   } catch (error) {
     console.error('Error initializing extension state:', error);
+  }
+}
+
+async function loadConfiguration() {
+  try {
+    const { apiBaseUrl, environment } = await chrome.storage.local.get(['apiBaseUrl', 'environment']);
+    if (environment === 'local') {
+      API_BASE_URL = LOCAL_API_BASE_URL;
+    } else if (environment === 'production') {
+      API_BASE_URL = PRODUCTION_API_BASE_URL;
+    } else if (apiBaseUrl) {
+      API_BASE_URL = apiBaseUrl;
+    } else {
+      API_BASE_URL = DEFAULT_API_BASE_URL;
+    }
+    console.log('API base URL set to:', API_BASE_URL);
+  } catch (error) {
+    console.warn('Failed to load API configuration, using default:', error);
+    API_BASE_URL = DEFAULT_API_BASE_URL;
   }
 }
 
@@ -164,7 +187,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true;
       
     case 'CHECK_OUT':
-      handleCheckOut()
+      handleCheckOut(message.data || {})
         .then(sendResponse)
         .catch(error => sendResponse({ error: error.message }));
       return true;
@@ -183,6 +206,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       updateSettings(message.data)
         .then(() => sendResponse({ success: true }))
         .catch(error => sendResponse({ error: error.message }));
+      return true;
+
+    case 'SET_API_BASE_URL':
+      if (message.data?.apiBaseUrl) {
+        API_BASE_URL = message.data.apiBaseUrl;
+        chrome.storage.local.set({ apiBaseUrl: API_BASE_URL }).then(() => {
+          console.log('API base URL updated to:', API_BASE_URL);
+          sendResponse({ success: true });
+        }).catch(error => sendResponse({ error: error.message }));
+        return true;
+      }
+      sendResponse({ error: 'Missing apiBaseUrl' });
       return true;
       
     default:
@@ -488,6 +523,7 @@ async function handleCheckIn(data) {
   }
 
   try {
+    const enrichedLocation = await enrichLocation(data.location);
     // Start new session
     state.currentSession = {
       startTime: new Date().toISOString(),
@@ -495,10 +531,10 @@ async function handleCheckIn(data) {
       idleTime: 0,
       activeTime: 0,
       locationHistory: [{
-        ...data.location,
+        ...enrichedLocation,
         timestamp: new Date().toISOString()
       }],
-      checkInLocation: data.location,
+      checkInLocation: enrichedLocation,
       deviceInfo: data.deviceInfo,
       flags: []
     }
@@ -515,7 +551,7 @@ async function handleCheckIn(data) {
 
     // Log initial activity
     await logActivity('check_in', {
-      location: data.location,
+      location: enrichedLocation,
       deviceInfo: data.deviceInfo
     })
 
@@ -542,7 +578,7 @@ async function handleCheckIn(data) {
   }
 }
 
-async function handleCheckOut() {
+async function handleCheckOut(data = {}) {
   if (!state.isCheckedIn) {
     return { error: 'Not checked in' }
   }
@@ -552,11 +588,23 @@ async function handleCheckOut() {
     stopLocationTracking()
 
     // Update session
+    const checkOutLocation = data.location ? await enrichLocation(data.location) : null;
     state.currentSession.endTime = new Date().toISOString()
     state.currentSession.activeTime = calculateActiveTime()
+    if (checkOutLocation) {
+      state.currentSession.locationHistory.push({
+        ...checkOutLocation,
+        timestamp: new Date().toISOString()
+      })
+    }
 
     // Save final state
     await saveState()
+
+    await logActivity('check_out', {
+      location: checkOutLocation,
+      deviceInfo: data.deviceInfo || state.currentSession.deviceInfo
+    })
 
     // Sync final data
     await syncActivityData(true)
@@ -681,8 +729,9 @@ function startLocationTracking() {
         accuracy: position.coords.accuracy,
         timestamp: new Date().toISOString()
       };
+      const enrichedLocation = await enrichLocation(location);
 
-      state.currentSession.locationHistory.push(location);
+      state.currentSession.locationHistory.push(enrichedLocation);
 
       // Check for suspicious movement
       if (state.currentSession.locationHistory.length >= 2) {
@@ -744,6 +793,43 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
   return R * c; // Distance in meters
+}
+
+async function enrichLocation(location) {
+  if (!location?.latitude || !location?.longitude) {
+    return location
+  }
+
+  try {
+    const response = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${location.latitude}&lon=${location.longitude}&zoom=10&addressdetails=1`,
+      {
+        headers: {
+          'User-Agent': 'Auctushr Attendance Extension/1.0 (+https://auctushr.com)'
+        }
+      }
+    )
+
+    if (!response.ok) {
+      throw new Error(`Reverse geocoding failed: ${response.status}`)
+    }
+
+    const data = await response.json()
+    const address = data.address || {}
+    const city = address.city || address.town || address.village || address.county
+    const country = address.country
+    const generalLocation = data.display_name || [city, country].filter(Boolean).join(', ')
+
+    return {
+      ...location,
+      generalLocation: generalLocation || undefined,
+      city: city || undefined,
+      country: country || undefined
+    }
+  } catch (error) {
+    console.warn('Failed to enrich location:', error)
+    return location
+  }
 }
 
 async function getAuthToken() {

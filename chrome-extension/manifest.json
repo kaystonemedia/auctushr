@@ -9,7 +9,8 @@
     "storage",
     "idle",
     "alarms",
-    "scripting"
+    "scripting",
+    "tabCapture"
   ],
   "host_permissions": [
     "*://*/*"

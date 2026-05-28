@@ -2,6 +2,7 @@
 
 import { useNewAuth } from '@/contexts/new-auth-context'
 import { Loader2 } from 'lucide-react'
+import { AuthLogo } from '@/components/ui/logo'
 
 interface AuthLayoutProps {
   children: React.ReactNode
@@ -20,6 +21,9 @@ export default function AuthLayout({ children }: AuthLayoutProps) {
 
   return (
     <div className="flex min-h-screen flex-col">
+      <header className="flex justify-center py-8">
+        <AuthLogo />
+      </header>
       <main className="flex-1">{children}</main>
     </div>
   )

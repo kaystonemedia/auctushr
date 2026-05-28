@@ -15,8 +15,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { toast } from 'react-hot-toast'
-import { doc, updateDoc, deleteDoc } from 'firebase/firestore'
-import { db } from '@/lib/firebase'
 import { EditTaskModal } from './edit-task-modal'
 import { useNewAuth } from '@/contexts/new-auth-context'
 import { sendTaskCompletionNotification, sendCustomNotification } from '@/lib/notifications'
@@ -66,33 +64,20 @@ export function TaskList({ tasks, loading, onTaskUpdate, onTaskDelete }: TaskLis
 
   const handleStatusChange = async (task: Task, newStatus: TaskStatus) => {
     try {
-      const taskRef = doc(db, 'tasks', task.id)
-      
-      // Build updates object with only defined values
-      const updates: any = {
-        status: newStatus,
-        updatedAt: new Date()
-      }
+      const res = await fetch(`/api/tasks/${task.id}`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus, action: newStatus }),
+      })
+      if (!res.ok) throw new Error('Failed to update status')
 
-      // Only set timestamp fields when transitioning to those states
-      if (newStatus === 'completed') {
-        updates.completedAt = new Date()
-      }
-      
-      if (newStatus === 'accepted' && !((task as any).acceptedAt)) {
-        updates.acceptedAt = new Date()
-      }
-      
-      if (newStatus === 'in_progress' && !((task as any).startedAt)) {
-        updates.startedAt = new Date()
-      }
-
-      await updateDoc(taskRef, updates)
-      
+      const completedAt = newStatus === 'completed' ? new Date() : task.completedAt
       onTaskUpdate({
         ...task,
-        ...updates,
-        completedAt: updates.completedAt
+        status: newStatus,
+        updatedAt: new Date(),
+        completedAt,
       })
       
       // Send appropriate notifications
@@ -139,7 +124,11 @@ export function TaskList({ tasks, loading, onTaskUpdate, onTaskDelete }: TaskLis
     if (!confirm('Are you sure you want to delete this task?')) return
 
     try {
-      await deleteDoc(doc(db, 'tasks', taskId))
+      const res = await fetch(`/api/tasks/${taskId}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      })
+      if (!res.ok) throw new Error('Failed to delete')
       onTaskDelete(taskId)
       toast.success('Task deleted successfully')
     } catch (error) {

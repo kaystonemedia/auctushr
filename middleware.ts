@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
+import { rateLimit } from '@/lib/rate-limit'
 
 // Add paths that don't require authentication
 const publicPaths = [
@@ -12,71 +13,47 @@ const publicPaths = [
   "/assets",
   "/unauthorized",
   "/test-auth",
+  "/test-scoring",
+  "/api/test",
   "/api/webhook",
   "/api/health",
   "/api/status"
 ]
 
-// Define role-based route access
-const roleBasedRoutes = {
-  admin: [
-    '/dashboard',
-    '/profile',
-    '/employees',
-    '/attendance',
-    '/attendance/reports',
-    '/leave',
-    '/payroll',
-    '/documents',
-    '/productivity',
-    '/performance',
-    '/settings',
-    '/help',
-    '/managers',
-    '/administrators',
-    '/departments',
-    '/tasks'
-  ],
-  manager: [
-    '/dashboard',
-    '/profile',
-    '/employees',
-    '/attendance',
-    '/attendance/reports',
-    '/leave',
-    '/payroll',
-    '/documents',
-    '/productivity',
-    '/performance',
-    '/settings',
-    '/help',
-    '/tasks'
-  ],
-  employee: [
-    '/dashboard',
-    '/profile',
-    '/attendance',
-    '/my-tasks',
-    '/leave',
-    '/documents',
-    '/help'
-  ]
-}
-
-// Define default routes for each role
-const defaultRoutes = {
-  admin: '/dashboard',
-  manager: '/dashboard',
-  employee: '/dashboard'
-}
-
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
+
+  if (pathname === '/test-chunk' || pathname.startsWith('/test-chunk/')) {
+    return NextResponse.redirect(new URL('/dashboard', request.url))
+  }
+
+  // Rate limit API routes (especially public ones)
+  if (pathname.startsWith('/api/')) {
+    // Stricter rate limits for public API endpoints
+    if (pathname.startsWith('/api/auth/') || pathname.startsWith('/api/webhook/')) {
+      const rateLimitResponse = await rateLimit({
+        windowMs: 60000, // 1 minute
+        maxRequests: 20, // 20 requests per minute for auth/webhooks
+      })(request)
+      if (rateLimitResponse) {
+        return rateLimitResponse
+      }
+    } else {
+      // Standard rate limit for other API routes
+      const rateLimitResponse = await rateLimit({
+        windowMs: 60000, // 1 minute
+        maxRequests: 60, // 60 requests per minute
+      })(request)
+      if (rateLimitResponse) {
+        return rateLimitResponse
+      }
+    }
+  }
 
   // Allow access to public paths
   if (publicPaths.some(path => pathname.startsWith(path))) {
     // If user has a session cookie and tries to access auth pages, redirect to dashboard
-    const token = request.cookies.get('session')?.value
+    const token = request.cookies.get('sb-access-token')?.value
     if (token && pathname.startsWith('/auth/')) {
       // Instead of verifying the token here, we'll let the client handle it
       // The client will redirect to dashboard if the token is valid
@@ -85,8 +62,15 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next()
   }
 
+  // API routes should never be redirected to the sign-in page. Allow them to
+  // pass through so route handlers can return JSON 401/403 responses via the
+  // `requireRole`/`authenticateRequest` helpers.
+  if (pathname.startsWith('/api/')) {
+    return NextResponse.next()
+  }
+
   // Check for session cookie
-  const token = request.cookies.get('session')?.value
+  const token = request.cookies.get('sb-access-token')?.value
 
   // If no session cookie, redirect to sign-in
   if (!token) {
@@ -105,13 +89,10 @@ export async function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     /*
-     * Match all request paths except for the ones starting with:
-     * - api (API routes)
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
+     * Match all request paths including API routes
+     * Exclude static files and images
      */
-    "/((?!api|_next/static|_next/image|favicon.ico).*)",
+    "/((?!_next/static|_next/image|favicon.ico).*)",
   ],
 }
 

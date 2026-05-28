@@ -11,32 +11,32 @@
     --card-foreground: 0 0% 14.5%;
     --popover: 0 0% 100%;
     --popover-foreground: 0 0% 14.5%;
-    --primary: 0 0% 20.5%;
+    --primary: 220 100% 27%; /* Corporate Navy (#00458a) */
     --primary-foreground: 0 0% 98.5%;
     --secondary: 0 0% 97%;
     --secondary-foreground: 0 0% 20.5%;
     --muted: 0 0% 97%;
     --muted-foreground: 0 0% 55.6%;
-    --accent: 0 0% 97%;
-    --accent-foreground: 0 0% 20.5%;
+    --accent: 158 64% 52%; /* Emerald Mint (#10b981) */
+    --accent-foreground: 0 0% 98.5%;
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 0 0% 98.5%;
     --border: 0 0% 92.2%;
     --input: 0 0% 92.2%;
-    --ring: 0 0% 70.8%;
+    --ring: 220 100% 27%;
     --chart-1: 41.116 64.6% 22.2%;
     --chart-2: 184.704 60% 11.8%;
     --chart-3: 227.392 39.8% 7%;
     --chart-4: 84.429 82.8% 18.9%;
     --chart-5: 70.08 76.9% 18.8%;
-    --sidebar: 0 0% 98.5%;
-    --sidebar-foreground: 0 0% 14.5%;
-    --sidebar-primary: 0 0% 20.5%;
+    --sidebar: 220 25% 25%; /* Deep Slate (#344256) */
+    --sidebar-foreground: 0 0% 95%;
+    --sidebar-primary: 220 100% 27%; /* Corporate Navy */
     --sidebar-primary-foreground: 0 0% 98.5%;
-    --sidebar-accent: 0 0% 97%;
-    --sidebar-accent-foreground: 0 0% 20.5%;
-    --sidebar-border: 0 0% 92.2%;
-    --sidebar-ring: 0 0% 70.8%;
+    --sidebar-accent: 220 20% 35%; /* Lighter slate for hover states */
+    --sidebar-accent-foreground: 0 0% 95%;
+    --sidebar-border: 220 15% 30%;
+    --sidebar-ring: 220 100% 27%;
   }
 
   .dark {
@@ -46,32 +46,32 @@
     --card-foreground: 0 0% 98.5%;
     --popover: 0 0% 20.5%;
     --popover-foreground: 0 0% 98.5%;
-    --primary: 0 0% 92.2%;
-    --primary-foreground: 0 0% 20.5%;
+    --primary: 220 100% 35%; /* Lighter Corporate Navy for dark mode */
+    --primary-foreground: 0 0% 98.5%;
     --secondary: 0 0% 26.9%;
     --secondary-foreground: 0 0% 98.5%;
     --muted: 0 0% 26.9%;
     --muted-foreground: 0 0% 70.8%;
-    --accent: 0 0% 26.9%;
-    --accent-foreground: 0 0% 98.5%;
+    --accent: 158 64% 60%; /* Lighter Emerald Mint for dark mode */
+    --accent-foreground: 0 0% 14.5%;
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 0 0% 98.5%;
     --border: 0 0% 100% / 0.1;
     --input: 0 0% 100% / 0.15;
-    --ring: 0 0% 55.6%;
+    --ring: 220 100% 35%;
     --chart-1: 264.376 48.8% 24.3%;
     --chart-2: 162.48 69.6% 17%;
     --chart-3: 70.08 76.9% 18.8%;
     --chart-4: 303.9 62.7% 26.5%;
     --chart-5: 16.439 64.5% 24.6%;
-    --sidebar: 0 0% 20.5%;
-    --sidebar-foreground: 0 0% 98.5%;
-    --sidebar-primary: 264.376 48.8% 24.3%;
+    --sidebar: 220 25% 20%; /* Darker Deep Slate for dark mode */
+    --sidebar-foreground: 0 0% 95%;
+    --sidebar-primary: 220 100% 35%;
     --sidebar-primary-foreground: 0 0% 98.5%;
-    --sidebar-accent: 0 0% 26.9%;
-    --sidebar-accent-foreground: 0 0% 98.5%;
-    --sidebar-border: 0 0% 100% / 0.1;
-    --sidebar-ring: 0 0% 55.6%;
+    --sidebar-accent: 220 20% 30%;
+    --sidebar-accent-foreground: 0 0% 95%;
+    --sidebar-border: 220 15% 25%;
+    --sidebar-ring: 220 100% 35%;
   }
 }
 
@@ -81,5 +81,26 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+  
+  /* Add padding for Electron title bar when present */
+  body:has([data-electron-title-bar]) {
+    padding-top: 2.5rem; /* 40px - matches title bar height */
+  }
+  
+  /* Ensure title bar is always on top in Electron */
+  [data-electron-title-bar] {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    z-index: 99999 !important;
+    /* Ensure drag region works */
+    -webkit-app-region: drag !important;
+  }
+  
+  /* Prevent content from overlapping title bar */
+  body:has([data-electron-title-bar]) > *:not([data-electron-title-bar]) {
+    margin-top: 40px !important;
   }
 } 

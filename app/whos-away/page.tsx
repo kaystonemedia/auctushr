@@ -2,8 +2,6 @@
 
 import { useState, useEffect } from 'react'
 import { useNewAuth } from '@/contexts/new-auth-context'
-import { db } from '@/lib/firebase'
-import { collection, query, getDocs, where, Timestamp } from 'firebase/firestore'
 import { CalendarView } from "@/components/calendar-view"
 import { Header } from "@/components/header"
 import { Sidebar } from "@/components/sidebar"
@@ -55,46 +53,53 @@ export default function WhosAwayPage() {
       const startOfMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1)
       const endOfMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0, 23, 59, 59, 999)
 
-      // Get leave requests for current month
-      const leaveSnapshot = await getDocs(query(
-        collection(db, 'leave_requests'),
-        where('startDate', '>=', Timestamp.fromDate(startOfMonth)),
-        where('startDate', '<=', Timestamp.fromDate(endOfMonth))
-      ))
-
-      // Get employees
-      const employeesSnapshot = await getDocs(collection(db, 'employees'))
-      const employeesData = employeesSnapshot.docs.map(doc => {
-        const data = doc.data() as any
-        return {
-          id: doc.id,
-          firstName: data.firstName || '',
-          lastName: data.lastName || '',
-          position: data.position || '',
-          photoURL: data.photoURL || '',
-        }
+      const params = new URLSearchParams({
+        view: 'all',
+        status: 'approved',
+        fromDate: startOfMonth.toISOString().slice(0, 10),
+        toDate: endOfMonth.toISOString().slice(0, 10),
       })
 
-      // Process leave requests
+      const [leaveRes, empRes] = await Promise.all([
+        fetch(`/api/leave/requests?${params}`, { credentials: 'include' }),
+        fetch('/api/employees', { credentials: 'include' }),
+      ])
+
+      if (!leaveRes.ok || !empRes.ok) throw new Error('Failed to load absence data')
+
+      const leaveData = await leaveRes.json()
+      const empData = await empRes.json()
+
+      const employeesData = (empData.employees || []).map((e: {
+        id: string
+        firstName: string
+        lastName: string
+        position: string
+      }) => ({
+        id: e.id,
+        firstName: e.firstName || '',
+        lastName: e.lastName || '',
+        position: e.position || '',
+        photoURL: '',
+      }))
+
       const employeeAbsences = new Map<string, Employee>()
 
-      leaveSnapshot.docs.forEach(doc => {
-        const leaveData = doc.data()
-        const employeeId = leaveData.employeeId || leaveData.userId
-        
-        if (!employeeId) return
+      for (const leave of leaveData.requests || []) {
+        const employeeId = leave.employeeId
+        if (!employeeId) continue
 
-        const employee = employeesData.find(emp => emp.id === employeeId)
-        if (!employee) return
+        const employee = employeesData.find((emp: { id: string }) => emp.id === employeeId)
+        if (!employee) continue
 
-        const startDate = leaveData.startDate?.toDate() || new Date(leaveData.startDate)
-        const endDate = leaveData.endDate?.toDate() || new Date(leaveData.endDate)
+        const startDate = new Date(leave.startDate)
+        const endDate = new Date(leave.endDate)
         
         const startDay = startDate.getDate()
         const endDay = endDate.getDate()
 
         const absence = {
-          type: getAbsenceType(leaveData.type),
+          type: getAbsenceType(leave.type),
           startDay,
           endDay,
           startDate,
@@ -112,7 +117,7 @@ export default function WhosAwayPage() {
         }
 
         employeeAbsences.get(employeeId)!.absences.push(absence)
-      })
+      }
 
       // Add public holidays (this would typically come from a settings or holidays collection)
       const publicHolidays = getPublicHolidays(currentMonth)

@@ -15,7 +15,7 @@ import {
   serverTimestamp,
   QueryDocumentSnapshot,
   DocumentData
-} from 'firebase/firestore'
+} from '@/lib/data/firestore'
 import { db } from './firebase'
 import { documentStorage } from './document-storage'
 import { sendDocumentUpdateNotification } from './notifications'
@@ -68,7 +68,7 @@ export class DocumentService {
         department: formData.department,
         
         // Lifecycle
-        status: 'active',
+        status: DocumentStatus.ACTIVE,
         version: 1,
         
         // Metadata
@@ -78,7 +78,7 @@ export class DocumentService {
         
         // Workflow
         requiresApproval: formData.requiresApproval,
-        approvalStatus: formData.requiresApproval ? 'pending' : undefined,
+        approvalStatus: formData.requiresApproval ? ApprovalStatus.PENDING : undefined,
         
         // Tracking
         createdAt: new Date(),

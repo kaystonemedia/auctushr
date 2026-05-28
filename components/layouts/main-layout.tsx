@@ -3,14 +3,17 @@
 import { useNewAuth } from '@/contexts/new-auth-context'
 import { Sidebar } from '@/components/sidebar'
 import { Header } from '@/components/header'
+import { HeaderLogo } from '@/components/ui/logo'
 import { usePathname } from 'next/navigation'
 import { useState, useEffect } from 'react'
 import { Loader2, Menu, X } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 export function MainLayout({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useNewAuth()
   const pathname = usePathname()
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   
   const isAuthPage = pathname.startsWith('/auth')
   const isTestPage = pathname === '/test-auth'
@@ -20,16 +23,17 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
     setIsMobileMenuOpen(false)
   }, [pathname])
 
+  // For auth pages, return children without any layout (no header, no sidebar)
+  if (isAuthPage) {
+    return <>{children}</>
+  }
+
   if (isLoading) {
     return (
       <div className="flex h-screen items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     )
-  }
-
-  if (isAuthPage) {
-    return children
   }
 
   // If no user, don't render the layout
@@ -49,17 +53,17 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="h-screen flex overflow-hidden bg-gray-50">
+    <div className="h-screen flex overflow-hidden bg-gray-50" style={{ marginTop: '0' }}>
       {/* Desktop Sidebar - Only shows on md screens and larger */}
-      <div className="hidden md:flex md:flex-shrink-0 md:w-64 bg-white border-r border-gray-200">
-        <div className="flex flex-col w-full">
-          <div className="flex-1 flex flex-col pt-5 pb-4 overflow-y-auto">
-            <div className="flex items-center flex-shrink-0 px-4 mb-5">
-              <h2 className="text-lg font-semibold text-gray-900">Navigation</h2>
-            </div>
-            <Sidebar activePath={pathname} />
-          </div>
-        </div>
+      <div className={cn(
+        "hidden md:flex md:flex-shrink-0 transition-all duration-300",
+        isSidebarCollapsed ? "md:w-16" : "md:w-64"
+      )}>
+        <Sidebar 
+          activePath={pathname} 
+          isCollapsed={isSidebarCollapsed}
+          onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+        />
       </div>
 
       {/* Mobile Sidebar Overlay - Only shows when menu is open on small screens */}
@@ -72,7 +76,7 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
           />
           
           {/* Sidebar */}
-          <div className="relative flex-1 flex flex-col max-w-xs w-full bg-white">
+          <div className="relative flex-1 flex flex-col max-w-xs w-full">
             {/* Close button */}
             <div className="absolute top-0 right-0 -mr-12 pt-2">
               <button
@@ -84,14 +88,11 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
             </div>
             
             {/* Sidebar content */}
-            <div className="flex-1 h-0 pt-5 pb-4 overflow-y-auto">
-              <div className="flex-shrink-0 flex items-center px-4 mb-5">
-                <h2 className="text-lg font-semibold text-gray-900">KayStone HR</h2>
-              </div>
-              <nav>
-                <Sidebar activePath={pathname} />
-              </nav>
-            </div>
+            <Sidebar 
+              activePath={pathname} 
+              isCollapsed={false}
+              onToggleCollapse={() => setIsMobileMenuOpen(false)}
+            />
           </div>
         </div>
       )}
@@ -113,9 +114,9 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
           <div className="flex-1 px-4 flex justify-between items-center">
             {/* Desktop title - Only shows on larger screens */}
             <div className="hidden md:flex md:items-center">
-              <h1 className="text-xl font-semibold text-gray-900">KayStone HR</h1>
+              <HeaderLogo />
               {user?.role && (
-                <span className="ml-3 px-2 py-1 text-sm font-medium text-gray-600 bg-gray-100 rounded-full">
+                <span className="ml-3 px-3 py-1 text-sm font-medium text-gray-600 bg-gray-100 rounded-md">
                   {user.role.charAt(0).toUpperCase() + user.role.slice(1)}
                 </span>
               )}
@@ -123,7 +124,7 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
             
             {/* Mobile title - Only shows on small screens */}
             <div className="md:hidden">
-              <h1 className="text-lg font-semibold text-gray-900">KayStone HR</h1>
+              <HeaderLogo size="md" />
             </div>
             
             {/* Right side content */}

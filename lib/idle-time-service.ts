@@ -1,5 +1,5 @@
 import { db } from './firebase'
-import { collection, doc, updateDoc, arrayUnion, Timestamp, addDoc } from 'firebase/firestore'
+import { collection, doc, updateDoc, arrayUnion, Timestamp, addDoc } from '@/lib/data/firestore'
 import { AttendanceRecord, AttendanceSettings } from '@/types/attendance'
 
 export class IdleTimeService {

@@ -1,8 +1,5 @@
 'use client'
-import { useState, useEffect } from "react"
 import { Clock, MapPin, CheckCircle2, XCircle, AlertCircle } from "lucide-react"
-import { db } from "@/lib/firebase"
-import { collection, query, where, getDocs, orderBy, Timestamp } from "firebase/firestore"
 import type { AttendanceRecord } from "@/types/attendance"
 
 interface AttendanceTableProps {
@@ -12,13 +9,7 @@ interface AttendanceTableProps {
   date: Date
 }
 
-export function AttendanceTable({ records, onApprove, onReject, date }: AttendanceTableProps) {
-  const [loading, setLoading] = useState(false)
-
-  if (loading) {
-    return <div className="text-center py-4">Loading attendance data...</div>
-  }
-
+export function AttendanceTable({ records, onApprove: _onApprove, onReject: _onReject, date: _date }: AttendanceTableProps) {
   return (
     <div className="overflow-x-auto">
       <table className="min-w-full divide-y divide-gray-200">
@@ -95,10 +86,15 @@ export function AttendanceTable({ records, onApprove, onReject, date }: Attendan
               <td className="px-6 py-4 whitespace-nowrap">
                 <div className="flex items-center text-sm text-gray-900">
                   <MapPin className="mr-1 h-4 w-4 text-gray-400" />
-                  {record.checkIn.location ? 
+                  {record.checkIn.location ? (
+                    record.checkIn.location.generalLocation ||
+                    [record.checkIn.location.city, record.checkIn.location.country]
+                      .filter(Boolean)
+                      .join(", ") ||
                     `${record.checkIn.location.latitude.toFixed(4)}, ${record.checkIn.location.longitude.toFixed(4)}`
-                    : 'No location data'
-                  }
+                  ) : (
+                    "No location data"
+                  )}
                 </div>
               </td>
             </tr>

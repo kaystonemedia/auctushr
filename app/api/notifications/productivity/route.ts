@@ -1,33 +1,67 @@
 import { NextResponse } from 'next/server'
-import { adminAuth } from '@/lib/firebase-admin'
-import { sendProductivityNotification } from '@/lib/notifications'
+import { authenticateRequest } from '@/lib/api-auth'
+import { supabaseAdmin } from '@/lib/supabase/admin'
 
 export async function POST(request: Request) {
   try {
-    // Verify authentication
-    const authHeader = request.headers.get('authorization')
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const authResult = await authenticateRequest(request)
+    if (authResult.error || !authResult.user) {
+      return authResult.error || NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const token = authHeader.split('Bearer ')[1]
-    const decodedToken = await adminAuth.verifyIdToken(token)
-    const userId = decodedToken.uid
+    const userId = authResult.user.profileId
 
-    // Get request body
     const { type, data, timestamp } = await request.json()
 
     if (!type || !userId) {
       return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
     }
 
-    // Send productivity notification
-    await sendProductivityNotification(userId, type, {
-      ...data,
-      timestamp: timestamp || new Date().toISOString()
+    const { error } = await supabaseAdmin
+      .from('notifications')
+      .insert({
+        user_id: userId,
+        type: 'custom',
+        title: `Productivity: ${type}`,
+        message: `Productivity event: ${type}`,
+        severity: 'info',
+        read: false,
+        data: {
+          eventType: type,
+          ...data,
+          timestamp: timestamp || new Date().toISOString()
+        }
+      })
+
+    if (error) {
+      throw error
+    }
+
+    await supabaseAdmin.from('audit_logs').insert({
+      actor_id: authResult.user.profileId,
+      action: 'notifications.productivity',
+      entity_type: 'notification',
+      details: {
+        type,
+        targetUserId: userId,
+        payload: {
+          ...data,
+          timestamp: timestamp || new Date().toISOString()
+        }
+      }
     })
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({
+      success: true,
+      notification: {
+        type,
+        userId,
+        payload: {
+      ...data,
+      timestamp: timestamp || new Date().toISOString()
+        }
+      }
+    })
   } catch (error) {
     console.error('Error processing productivity notification:', error)
     return NextResponse.json(

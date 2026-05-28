@@ -1,54 +1,36 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { adminDb } from '@/lib/firebase-admin'
+import { supabaseAdmin } from '@/lib/supabase/admin'
+import { requireRole } from '@/lib/api-auth'
 
 export async function GET(request: NextRequest) {
+  const auth = await requireRole(request, ['admin'])
+  if (auth.error) return auth.error
+
   try {
-    console.log('=== Testing Firebase Admin DB with Static Imports ===')
-    
-    console.log('1. adminDb imported:', !!adminDb)
-    console.log('2. adminDb type:', typeof adminDb)
-    console.log('3. adminDb keys:', Object.keys(adminDb))
-    console.log('4. Has collection method:', typeof (adminDb as any).collection === 'function')
-    
-    if (!adminDb) {
-      return NextResponse.json({
-        success: false,
-        error: 'adminDb is null or undefined'
-      })
-    }
-    
+    void request
     try {
-      const testCollection = (adminDb as any).collection('test')
-      console.log('6. Collection reference created:', !!testCollection)
-      
-      const testSnapshot = await testCollection.limit(1).get()
-      console.log('8. Query executed successfully, size:', testSnapshot.size)
-      
+      const { data: sampleRows, error: sampleError } = await supabaseAdmin
+        .from('profiles')
+        .select('id, email, role')
+        .limit(1)
+      if (sampleError) throw sampleError
+
       return NextResponse.json({
         success: true,
-        message: 'Firebase Admin DB is working correctly with Admin SDK APIs',
+        message: 'Supabase DB is working correctly with static import',
         tests: {
-          adminDbImported: true,
-          adminDbType: typeof adminDb,
-          hasCollectionMethod: typeof (adminDb as any).collection === 'function',
-          collectionReferenceCreated: true,
-          queryCreated: true,
+          supabaseImported: true,
           queryExecuted: true,
-          snapshotSize: testSnapshot.size
+          sampleSize: sampleRows?.length || 0
         }
       })
-      
     } catch (error) {
-      console.error('Error in collection/query test:', error)
+      console.error('Error in supabase query test:', error)
       return NextResponse.json({
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',
         tests: {
-          adminDbImported: true,
-          adminDbType: typeof adminDb,
-          hasCollectionMethod: typeof (adminDb as any).collection === 'function',
-          collectionReferenceCreated: false,
-          queryCreated: false,
+          supabaseImported: true,
           queryExecuted: false
         }
       })

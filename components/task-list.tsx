@@ -1,8 +1,14 @@
 import { Task } from '@/types/task'
-import { Timestamp } from 'firebase/firestore'
 
 interface TaskListProps {
   tasks: Task[]
+}
+
+const resolveDate = (value: unknown): Date => {
+  if (value && typeof value === 'object' && 'toDate' in value && typeof (value as { toDate?: unknown }).toDate === 'function') {
+    return ((value as { toDate: () => Date }).toDate())
+  }
+  return new Date(value as string | number | Date)
 }
 
 export function TaskList({ tasks }: TaskListProps) {
@@ -20,7 +26,7 @@ export function TaskList({ tasks }: TaskListProps) {
           <div>
             <h3 className="font-medium">{task.title}</h3>
             <p className="text-sm text-gray-500">
-              Due: {new Date(task.dueDate instanceof Timestamp ? task.dueDate.toDate() : task.dueDate).toLocaleDateString()}
+              Due: {resolveDate(task.dueDate).toLocaleDateString()}
             </p>
           </div>
           <div className="flex items-center gap-2">

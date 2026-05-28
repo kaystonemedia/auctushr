@@ -7,8 +7,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Task, TaskStatus } from '@/types/task'
-import { collection, query, where, onSnapshot, orderBy, getDocs } from 'firebase/firestore'
-import { db } from '@/lib/firebase'
 import { CheckCircle, Clock, Play, ThumbsUp, ListTodo, TrendingUp } from 'lucide-react'
 
 interface TaskStats {
@@ -34,102 +32,38 @@ export default function MyTasksPage() {
   })
   const [activeTab, setActiveTab] = useState('all')
 
+  const loadTasks = async () => {
+    if (!user?.id) return
+    try {
+      setLoading(true)
+      const res = await fetch(`/api/tasks?assigneeId=${user.id}&limit=100`, {
+        credentials: 'include',
+      })
+      if (!res.ok) throw new Error('Failed to load tasks')
+      const data = await res.json()
+      const tasksData = (data.tasks || []).map((task: Task) => ({
+        ...task,
+        dueDate: task.dueDate ? new Date(task.dueDate) : new Date(),
+        createdAt: task.createdAt ? new Date(task.createdAt) : new Date(),
+        updatedAt: task.updatedAt ? new Date(task.updatedAt) : new Date(),
+        completedAt: task.completedAt ? new Date(task.completedAt) : undefined,
+      })) as Task[]
+      tasksData.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      setTasks(tasksData)
+      calculateStats(tasksData)
+    } catch (error) {
+      console.error('Error fetching user tasks:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   useEffect(() => {
     if (!user?.id) return
-
-    // First, try to get the user's Firestore document ID
-    const fetchUserTasks = async () => {
-      try {
-        // Get both Firebase Auth UID and Firestore document ID for querying
-        const userIds = [user.id] // Start with Firebase Auth UID
-        
-        // Add Firestore document ID if available
-        if (user.firestoreId) {
-          userIds.push(user.firestoreId)
-        } else {
-          // If firestoreId not available, try to find it by email
-          const employeeQuery = query(
-            collection(db, 'employees'),
-            where('email', '==', user.email),
-            orderBy('createdAt', 'desc')
-          )
-          const employeeSnapshot = await getDocs(employeeQuery)
-          if (!employeeSnapshot.empty) {
-            userIds.push(employeeSnapshot.docs[0].id)
-          }
-        }
-
-        console.log('Querying tasks for user IDs:', userIds)
-
-        // Create queries for all possible user IDs
-        const taskQueries = userIds.map(userId => 
-          query(
-            collection(db, 'tasks'),
-            where('assignedTo', '==', userId),
-            orderBy('createdAt', 'desc')
-          )
-        )
-
-        // Set up real-time listeners for all queries
-        const unsubscribes: (() => void)[] = []
-        const allTasks = new Map<string, any>()
-
-        const updateTasks = () => {
-          const tasksData = Array.from(allTasks.values()).map(doc => ({
-            id: doc.id,
-            ...doc.data(),
-            dueDate: doc.data().dueDate?.toDate() || new Date(),
-            createdAt: doc.data().createdAt?.toDate() || new Date(),
-            updatedAt: doc.data().updatedAt?.toDate() || new Date(),
-            completedAt: doc.data().completedAt?.toDate() || null,
-            acceptedAt: doc.data().acceptedAt?.toDate() || null,
-            startedAt: doc.data().startedAt?.toDate() || null
-          })) as Task[]
-
-          // Sort by createdAt descending
-          tasksData.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
-
-          setTasks(tasksData)
-          calculateStats(tasksData)
-          setLoading(false)
-        }
-
-        // Set up listeners for each query
-        taskQueries.forEach((tasksQuery, index) => {
-          const unsubscribe = onSnapshot(tasksQuery, (snapshot) => {
-            // Update tasks from this query
-            snapshot.docs.forEach(doc => {
-              allTasks.set(doc.id, doc)
-            })
-            
-            // Remove tasks that no longer exist in any query
-            snapshot.docChanges().forEach(change => {
-              if (change.type === 'removed') {
-                allTasks.delete(change.doc.id)
-              }
-            })
-
-            updateTasks()
-          })
-          unsubscribes.push(unsubscribe)
-        })
-
-        // Return cleanup function
-        return () => {
-          unsubscribes.forEach(unsub => unsub())
-        }
-      } catch (error) {
-        console.error('Error setting up task queries:', error)
-        setLoading(false)
-        return () => {}
-      }
-    }
-
-    fetchUserTasks().then(cleanup => {
-      // Store cleanup function
-      return cleanup
-    })
-  }, [user?.id, user?.email, user?.firestoreId])
+    loadTasks()
+    const interval = setInterval(loadTasks, 45_000)
+    return () => clearInterval(interval)
+  }, [user?.id])
 
   const calculateStats = (tasks: Task[]) => {
     const now = new Date()
@@ -145,13 +79,19 @@ export default function MyTasksPage() {
   }
 
   const handleTaskUpdate = (updatedTask: Task) => {
-    setTasks(prev => prev.map(task => 
-      task.id === updatedTask.id ? updatedTask : task
-    ))
+    setTasks((prev) => {
+      const next = prev.map((task) => (task.id === updatedTask.id ? updatedTask : task))
+      calculateStats(next)
+      return next
+    })
   }
 
   const handleTaskDelete = (taskId: string) => {
-    setTasks(prev => prev.filter(task => task.id !== taskId))
+    setTasks((prev) => {
+      const next = prev.filter((task) => task.id !== taskId)
+      calculateStats(next)
+      return next
+    })
   }
 
   const getFilteredTasks = () => {

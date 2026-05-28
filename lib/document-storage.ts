@@ -13,13 +13,44 @@
 
 import { uploadFile as supabaseUpload, deleteFile as supabaseDelete, getFileUrl as supabaseGetUrl } from './supabase-storage'
 // import { uploadFile as cloudinaryUpload, deleteFile as cloudinaryDelete, getFileUrl as cloudinaryGetUrl } from './cloudinary-storage'
-import { doc, updateDoc, getDoc, setDoc, deleteDoc } from 'firebase/firestore'
+import { doc, updateDoc, getDoc, setDoc, deleteDoc, collection, query, where, orderBy, getDocs, limit } from '@/lib/data/firestore'
 import { db } from './firebase'
+import { safeLogAudit } from '@/lib/audit'
 
 export type StorageProvider = 'supabase' | 'cloudinary' | 'firestore' | 'firebase'
 
 // Configuration - using Supabase as primary provider for demo phase
 const STORAGE_PROVIDER: StorageProvider = process.env.NEXT_PUBLIC_STORAGE_PROVIDER as StorageProvider || 'supabase'
+
+// File validation constants
+const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50MB
+const ALLOWED_MIME_TYPES = [
+  // Documents
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation', // .pptx
+  // Images
+  'image/jpeg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+  // Text
+  'text/plain',
+  'text/csv',
+  // Archives
+  'application/zip',
+  'application/x-zip-compressed',
+  'application/x-rar-compressed'
+]
+
+export interface UploadOptions {
+  ownerId?: string
+  department?: string
+}
 
 export interface DocumentUploadResult {
   url: string
@@ -40,13 +71,43 @@ export interface DocumentMetadata {
   uploadedBy: string
   uploadedAt: Date
   lastAccessed?: Date
+  // Ownership & Access
+  ownerId?: string // Employee ID who owns this document
+  department?: string // Department restriction
+  version?: number // Version number for re-uploads
+  previousVersionId?: string // Link to previous version
 }
 
 class DocumentStorageService {
   private provider: StorageProvider = STORAGE_PROVIDER
 
-  async uploadDocument(file: File, path: string, uploadedBy: string): Promise<DocumentUploadResult> {
+  /**
+   * Validate file before upload
+   */
+  private validateFile(file: File): void {
+    // Check file size
+    if (file.size > MAX_FILE_SIZE) {
+      throw new Error(`File size (${(file.size / 1024 / 1024).toFixed(2)}MB) exceeds maximum allowed size of ${MAX_FILE_SIZE / 1024 / 1024}MB`)
+    }
+
+    // Check MIME type
+    if (!ALLOWED_MIME_TYPES.includes(file.type)) {
+      throw new Error(`File type "${file.type}" is not allowed. Allowed types: ${ALLOWED_MIME_TYPES.join(', ')}`)
+    }
+
+    // Additional validation: check file extension as fallback
+    const fileExtension = file.name.split('.').pop()?.toLowerCase()
+    const allowedExtensions = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'jpg', 'jpeg', 'png', 'gif', 'webp', 'txt', 'csv', 'zip', 'rar']
+    if (fileExtension && !allowedExtensions.includes(fileExtension)) {
+      throw new Error(`File extension ".${fileExtension}" is not allowed`)
+    }
+  }
+
+  async uploadDocument(file: File, path: string, uploadedBy: string, options: UploadOptions = {}): Promise<DocumentUploadResult> {
     try {
+      // Validate file
+      this.validateFile(file)
+
       let url: string
       let filePath: string
 
@@ -87,6 +148,25 @@ class DocumentStorageService {
         provider: this.provider
       }
 
+      // Check if this is a re-upload (same name, same owner)
+      let version = 1
+      let previousVersionId: string | undefined = undefined
+      if (options.ownerId) {
+        const existingQuery = query(
+          collection(db, 'documents'),
+          where('name', '==', file.name),
+          where('ownerId', '==', options.ownerId),
+          orderBy('version', 'desc'),
+          limit(1)
+        )
+        const existingSnapshot = await getDocs(existingQuery)
+        if (!existingSnapshot.empty) {
+          const existingDoc = existingSnapshot.docs[0].data() as DocumentMetadata
+          version = (existingDoc.version || 1) + 1
+          previousVersionId = existingDoc.id
+        }
+      }
+
       // Store metadata in Firestore
       const metadata: DocumentMetadata = {
         id: this.generateDocumentId(),
@@ -97,10 +177,32 @@ class DocumentStorageService {
         path: filePath,
         provider: this.provider,
         uploadedBy,
-        uploadedAt: new Date()
+        uploadedAt: new Date(),
+        ownerId: options.ownerId || uploadedBy, // Default to uploader if not specified
+        department: options.department,
+        version,
+        previousVersionId
       }
 
       await setDoc(doc(db, 'documents', metadata.id), metadata)
+
+      // Audit: document upload
+      await safeLogAudit('document.upload', {
+        actorId: uploadedBy,
+        targetType: 'document',
+        targetId: metadata.id,
+        outcome: 'success',
+        metadata: {
+          path: filePath,
+          provider: this.provider,
+          size: file.size,
+          type: file.type,
+          ownerId: metadata.ownerId,
+          department: metadata.department,
+          version: metadata.version,
+          previousVersionId: metadata.previousVersionId
+        }
+      })
 
       return result
     } catch (error) {
@@ -143,6 +245,17 @@ class DocumentStorageService {
 
       // Delete metadata from Firestore
       await deleteDoc(docRef)
+
+      // Audit: document delete (actor unknown at this level)
+      await safeLogAudit('document.delete', {
+        targetType: 'document',
+        targetId: documentId,
+        outcome: 'success',
+        metadata: {
+          provider: metadata.provider,
+          path: metadata.path
+        }
+      })
     } catch (error) {
       console.error('Error deleting document:', error)
       throw error

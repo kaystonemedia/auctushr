@@ -1,15 +1,12 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useAuth } from '@/contexts/auth-context'
-import { db } from '@/lib/firebase'
-import { collection, query, where, getDocs, updateDoc, doc } from 'firebase/firestore'
+import { useNewAuth } from '@/contexts/new-auth-context'
 import { toast } from 'react-hot-toast'
-import { Clock, MapPin, Smartphone, CheckCircle, XCircle } from 'lucide-react'
-import { LocationService } from '@/lib/location-service'
+import { Clock, MapPin, Smartphone, XCircle } from 'lucide-react'
 import { AttendanceSettings, AttendanceRecord } from '@/types/attendance'
-import { LocationSettings } from '@/types/settings'
 import { sendEarlyDepartureNotification } from '@/lib/notifications'
+import { captureLocation } from '@/lib/location-helper'
 
 interface Location {
   latitude: number
@@ -18,29 +15,17 @@ interface Location {
 }
 
 interface OfficeLocation {
-  id: string;
-  name: string;
-  coordinates: {
-    lat: number;
-    lng: number;
-  };
-  radius: number;
+  id: string
+  name: string
+  coordinates: { lat: number; lng: number }
+  radius: number
 }
 
 interface AttendanceCheckOutProps {
-  record: any // TODO: Add proper type for record
+  record: AttendanceRecord
   onSuccess: () => void
 }
 
-// Add Ghana bounds for validation
-const GHANA_BOUNDS = {
-  north: 11.17, // Northernmost point
-  south: 4.74,  // Southernmost point
-  east: 1.19,   // Easternmost point
-  west: -3.25   // Westernmost point
-}
-
-// Placeholder settings (replace with real settings as needed)
 const defaultAttendanceSettings: AttendanceSettings = {
   workingHours: { start: '09:00', end: '18:00' },
   idleThreshold: 15,
@@ -53,7 +38,7 @@ const defaultAttendanceSettings: AttendanceSettings = {
 }
 
 export function AttendanceCheckOut({ record, onSuccess }: AttendanceCheckOutProps) {
-  const { user } = useAuth()
+  const { user } = useNewAuth()
   const [loading, setLoading] = useState(false)
   const [location, setLocation] = useState<Location | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -61,258 +46,147 @@ export function AttendanceCheckOut({ record, onSuccess }: AttendanceCheckOutProp
     userAgent: '',
     platform: '',
     language: '',
-    screenResolution: ''
+    screenResolution: '',
   })
   const [officeLocations, setOfficeLocations] = useState<OfficeLocation[]>([])
   const [nearestOffice, setNearestOffice] = useState<OfficeLocation | null>(null)
 
   useEffect(() => {
-    // Get device information
     setDeviceInfo({
       userAgent: navigator.userAgent,
       platform: navigator.platform,
       language: navigator.language,
-      screenResolution: `${window.screen.width}x${window.screen.height}`
+      screenResolution: `${window.screen.width}x${window.screen.height}`,
     })
 
-    // Get current location
     if ('geolocation' in navigator) {
       navigator.geolocation.getCurrentPosition(
         (position) => {
           setLocation({
             latitude: position.coords.latitude,
             longitude: position.coords.longitude,
-            accuracy: position.coords.accuracy
+            accuracy: position.coords.accuracy,
           })
         },
-        (error) => {
-          setError('Unable to get your location. Please enable location services.')
-          console.error('Geolocation error:', error)
-        }
+        () => setError('Unable to get your location. Check-in/out will still work without it.')
       )
-    } else {
-      setError('Geolocation is not supported by your browser.')
     }
 
-    // Fetch office locations
-    const fetchOfficeLocations = async () => {
-      try {
-        const q = query(collection(db, "officeLocations"))
-        const snapshot = await getDocs(q)
-        const locations = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        })) as OfficeLocation[]
-        setOfficeLocations(locations)
-      } catch (error) {
-        console.error("Error fetching office locations:", error)
-      }
-    }
-    fetchOfficeLocations()
+    fetch('/api/attendance/office-locations', { credentials: 'include' })
+      .then((res) => (res.ok ? res.json() : { locations: [] }))
+      .then((data) => setOfficeLocations(data.locations || []))
+      .catch(console.error)
   }, [])
 
-  const isWithinGhana = (lat: number, lng: number): boolean => {
-    return lat >= GHANA_BOUNDS.south && 
-           lat <= GHANA_BOUNDS.north && 
-           lng >= GHANA_BOUNDS.west && 
-           lng <= GHANA_BOUNDS.east
-  }
-
-  const findNearestOffice = (lat: number, lng: number): OfficeLocation | null => {
-    if (officeLocations.length === 0) return null
-
+  useEffect(() => {
+    if (!location || officeLocations.length === 0) return
     let nearest: OfficeLocation | null = null
     let minDistance = Infinity
-
-    officeLocations.forEach(office => {
-      const distance = calculateDistance(
-        lat,
-        lng,
+    officeLocations.forEach((office) => {
+      const d = calculateDistance(
+        location.latitude,
+        location.longitude,
         office.coordinates.lat,
         office.coordinates.lng
       )
-      if (distance < minDistance) {
-        minDistance = distance
+      if (d < minDistance) {
+        minDistance = d
         nearest = office
       }
     })
-
-    return nearest
-  }
-
-  const validateLocation = async () => {
-    if (!location) return false
-
-    try {
-      // First check if location is within Ghana
-      if (!isWithinGhana(location.latitude, location.longitude)) {
-        setError('Location must be within Ghana.')
-        return false
-      }
-
-      // Find nearest office for reference
-      const nearest = findNearestOffice(location.latitude, location.longitude)
-      setNearestOffice(nearest)
-
-      // If there are office locations, check if user is near any of them
-      if (officeLocations.length > 0) {
-        const isNearOffice = officeLocations.some(office => {
-          const distance = calculateDistance(
-            location.latitude,
-            location.longitude,
-            office.coordinates.lat,
-            office.coordinates.lng
-          )
-          return distance <= office.radius
-        })
-
-        if (!isNearOffice) {
-          setError('You are not near any registered office location. Please check out from a valid location.')
-          return false
-        }
-      }
-
-      return true
-    } catch (error) {
-      console.error('Error validating location:', error)
-      return false
-    }
-  }
+    setNearestOffice(nearest)
+  }, [location, officeLocations])
 
   const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
-    const R = 6371e3 // Earth's radius in meters
+    const R = 6371e3
     const φ1 = (lat1 * Math.PI) / 180
     const φ2 = (lat2 * Math.PI) / 180
     const Δφ = ((lat2 - lat1) * Math.PI) / 180
     const Δλ = ((lon2 - lon1) * Math.PI) / 180
-
     const a =
-      Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-      Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2)
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-
-    return R * c // Distance in meters
+      Math.sin(Δφ / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2
+    return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)))
   }
 
   const handleCheckOut = async () => {
-    if (!user || !location) return
+    if (!user) {
+      setError('You must be logged in to check out')
+      return
+    }
+    if (record.checkOut) {
+      setError('You have already checked out today.')
+      return
+    }
 
     try {
       setLoading(true)
       setError(null)
 
-      // Validate location
-      const isValidLocation = await validateLocation()
-      if (!isValidLocation) {
-        setError('You must be at the office location to check out.')
-        return
+      let locationData: Record<string, unknown> | null = null
+      try {
+        const captured = await captureLocation()
+        if (captured) {
+          locationData = captured
+          setLocation({
+            latitude: captured.latitude,
+            longitude: captured.longitude,
+            accuracy: captured.accuracy,
+          })
+        }
+      } catch (locErr) {
+        console.warn('Location capture failed:', locErr)
       }
 
-      // Find today's attendance record
-      const today = new Date()
-      today.setHours(0, 0, 0, 0)
-      const attendanceQuery = query(
-        collection(db, 'attendance'),
-        where('employeeId', '==', user.id),
-        where('date', '>=', today)
-      )
-      const attendanceSnapshot = await getDocs(attendanceQuery)
-
-      if (attendanceSnapshot.empty) {
-        setError('No active check-in found for today.')
-        return
-      }
-
-      const attendanceDoc = attendanceSnapshot.docs[0]
-      const attendanceData = attendanceDoc.data()
-
-      // Check if already checked out
-      if (attendanceData.checkOut) {
-        setError('You have already checked out today.')
-        return
-      }
-
-      // Update attendance record with check-out information
-      const checkOutData = {
-        time: new Date(),
-        location: {
-          latitude: location.latitude,
-          longitude: location.longitude,
-          accuracy: location.accuracy
-        },
-        deviceInfo
-      }
-
-      // Calculate work duration
-      const checkInTime = new Date(attendanceData.checkIn.time)
-      const checkOutTime = new Date()
-      const workDuration = checkOutTime.getTime() - checkInTime.getTime()
-      const workHours = workDuration / (1000 * 60 * 60)
-
-      // Determine attendance status based on work hours
-      let status = attendanceData.status
-      if (workHours < 4) {
-        status = 'half_day'
-      } else if (workHours < 8) {
-        status = 'early_leave'
-      }
-
-      await updateDoc(doc(db, 'attendance', attendanceDoc.id), {
-        checkOut: checkOutData,
-        status,
-        updatedAt: new Date()
+      const res = await fetch(`/api/attendance/records/${record.id}/checkout`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          location: locationData,
+          deviceInfo,
+          idleTimeMinutes: record.idleTimeTotal || 0,
+        }),
       })
 
-      // Send notification for early departure if applicable
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}))
+        throw new Error(errBody.error || 'Failed to check out')
+      }
+
       try {
         await sendEarlyDepartureNotification(user.id, new Date(), defaultAttendanceSettings)
       } catch (notificationError) {
-        console.error('Error sending early departure notification:', notificationError)
-        // Don't fail the check-out if notification fails
+        console.error('Early departure notification failed:', notificationError)
       }
 
       toast.success('Check-out successful!')
       onSuccess()
-    } catch (error) {
-      console.error('Error checking out:', error)
-      setError('Failed to check out. Please try again.')
+    } catch (err: unknown) {
+      console.error('Error checking out:', err)
+      setError(err instanceof Error ? err.message : 'Failed to check out. Please try again.')
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-6">
-      <h3 className="text-lg font-semibold mb-4">Attendance Check-out</h3>
-      
-      {/* Location Status */}
+    <div className="rounded-lg border border-gray-200 bg-white p-6">
+      <h3 className="mb-4 text-lg font-semibold">Attendance Check-out</h3>
+
       <div className="mb-4">
         <div className="flex items-center space-x-2">
           <MapPin className="h-5 w-5 text-gray-400" />
           <span className="text-sm text-gray-600">
-            {location ? 'Location detected' : 'Getting location...'}
+            {location ? 'Location detected' : 'Getting location (optional)...'}
           </span>
         </div>
-        {location && (
-          <>
-            <p className="text-xs text-gray-500 mt-1">
-              Accuracy: {Math.round(location.accuracy)} meters
-            </p>
-            {nearestOffice && (
-              <p className="text-xs text-gray-500 mt-1">
-                Nearest office: {nearestOffice.name} ({Math.round(calculateDistance(
-                  location.latitude,
-                  location.longitude,
-                  nearestOffice.coordinates.lat,
-                  nearestOffice.coordinates.lng
-                ))}m away)
-              </p>
-            )}
-          </>
+        {location && nearestOffice && (
+          <p className="mt-1 text-xs text-gray-500">
+            Nearest office: {nearestOffice.name}
+          </p>
         )}
       </div>
 
-      {/* Device Info */}
       <div className="mb-4">
         <div className="flex items-center space-x-2">
           <Smartphone className="h-5 w-5 text-gray-400" />
@@ -320,40 +194,30 @@ export function AttendanceCheckOut({ record, onSuccess }: AttendanceCheckOutProp
         </div>
       </div>
 
-      {/* Error Message */}
       {error && (
-        <div className="mb-4 p-3 bg-red-50 text-red-700 rounded-md text-sm">
-          {error}
-        </div>
+        <div className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</div>
       )}
 
-      {/* Check-out Button */}
       <button
+        type="button"
         onClick={handleCheckOut}
-        disabled={loading || !location}
-        className={`w-full flex items-center justify-center px-4 py-2 rounded-md ${
-          loading || !location
-            ? 'bg-gray-100 text-gray-400'
-            : 'bg-red-500 text-white hover:bg-red-600'
+        disabled={loading}
+        className={`flex w-full items-center justify-center rounded-md px-4 py-2 ${
+          loading ? 'bg-gray-100 text-gray-400' : 'bg-red-500 text-white hover:bg-red-600'
         }`}
       >
         {loading ? (
           <>
-            <Clock className="h-5 w-5 mr-2 animate-spin" />
+            <Clock className="mr-2 h-5 w-5 animate-spin" />
             Checking out...
-          </>
-        ) : !location ? (
-          <>
-            <Clock className="h-5 w-5 mr-2" />
-            Waiting for location...
           </>
         ) : (
           <>
-            <XCircle className="h-5 w-5 mr-2" />
+            <XCircle className="mr-2 h-5 w-5" />
             Check Out
           </>
         )}
       </button>
     </div>
   )
-} 
+}

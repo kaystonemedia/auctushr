@@ -2,17 +2,15 @@
 
 import { useState, useEffect } from 'react'
 import { useNewAuth } from '@/contexts/new-auth-context'
-import { db } from '@/lib/firebase'
-import { collection, query, where, getDocs } from 'firebase/firestore'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Calendar, Clock, CheckCircle2, XCircle, AlertCircle } from "lucide-react"
+import { Calendar, Clock, CheckCircle2, XCircle, AlertCircle, FileText } from "lucide-react"
 import Link from "next/link"
 
 interface AttendanceRecord {
   status: 'present' | 'late' | 'absent'
   date: Date
-  uid: string
+  employeeId: string
 }
 
 interface MonthlyStats {
@@ -36,41 +34,38 @@ export default function EmployeeDashboard() {
       }
 
       try {
-        // Get today's attendance
         const today = new Date()
-        today.setHours(0, 0, 0, 0)
-        const todayEnd = new Date(today)
-        todayEnd.setHours(23, 59, 59, 999)
-
-        const attendanceQuery = query(
-          collection(db, 'attendance'),
-          where('uid', '==', user.id),
-          where('date', '>=', today),
-          where('date', '<=', todayEnd)
-        )
-
-        const attendanceSnapshot = await getDocs(attendanceQuery)
-        if (!attendanceSnapshot.empty) {
-          setTodayAttendance(attendanceSnapshot.docs[0].data() as AttendanceRecord)
-        }
-
-        // Get monthly stats
         const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1)
         const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0)
+        const [todayRes, monthlyRes] = await Promise.all([
+          fetch(`/api/attendance/records?employeeId=${user.id}&date=${today.toISOString().slice(0, 10)}`, {
+            credentials: 'include',
+          }),
+          fetch(
+            `/api/attendance/records?employeeId=${user.id}&fromDate=${startOfMonth.toISOString().slice(0, 10)}&toDate=${endOfMonth.toISOString().slice(0, 10)}`,
+            { credentials: 'include' }
+          ),
+        ])
 
-        const monthlyQuery = query(
-          collection(db, 'attendance'),
-          where('uid', '==', user.id),
-          where('date', '>=', startOfMonth),
-          where('date', '<=', endOfMonth)
-        )
+        const todayData = todayRes.ok ? await todayRes.json() : { records: [] }
+        const monthlyData = monthlyRes.ok ? await monthlyRes.json() : { records: [] }
+        const todayRecords = todayData.records || []
+        const monthlyRecords = monthlyData.records || []
 
-        const monthlySnapshot = await getDocs(monthlyQuery)
+        if (todayRecords.length > 0) {
+          setTodayAttendance({
+            ...todayRecords[0],
+            date: new Date(todayRecords[0].date),
+          } as AttendanceRecord)
+        } else {
+          setTodayAttendance(null)
+        }
+
         const stats = {
-          totalDays: monthlySnapshot.size,
-          presentDays: monthlySnapshot.docs.filter(doc => doc.data().status === 'present').length,
-          absentDays: monthlySnapshot.docs.filter(doc => doc.data().status === 'absent').length,
-          lateDays: monthlySnapshot.docs.filter(doc => doc.data().status === 'late').length,
+          totalDays: monthlyRecords.length,
+          presentDays: monthlyRecords.filter((r: { status: string }) => r.status === 'present').length,
+          absentDays: monthlyRecords.filter((r: { status: string }) => r.status === 'absent').length,
+          lateDays: monthlyRecords.filter((r: { status: string }) => r.status === 'late').length,
         } as MonthlyStats
         setMonthlyStats(stats)
       } catch (error) {
@@ -103,6 +98,12 @@ export default function EmployeeDashboard() {
             <Link href="/attendance">
               <Calendar className="h-4 w-4 mr-2" />
               View Attendance
+            </Link>
+          </Button>
+          <Button variant="outline" asChild>
+            <Link href="/payslip">
+              <FileText className="h-4 w-4 mr-2" />
+              View Payslips
             </Link>
           </Button>
         </div>
@@ -196,6 +197,18 @@ export default function EmployeeDashboard() {
                 <Link href="/attendance">
                   <Clock className="h-4 w-4 mr-2" />
                   Check Attendance
+                </Link>
+              </Button>
+              <Button variant="outline" className="h-auto py-4" asChild>
+                <Link href="/payslip">
+                  <FileText className="h-4 w-4 mr-2" />
+                  View Payslips
+                </Link>
+              </Button>
+              <Button variant="outline" className="h-auto py-4" asChild>
+                <Link href="/profile">
+                  <FileText className="h-4 w-4 mr-2" />
+                  Update Profile
                 </Link>
               </Button>
             </div>

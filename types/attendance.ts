@@ -10,6 +10,10 @@ export interface AttendanceRecord {
     location?: {
       latitude: number;
       longitude: number;
+      accuracy?: number;
+      generalLocation?: string; // e.g., "Accra, Ghana" or "New York, United States"
+      city?: string;
+      country?: string;
       address?: string;
     };
     deviceInfo?: {
@@ -23,6 +27,10 @@ export interface AttendanceRecord {
     location?: {
       latitude: number;
       longitude: number;
+      accuracy?: number;
+      generalLocation?: string; // e.g., "Accra, Ghana" or "New York, United States"
+      city?: string;
+      country?: string;
       address?: string;
     };
     deviceInfo?: {
@@ -37,6 +45,11 @@ export interface AttendanceRecord {
     endTime: Date;
     duration: number; // in minutes
   }[];
+  // Calculated fields for timesheet reporting
+  totalHours?: number; // Total hours from clock in to clock out
+  activeTime?: number; // Active time in minutes (total time - idle time)
+  idleTimeTotal?: number; // Total idle time in minutes
+  idleTimeSLAStatus?: 'normal' | 'warning' | 'exceeded'; // SLA status based on threshold
   flags?: {
     type: 'irregular_hours' | 'multiple_idle_periods' | 'location_mismatch' | 'device_change';
     description: string;
@@ -101,6 +114,7 @@ export interface AttendanceSettings {
     end: string;
   };
   idleThreshold: number; // minutes
+  idleTimeSLAThreshold: number; // minutes - threshold for SLA (default 2-3 minutes)
   maxIdlePeriods: number;
   allowedLateMinutes: number;
   locationRadius: number; // meters
@@ -222,4 +236,35 @@ export interface AttendanceAnalytics {
       predictedLateArrivals: number;
     };
   };
+}
+
+// Timesheet summary for daily/weekly/bi-weekly reports
+export interface TimesheetSummary {
+  employeeId: string;
+  employeeName: string;
+  period: {
+    start: Date;
+    end: Date;
+    type: 'daily' | 'weekly' | 'bi-weekly';
+  };
+  records: AttendanceRecord[];
+  totals: {
+    totalDays: number;
+    totalHours: number; // Total clocked hours
+    activeTime: number; // Total active time in minutes
+    idleTime: number; // Total idle time in minutes
+    averageHoursPerDay: number;
+    averageActiveTimePerDay: number; // in minutes
+    averageIdleTimePerDay: number; // in minutes
+  };
+  breakdown: Array<{
+    date: Date;
+    clockIn: Date | null;
+    clockOut: Date | null;
+    totalHours: number;
+    activeTime: number; // in minutes
+    idleTime: number; // in minutes
+    status: AttendanceRecord['status'];
+    approvalStatus: AttendanceRecord['approvalStatus'];
+  }>;
 } 

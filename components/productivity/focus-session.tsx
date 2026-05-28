@@ -100,7 +100,7 @@ export function FocusSessionComponent() {
       setLoading(true)
       const mockSession: FocusSession = {
         id: `session-${Date.now()}`,
-        userId: (user as any).uid || 'demo-user',
+        userId: user.id || 'demo-user',
         startTime: new Date(),
         endTime: new Date(),
         duration: 0,

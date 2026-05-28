@@ -1,9 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useAuth } from '@/contexts/auth-context'
-import { db } from '@/lib/firebase'
-import { collection, addDoc, query, where, getDocs, updateDoc, doc } from 'firebase/firestore'
+import { useNewAuth } from '@/contexts/new-auth-context'
 import { Button } from '@/components/ui/button'
 import { Calendar, Clock, Users } from 'lucide-react'
 import { toast } from 'react-hot-toast'
@@ -37,7 +35,7 @@ interface ShiftSchedulerProps {
 }
 
 export function ShiftScheduler({ employeeId, departmentId, isManager = false }: ShiftSchedulerProps) {
-  const { user } = useAuth()
+  const { user } = useNewAuth()
   const [loading, setLoading] = useState(false)
   const [showDialog, setShowDialog] = useState(false)
   const [currentShift, setCurrentShift] = useState<ShiftSchedule | null>(null)
@@ -54,38 +52,18 @@ export function ShiftScheduler({ employeeId, departmentId, isManager = false }: 
     fetchCurrentShift()
   }, [employeeId, departmentId, user])
 
+  const storageKey = `shift-schedule:${departmentId || employeeId || user?.id || 'default'}`
+
   const fetchCurrentShift = async () => {
     if (!user && !employeeId && !departmentId) return
-
     try {
       setLoading(true)
-      let q;
-      
-      if (departmentId) {
-        // Fetch department-wide shift
-        q = query(
-          collection(db, 'shifts'),
-          where('departmentId', '==', departmentId),
-          where('isActive', '==', true)
-        )
-      } else {
-        // Fetch employee-specific shift
-        const targetEmployeeId = employeeId || user?.uid
-        q = query(
-          collection(db, 'shifts'),
-          where('employeeId', '==', targetEmployeeId),
-          where('isActive', '==', true)
-        )
-      }
-
-      const querySnapshot = await getDocs(q)
-      if (!querySnapshot.empty) {
-        const shiftData = querySnapshot.docs[0].data() as ShiftSchedule
-        setCurrentShift({ ...shiftData, id: querySnapshot.docs[0].id })
+      const raw = typeof window !== 'undefined' ? sessionStorage.getItem(storageKey) : null
+      if (raw) {
+        setCurrentShift(JSON.parse(raw) as ShiftSchedule)
       }
     } catch (error) {
       console.error('Error fetching shift:', error)
-      toast.error('Failed to fetch shift schedule')
     } finally {
       setLoading(false)
     }
@@ -97,21 +75,12 @@ export function ShiftScheduler({ employeeId, departmentId, isManager = false }: 
 
     try {
       setLoading(true)
-      const targetEmployeeId = employeeId || user.uid
-
-      // If there's an existing active shift, deactivate it
-      if (currentShift) {
-        await updateDoc(doc(db, 'shifts', currentShift.id), {
-          isActive: false,
-          effectiveTo: new Date()
-        })
-      }
-
-      // Create new shift schedule
-      const shiftData: Omit<ShiftSchedule, 'id'> = {
+      const targetEmployeeId = employeeId || user.id
+      const shiftData: ShiftSchedule = {
+        id: `local-${Date.now()}`,
         employeeId: departmentId ? undefined : targetEmployeeId,
         departmentId: departmentId,
-        employeeName: user.name,
+        employeeName: user.name || user.email || '',
         shiftType: formData.shiftType as ShiftSchedule['shiftType'],
         startTime: formData.startTime,
         endTime: formData.endTime,
@@ -120,11 +89,10 @@ export function ShiftScheduler({ employeeId, departmentId, isManager = false }: 
         effectiveFrom: new Date(formData.effectiveFrom),
         isActive: true,
         createdAt: new Date(),
-        updatedAt: new Date()
+        updatedAt: new Date(),
       }
-
-      await addDoc(collection(db, 'shifts'), shiftData)
-      await fetchCurrentShift()
+      sessionStorage.setItem(storageKey, JSON.stringify(shiftData))
+      setCurrentShift(shiftData)
       setShowDialog(false)
       toast.success('Shift schedule updated successfully')
     } catch (error) {

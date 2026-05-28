@@ -101,7 +101,32 @@ export function detectIdleTime(record: AttendanceRecord, settings: AttendanceSet
   const idlePeriods = record.idleTime || []
   const totalIdleMinutes = idlePeriods.reduce((total, period) => total + period.duration, 0)
 
-  // Flag for excessive idle time
+  // Calculate active time (total time - idle time) in minutes
+  const totalMinutes = workDuration / (1000 * 60)
+  const activeTimeMinutes = Math.max(0, totalMinutes - totalIdleMinutes)
+  
+  // Determine idle time SLA status based on threshold from settings
+  const slaThreshold = settings.idleTimeSLAThreshold || 3 // Default to 3 minutes if not set
+  let idleTimeSLAStatus: 'normal' | 'warning' | 'exceeded' = 'normal'
+  
+  // Check if any individual idle period exceeds SLA threshold
+  const exceededPeriods = idlePeriods.filter(period => period.duration > slaThreshold)
+  if (exceededPeriods.length > 0) {
+    idleTimeSLAStatus = 'exceeded'
+    // Flag each exceeded period
+    exceededPeriods.forEach(period => {
+      flags.push({
+        type: 'multiple_idle_periods',
+        description: `Idle time exceeded SLA threshold: ${Math.round(period.duration)} minutes (threshold: ${slaThreshold} minutes)`,
+        severity: period.duration > slaThreshold * 2 ? 'high' : 'medium',
+        timestamp: period.startTime
+      })
+    })
+  } else if (totalIdleMinutes > slaThreshold) {
+    idleTimeSLAStatus = 'warning'
+  }
+
+  // Flag for excessive idle time (legacy check)
   if (totalIdleMinutes > settings.idleThreshold * settings.maxIdlePeriods) {
     flags.push({
       type: 'multiple_idle_periods',
@@ -150,6 +175,10 @@ export function detectIdleTime(record: AttendanceRecord, settings: AttendanceSet
   return {
     ...record,
     idleTime: idlePeriods,
+    totalHours: workHours,
+    activeTime: activeTimeMinutes,
+    idleTimeTotal: totalIdleMinutes,
+    idleTimeSLAStatus,
     flags,
     status: determineStatus(record, workHours, totalIdleMinutes, settings)
   }

@@ -1,22 +1,1301 @@
 'use client'
 
 import { createContext, useContext, useEffect, useState } from 'react'
-import { auth, db } from '@/lib/firebase'
-import { onAuthStateChanged, signOut as firebaseSignOut, User as FirebaseUser } from 'firebase/auth'
-import { doc, getDoc, collection, query, where, limit, getDocs, updateDoc } from 'firebase/firestore'
 import { toast } from 'react-hot-toast'
 import { useRouter, usePathname } from 'next/navigation'
-import { signIn } from '@/lib/firebase'
 import { UserRole } from '@/types/user'
 
 interface User {
   id: string
-  firestoreId?: string
+  uid: string
   email: string
   name: string
   role: UserRole
   department?: string
   position?: string
+  managerId?: string | null
+  phone?: string
+  mobileNumber?: string | null
+  bankAccount?: {
+    accountNumber?: string
+    bankCode?: string
+    accountName?: string
+  } | null
+  emergencyContact?: {
+    name?: string
+    relationship?: string
+    phone?: string
+  } | null
+  avatar?: string
+  createdAt?: Date
+  updatedAt?: Date
+  requiresPasswordChange: boolean
+}
+
+interface LegacyFirebaseUser {
+  uid: string
+  email: string
+  getIdToken: () => Promise<string>
+}
+
+interface AuthContextType {
+  user: User | null
+  firebaseUser: LegacyFirebaseUser | null
+  isLoading: boolean
+  error: string | null
+  login: (email: string, password: string, isPasswordSetup?: boolean) => Promise<void>
+  logout: () => Promise<void>
+  updateUser: (data: Partial<User>) => Promise<void>
+  requiresPasswordChange: boolean
+}
+
+export const NewAuthContext = createContext<AuthContextType>({
+  user: null,
+  firebaseUser: null,
+  isLoading: true,
+  error: null,
+  login: async () => {},
+  logout: async () => {},
+  updateUser: async () => {},
+  requiresPasswordChange: false
+})
+
+const roleBasedRoutes = {
+  admin: ['/dashboard', '/profile', '/employees', '/attendance', '/leave', '/payroll', '/payslip', '/documents', '/productivity', '/performance', '/settings', '/help', '/support', '/managers', '/administrators', '/tasks', '/departments', '/wellness-check-in', '/whos-away', '/test-auth', '/add-employee', '/todo', '/debug-assignments', '/fix-assignments', '/tools', '/monitoring'],
+  manager: ['/dashboard', '/profile', '/employees', '/attendance', '/leave', '/payroll', '/payslip', '/documents', '/productivity', '/performance', '/settings', '/help', '/support', '/tasks', '/departments', '/wellness-check-in', '/whos-away', '/test-auth', '/debug-assignments', '/fix-assignments', '/tools', '/monitoring'],
+  employee: ['/dashboard', '/profile', '/attendance', '/my-tasks', '/leave', '/payslip', '/help', '/support', '/test-auth', '/debug-assignments', '/fix-assignments', '/tools']
+}
+
+async function fetchCurrentUser(): Promise<User | null> {
+  const response = await fetch('/api/auth/me', { cache: 'no-store' })
+  if (!response.ok) return null
+  const payload = await response.json()
+  return payload.user || null
+}
+
+async function fetchSessionToken(): Promise<string> {
+  const response = await fetch('/api/auth/token', { cache: 'no-store' })
+  if (!response.ok) {
+    throw new Error('Unable to fetch session token')
+  }
+  const payload = await response.json()
+  return payload.token
+}
+
+export function NewAuthProvider({ children }: { children: React.ReactNode }) {
+  const router = useRouter()
+  const pathname = usePathname()
+  const [user, setUser] = useState<User | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [requiresPasswordChange, setRequiresPasswordChange] = useState(false)
+
+  useEffect(() => {
+    let isMounted = true
+    const hydrateUser = async () => {
+      try {
+        const currentUser = await fetchCurrentUser()
+        if (!isMounted) return
+        setUser(currentUser)
+        setRequiresPasswordChange(Boolean(currentUser?.requiresPasswordChange))
+      } catch (hydrateError) {
+        console.error('Failed to hydrate auth session:', hydrateError)
+        if (isMounted) setUser(null)
+      } finally {
+        if (isMounted) setIsLoading(false)
+      }
+    }
+    hydrateUser()
+    return () => {
+      isMounted = false
+    }
+  }, [])
+
+  useEffect(() => {
+    if (isLoading) return
+    if (pathname?.startsWith('/auth/') && user) {
+      router.push('/dashboard')
+      return
+    }
+    if (!pathname?.startsWith('/auth/') && !user) {
+      router.push('/auth/sign-in')
+      return
+    }
+    if (user && !pathname?.startsWith('/auth/')) {
+      if (pathname === '/unauthorized' || pathname === '/test-auth') return
+      if (pathname === '/') {
+        router.push('/dashboard')
+        return
+      }
+      const allowedRoutes = roleBasedRoutes[user.role as keyof typeof roleBasedRoutes]
+      if (allowedRoutes && !allowedRoutes.some((route) => pathname?.startsWith(route))) {
+        router.push('/unauthorized')
+      }
+    }
+  }, [user, isLoading, pathname, router])
+
+  const login = async (email: string, password: string, isPasswordSetup = false) => {
+    try {
+      setIsLoading(true)
+      setError(null)
+
+      if (isPasswordSetup) {
+        const setupResponse = await fetch('/api/auth/first-time-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password })
+        })
+        const setupPayload = await setupResponse.json()
+        if (!setupResponse.ok) {
+          throw new Error(setupPayload.error || 'Failed to set password')
+        }
+      }
+
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      })
+      const payload = await response.json()
+      if (!response.ok) {
+        const code = payload.error || 'Failed to sign in'
+        if (code === 'ACCOUNT_NOT_INITIALIZED') {
+          throw new Error('ACCOUNT_NOT_INITIALIZED')
+        }
+        throw new Error(code)
+      }
+
+      const currentUser = await fetchCurrentUser()
+      if (!currentUser) {
+        throw new Error('User profile not found')
+      }
+
+      setUser(currentUser)
+      setRequiresPasswordChange(Boolean(currentUser.requiresPasswordChange))
+
+      if (currentUser.requiresPasswordChange && !isPasswordSetup) {
+        router.push('/auth/change-password')
+      } else {
+        router.push('/dashboard')
+      }
+    } catch (loginError) {
+      if (
+        loginError instanceof Error &&
+        loginError.message === 'ACCOUNT_NOT_INITIALIZED'
+      ) {
+        throw loginError
+      }
+      const normalized = loginError instanceof Error ? loginError.message : 'Failed to sign in'
+      setError(normalized)
+      throw loginError
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const logout = async () => {
+    try {
+      setIsLoading(true)
+      await fetch('/api/auth/logout', { method: 'POST' })
+      setUser(null)
+      setRequiresPasswordChange(false)
+      toast.success('Successfully signed out')
+      router.push('/auth/sign-in')
+    } catch (logoutError) {
+      console.error('Logout error:', logoutError)
+      setError('Failed to sign out')
+      toast.error('Failed to sign out')
+      throw logoutError
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const updateUser = async (data: Partial<User>) => {
+    setUser((prev) => (prev ? { ...prev, ...data, updatedAt: new Date() } : prev))
+  }
+
+  const firebaseUser: LegacyFirebaseUser | null = user
+    ? {
+        uid: user.uid,
+        email: user.email,
+        getIdToken: fetchSessionToken
+      }
+    : null
+
+  return (
+    <NewAuthContext.Provider
+      value={{
+        user,
+        firebaseUser,
+        isLoading,
+        error,
+        login,
+        logout,
+        updateUser,
+        requiresPasswordChange
+      }}
+    >
+      {children}
+    </NewAuthContext.Provider>
+  )
+}
+
+export function useNewAuth() {
+  const context = useContext(NewAuthContext)
+  if (context === undefined) {
+    throw new Error('useNewAuth must be used within a NewAuthProvider')
+  }
+  return context
+}
+
+/*
+'use client'
+
+import { createContext, useContext, useEffect, useState } from 'react'
+import { toast } from 'react-hot-toast'
+import { useRouter, usePathname } from 'next/navigation'
+import { UserRole } from '@/types/user'
+
+interface User {
+  id: string
+  uid: string
+  email: string
+  name: string
+  role: UserRole
+  department?: string
+  position?: string
+  managerId?: string | null
+  phone?: string
+  mobileNumber?: string | null
+  bankAccount?: {
+    accountNumber?: string
+    bankCode?: string
+    accountName?: string
+  } | null
+  emergencyContact?: {
+    name?: string
+    relationship?: string
+    phone?: string
+  } | null
+  avatar?: string
+  createdAt?: Date
+  updatedAt?: Date
+  requiresPasswordChange: boolean
+}
+
+interface LegacyFirebaseUser {
+  uid: string
+  email: string
+  getIdToken: () => Promise<string>
+}
+
+interface AuthContextType {
+  user: User | null
+  firebaseUser: LegacyFirebaseUser | null
+  isLoading: boolean
+  error: string | null
+  login: (email: string, password: string, isPasswordSetup?: boolean) => Promise<void>
+  logout: () => Promise<void>
+  updateUser: (data: Partial<User>) => Promise<void>
+  requiresPasswordChange: boolean
+}
+
+export const NewAuthContext = createContext<AuthContextType>({
+  user: null,
+  firebaseUser: null,
+  isLoading: true,
+  error: null,
+  login: async () => {},
+  logout: async () => {},
+  updateUser: async () => {},
+  requiresPasswordChange: false
+})
+
+const roleBasedRoutes = {
+  admin: ['/dashboard', '/profile', '/employees', '/attendance', '/leave', '/payroll', '/payslip', '/documents', '/productivity', '/performance', '/settings', '/help', '/support', '/managers', '/administrators', '/tasks', '/departments', '/wellness-check-in', '/whos-away', '/test-auth', '/add-employee', '/todo', '/debug-assignments', '/fix-assignments', '/tools', '/monitoring'],
+  manager: ['/dashboard', '/profile', '/employees', '/attendance', '/leave', '/payroll', '/payslip', '/documents', '/productivity', '/performance', '/settings', '/help', '/support', '/tasks', '/departments', '/wellness-check-in', '/whos-away', '/test-auth', '/debug-assignments', '/fix-assignments', '/tools', '/monitoring'],
+  employee: ['/dashboard', '/profile', '/attendance', '/my-tasks', '/leave', '/payslip', '/help', '/support', '/test-auth', '/debug-assignments', '/fix-assignments', '/tools']
+}
+
+async function fetchCurrentUser(): Promise<User | null> {
+  const response = await fetch('/api/auth/me', { cache: 'no-store' })
+  if (!response.ok) return null
+  const payload = await response.json()
+  return payload.user || null
+}
+
+async function fetchSessionToken(): Promise<string> {
+  const response = await fetch('/api/auth/token', { cache: 'no-store' })
+  if (!response.ok) {
+    throw new Error('Unable to fetch session token')
+  }
+  const payload = await response.json()
+  return payload.token
+}
+
+export function NewAuthProvider({ children }: { children: React.ReactNode }) {
+  const router = useRouter()
+  const pathname = usePathname()
+  const [user, setUser] = useState<User | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [requiresPasswordChange, setRequiresPasswordChange] = useState(false)
+
+  useEffect(() => {
+    let isMounted = true
+    const hydrateUser = async () => {
+      try {
+        const currentUser = await fetchCurrentUser()
+        if (!isMounted) return
+        setUser(currentUser)
+        setRequiresPasswordChange(Boolean(currentUser?.requiresPasswordChange))
+      } catch (hydrateError) {
+        console.error('Failed to hydrate auth session:', hydrateError)
+        if (isMounted) setUser(null)
+      } finally {
+        if (isMounted) setIsLoading(false)
+      }
+    }
+    hydrateUser()
+    return () => {
+      isMounted = false
+    }
+  }, [])
+
+  useEffect(() => {
+    if (isLoading) return
+    if (pathname?.startsWith('/auth/') && user) {
+      router.push('/dashboard')
+      return
+    }
+    if (!pathname?.startsWith('/auth/') && !user) {
+      router.push('/auth/sign-in')
+      return
+    }
+    if (user && !pathname?.startsWith('/auth/')) {
+      if (pathname === '/unauthorized' || pathname === '/test-auth') return
+      if (pathname === '/') {
+        router.push('/dashboard')
+        return
+      }
+      const allowedRoutes = roleBasedRoutes[user.role as keyof typeof roleBasedRoutes]
+      if (allowedRoutes && !allowedRoutes.some((route) => pathname?.startsWith(route))) {
+        router.push('/unauthorized')
+      }
+    }
+  }, [user, isLoading, pathname, router])
+
+  const login = async (email: string, password: string, isPasswordSetup = false) => {
+    try {
+      setIsLoading(true)
+      setError(null)
+
+      if (isPasswordSetup) {
+        const setupResponse = await fetch('/api/auth/first-time-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password })
+        })
+        const setupPayload = await setupResponse.json()
+        if (!setupResponse.ok) {
+          throw new Error(setupPayload.error || 'Failed to set password')
+        }
+      }
+
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      })
+      const payload = await response.json()
+      if (!response.ok) {
+        const code = payload.error || 'Failed to sign in'
+        if (code === 'ACCOUNT_NOT_INITIALIZED') {
+          throw new Error('ACCOUNT_NOT_INITIALIZED')
+        }
+        throw new Error(code)
+      }
+
+      const currentUser = await fetchCurrentUser()
+      if (!currentUser) {
+        throw new Error('User profile not found')
+      }
+
+      setUser(currentUser)
+      setRequiresPasswordChange(Boolean(currentUser.requiresPasswordChange))
+
+      if (currentUser.requiresPasswordChange && !isPasswordSetup) {
+        router.push('/auth/change-password')
+      } else {
+        router.push('/dashboard')
+      }
+    } catch (loginError) {
+      if (
+        loginError instanceof Error &&
+        loginError.message === 'ACCOUNT_NOT_INITIALIZED'
+      ) {
+        throw loginError
+      }
+      const normalized = loginError instanceof Error ? loginError.message : 'Failed to sign in'
+      setError(normalized)
+      throw loginError
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const logout = async () => {
+    try {
+      setIsLoading(true)
+      await fetch('/api/auth/logout', { method: 'POST' })
+      setUser(null)
+      setRequiresPasswordChange(false)
+      toast.success('Successfully signed out')
+      router.push('/auth/sign-in')
+    } catch (logoutError) {
+      console.error('Logout error:', logoutError)
+      setError('Failed to sign out')
+      toast.error('Failed to sign out')
+      throw logoutError
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const updateUser = async (data: Partial<User>) => {
+    setUser((prev) => (prev ? { ...prev, ...data, updatedAt: new Date() } : prev))
+  }
+
+  const firebaseUser: LegacyFirebaseUser | null = user
+    ? {
+        uid: user.uid,
+        email: user.email,
+        getIdToken: fetchSessionToken
+      }
+    : null
+
+  return (
+    <NewAuthContext.Provider
+      value={{
+        user,
+        firebaseUser,
+        isLoading,
+        error,
+        login,
+        logout,
+        updateUser,
+        requiresPasswordChange
+      }}
+    >
+      {children}
+    </NewAuthContext.Provider>
+  )
+}
+
+export function useNewAuth() {
+  const context = useContext(NewAuthContext)
+  if (context === undefined) {
+    throw new Error('useNewAuth must be used within a NewAuthProvider')
+  }
+  return context
+}
+
+'use client'
+
+import { createContext, useContext, useEffect, useState } from 'react'
+import { toast } from 'react-hot-toast'
+import { useRouter, usePathname } from 'next/navigation'
+import { UserRole } from '@/types/user'
+
+interface User {
+  id: string
+  uid: string
+  email: string
+  name: string
+  role: UserRole
+  department?: string
+  position?: string
+  managerId?: string | null
+  phone?: string
+  mobileNumber?: string | null
+  bankAccount?: {
+    accountNumber?: string
+    bankCode?: string
+    accountName?: string
+  } | null
+  emergencyContact?: {
+    name?: string
+    relationship?: string
+    phone?: string
+  } | null
+  avatar?: string
+  createdAt?: Date
+  updatedAt?: Date
+  requiresPasswordChange: boolean
+}
+
+interface LegacyFirebaseUser {
+  uid: string
+  email: string
+  getIdToken: () => Promise<string>
+}
+
+interface AuthContextType {
+  user: User | null
+  firebaseUser: LegacyFirebaseUser | null
+  isLoading: boolean
+  error: string | null
+  login: (email: string, password: string, isPasswordSetup?: boolean) => Promise<void>
+  logout: () => Promise<void>
+  updateUser: (data: Partial<User>) => Promise<void>
+  requiresPasswordChange: boolean
+}
+
+export const NewAuthContext = createContext<AuthContextType>({
+  user: null,
+  firebaseUser: null,
+  isLoading: true,
+  error: null,
+  login: async () => {},
+  logout: async () => {},
+  updateUser: async () => {},
+  requiresPasswordChange: false
+})
+
+const roleBasedRoutes = {
+  admin: ['/dashboard', '/profile', '/employees', '/attendance', '/leave', '/payroll', '/payslip', '/documents', '/productivity', '/performance', '/settings', '/help', '/support', '/managers', '/administrators', '/tasks', '/departments', '/wellness-check-in', '/whos-away', '/test-auth', '/add-employee', '/todo', '/debug-assignments', '/fix-assignments', '/tools', '/monitoring'],
+  manager: ['/dashboard', '/profile', '/employees', '/attendance', '/leave', '/payroll', '/payslip', '/documents', '/productivity', '/performance', '/settings', '/help', '/support', '/tasks', '/departments', '/wellness-check-in', '/whos-away', '/test-auth', '/debug-assignments', '/fix-assignments', '/tools', '/monitoring'],
+  employee: ['/dashboard', '/profile', '/attendance', '/my-tasks', '/leave', '/payslip', '/help', '/support', '/test-auth', '/debug-assignments', '/fix-assignments', '/tools']
+}
+
+async function fetchCurrentUser(): Promise<User | null> {
+  const response = await fetch('/api/auth/me', { cache: 'no-store' })
+  if (!response.ok) return null
+  const payload = await response.json()
+  return payload.user || null
+}
+
+async function fetchSessionToken(): Promise<string> {
+  const response = await fetch('/api/auth/token', { cache: 'no-store' })
+  if (!response.ok) {
+    throw new Error('Unable to fetch session token')
+  }
+  const payload = await response.json()
+  return payload.token
+}
+
+export function NewAuthProvider({ children }: { children: React.ReactNode }) {
+  const router = useRouter()
+  const pathname = usePathname()
+  const [user, setUser] = useState<User | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [requiresPasswordChange, setRequiresPasswordChange] = useState(false)
+
+  useEffect(() => {
+    let isMounted = true
+    const hydrateUser = async () => {
+      try {
+        const currentUser = await fetchCurrentUser()
+        if (!isMounted) return
+        setUser(currentUser)
+        setRequiresPasswordChange(Boolean(currentUser?.requiresPasswordChange))
+      } catch (hydrateError) {
+        console.error('Failed to hydrate auth session:', hydrateError)
+        if (isMounted) setUser(null)
+      } finally {
+        if (isMounted) setIsLoading(false)
+      }
+    }
+    hydrateUser()
+    return () => {
+      isMounted = false
+    }
+  }, [])
+
+  useEffect(() => {
+    if (isLoading) return
+    if (pathname?.startsWith('/auth/') && user) {
+      router.push('/dashboard')
+      return
+    }
+    if (!pathname?.startsWith('/auth/') && !user) {
+      router.push('/auth/sign-in')
+      return
+    }
+    if (user && !pathname?.startsWith('/auth/')) {
+      if (pathname === '/unauthorized' || pathname === '/test-auth') return
+      if (pathname === '/') {
+        router.push('/dashboard')
+        return
+      }
+      const allowedRoutes = roleBasedRoutes[user.role as keyof typeof roleBasedRoutes]
+      if (allowedRoutes && !allowedRoutes.some((route) => pathname?.startsWith(route))) {
+        router.push('/unauthorized')
+      }
+    }
+  }, [user, isLoading, pathname, router])
+
+  const login = async (email: string, password: string, isPasswordSetup = false) => {
+    try {
+      setIsLoading(true)
+      setError(null)
+
+      if (isPasswordSetup) {
+        const setupResponse = await fetch('/api/auth/first-time-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password })
+        })
+        const setupPayload = await setupResponse.json()
+        if (!setupResponse.ok) {
+          throw new Error(setupPayload.error || 'Failed to set password')
+        }
+      }
+
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      })
+      const payload = await response.json()
+      if (!response.ok) {
+        const code = payload.error || 'Failed to sign in'
+        if (code === 'ACCOUNT_NOT_INITIALIZED') {
+          throw new Error('ACCOUNT_NOT_INITIALIZED')
+        }
+        throw new Error(code)
+      }
+
+      const currentUser = await fetchCurrentUser()
+      if (!currentUser) {
+        throw new Error('User profile not found')
+      }
+
+      setUser(currentUser)
+      setRequiresPasswordChange(Boolean(currentUser.requiresPasswordChange))
+
+      if (currentUser.requiresPasswordChange && !isPasswordSetup) {
+        router.push('/auth/change-password')
+      } else {
+        router.push('/dashboard')
+      }
+    } catch (loginError) {
+      if (
+        loginError instanceof Error &&
+        loginError.message === 'ACCOUNT_NOT_INITIALIZED'
+      ) {
+        throw loginError
+      }
+      const normalized = loginError instanceof Error ? loginError.message : 'Failed to sign in'
+      setError(normalized)
+      throw loginError
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const logout = async () => {
+    try {
+      setIsLoading(true)
+      await fetch('/api/auth/logout', { method: 'POST' })
+      setUser(null)
+      setRequiresPasswordChange(false)
+      toast.success('Successfully signed out')
+      router.push('/auth/sign-in')
+    } catch (logoutError) {
+      console.error('Logout error:', logoutError)
+      setError('Failed to sign out')
+      toast.error('Failed to sign out')
+      throw logoutError
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const updateUser = async (data: Partial<User>) => {
+    setUser((prev) => (prev ? { ...prev, ...data, updatedAt: new Date() } : prev))
+  }
+
+  const firebaseUser: LegacyFirebaseUser | null = user
+    ? {
+        uid: user.uid,
+        email: user.email,
+        getIdToken: fetchSessionToken
+      }
+    : null
+
+  return (
+    <NewAuthContext.Provider
+      value={{
+        user,
+        firebaseUser,
+        isLoading,
+        error,
+        login,
+        logout,
+        updateUser,
+        requiresPasswordChange
+      }}
+    >
+      {children}
+    </NewAuthContext.Provider>
+  )
+}
+
+export function useNewAuth() {
+  const context = useContext(NewAuthContext)
+  if (context === undefined) {
+    throw new Error('useNewAuth must be used within a NewAuthProvider')
+  }
+  return context
+}
+
+/*
+'use client'
+
+import { createContext, useContext, useEffect, useState } from 'react'
+import { toast } from 'react-hot-toast'
+import { useRouter, usePathname } from 'next/navigation'
+import { UserRole } from '@/types/user'
+
+interface User {
+  id: string
+  uid: string
+  email: string
+  name: string
+  role: UserRole
+  department?: string
+  position?: string
+  managerId?: string | null
+  phone?: string
+  mobileNumber?: string | null
+  bankAccount?: {
+    accountNumber?: string
+    bankCode?: string
+    accountName?: string
+  } | null
+  emergencyContact?: {
+    name?: string
+    relationship?: string
+    phone?: string
+  } | null
+  avatar?: string
+  createdAt?: Date
+  updatedAt?: Date
+  requiresPasswordChange: boolean
+}
+
+interface AuthContextType {
+  user: User | null
+  firebaseUser: null
+  isLoading: boolean
+  error: string | null
+  login: (email: string, password: string, isPasswordSetup?: boolean) => Promise<void>
+  logout: () => Promise<void>
+  updateUser: (data: Partial<User>) => Promise<void>
+  requiresPasswordChange: boolean
+}
+
+export const NewAuthContext = createContext<AuthContextType>({
+  user: null,
+  firebaseUser: null,
+  isLoading: true,
+  error: null,
+  login: async () => {},
+  logout: async () => {},
+  updateUser: async () => {},
+  requiresPasswordChange: false
+})
+
+const roleBasedRoutes = {
+  admin: [
+    '/dashboard', '/profile', '/employees', '/attendance', '/attendance/reports', '/attendance/settings',
+    '/leave', '/payroll', '/payslip', '/documents', '/productivity', '/performance', '/settings', '/help',
+    '/support', '/managers', '/administrators', '/tasks', '/departments', '/wellness-check-in', '/whos-away',
+    '/test-auth', '/add-employee', '/todo', '/debug-assignments', '/fix-assignments', '/tools', '/monitoring'
+  ],
+  manager: [
+    '/dashboard', '/profile', '/employees', '/attendance', '/attendance/reports', '/leave', '/payroll',
+    '/payslip', '/documents', '/productivity', '/performance', '/settings', '/help', '/support', '/tasks',
+    '/departments', '/wellness-check-in', '/whos-away', '/test-auth', '/debug-assignments', '/fix-assignments',
+    '/tools', '/monitoring'
+  ],
+  employee: [
+    '/dashboard', '/profile', '/attendance', '/my-tasks', '/leave', '/payslip', '/help', '/support',
+    '/test-auth', '/debug-assignments', '/fix-assignments', '/tools'
+  ]
+}
+
+async function fetchCurrentUser(): Promise<User | null> {
+  const response = await fetch('/api/auth/me', { cache: 'no-store' })
+  if (!response.ok) return null
+  const payload = await response.json()
+  return payload.user || null
+}
+
+export function NewAuthProvider({ children }: { children: React.ReactNode }) {
+  const router = useRouter()
+  const pathname = usePathname()
+  const [user, setUser] = useState<User | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [requiresPasswordChange, setRequiresPasswordChange] = useState(false)
+
+  useEffect(() => {
+    let isMounted = true
+    const hydrateUser = async () => {
+      try {
+        const currentUser = await fetchCurrentUser()
+        if (!isMounted) return
+        setUser(currentUser)
+        setRequiresPasswordChange(Boolean(currentUser?.requiresPasswordChange))
+      } catch (hydrateError) {
+        console.error('Failed to hydrate auth session:', hydrateError)
+        if (isMounted) {
+          setUser(null)
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false)
+        }
+      }
+    }
+    hydrateUser()
+    return () => {
+      isMounted = false
+    }
+  }, [])
+
+  useEffect(() => {
+    if (isLoading) return
+    if (pathname?.startsWith('/auth/') && user) {
+      router.push('/dashboard')
+      return
+    }
+    if (!pathname?.startsWith('/auth/') && !user) {
+      router.push('/auth/sign-in')
+      return
+    }
+    if (user && !pathname?.startsWith('/auth/')) {
+      if (pathname === '/unauthorized') return
+      if (pathname === '/') {
+        router.push('/dashboard')
+        return
+      }
+      if (pathname === '/test-auth') return
+      const allowedRoutes = roleBasedRoutes[user.role as keyof typeof roleBasedRoutes]
+      if (allowedRoutes && !allowedRoutes.some((route) => pathname?.startsWith(route))) {
+        router.push('/unauthorized')
+      }
+    }
+  }, [user, isLoading, pathname, router])
+
+  const login = async (email: string, password: string, isPasswordSetup = false) => {
+    try {
+      setIsLoading(true)
+      setError(null)
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      })
+      const payload = await response.json()
+      if (!response.ok) {
+        throw new Error(payload.error || 'Failed to sign in')
+      }
+
+      const currentUser = await fetchCurrentUser()
+      if (!currentUser) {
+        throw new Error('User profile not found')
+      }
+
+      setUser(currentUser)
+      setRequiresPasswordChange(Boolean(currentUser.requiresPasswordChange))
+
+      try {
+        await fetch('/api/auth/track-session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: currentUser.id,
+            userName: currentUser.name,
+            action: 'login',
+            loginTime: new Date().toISOString()
+          })
+        })
+      } catch (trackError) {
+        console.error('Error tracking login:', trackError)
+      }
+
+      if (currentUser.requiresPasswordChange && !isPasswordSetup) {
+        router.push('/auth/change-password')
+      } else {
+        router.push('/dashboard')
+      }
+    } catch (loginError) {
+      const normalizedError = loginError instanceof Error ? loginError.message : 'Failed to sign in'
+      setError(normalizedError)
+      throw loginError
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const logout = async () => {
+    try {
+      setIsLoading(true)
+      if (user) {
+        try {
+          await fetch('/api/auth/track-session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              userId: user.id,
+              userName: user.name,
+              action: 'logout',
+              logoutTime: new Date().toISOString()
+            })
+          })
+        } catch (trackError) {
+          console.error('Error tracking logout:', trackError)
+        }
+      }
+
+      await fetch('/api/auth/logout', { method: 'POST' })
+      setUser(null)
+      setRequiresPasswordChange(false)
+      toast.success('Successfully signed out')
+      router.push('/auth/sign-in')
+    } catch (logoutError) {
+      console.error('Logout error:', logoutError)
+      setError('Failed to sign out')
+      toast.error('Failed to sign out')
+      throw logoutError
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const updateUser = async (data: Partial<User>) => {
+    setUser((prev) => prev ? { ...prev, ...data, updatedAt: new Date() } : prev)
+  }
+
+  return (
+    <NewAuthContext.Provider
+      value={{
+        user,
+        firebaseUser: null,
+        isLoading,
+        error,
+        login,
+        logout,
+        updateUser,
+        requiresPasswordChange
+      }}
+    >
+      {children}
+    </NewAuthContext.Provider>
+  )
+}
+
+export function useNewAuth() {
+  const context = useContext(NewAuthContext)
+  if (context === undefined) {
+    throw new Error('useNewAuth must be used within a NewAuthProvider')
+  }
+  return context
+}
+'use client'
+
+import { createContext, useContext, useEffect, useState } from 'react'
+import { toast } from 'react-hot-toast'
+import { useRouter, usePathname } from 'next/navigation'
+import { UserRole } from '@/types/user'
+
+interface User {
+  id: string
+  uid: string
+  email: string
+  name: string
+  role: UserRole
+  department?: string
+  position?: string
+  managerId?: string | null
+  phone?: string
+  mobileNumber?: string | null
+  bankAccount?: {
+    accountNumber?: string
+    bankCode?: string
+    accountName?: string
+  } | null
+  emergencyContact?: {
+    name?: string
+    relationship?: string
+    phone?: string
+  } | null
+  avatar?: string
+  createdAt?: Date
+  updatedAt?: Date
+  requiresPasswordChange: boolean
+}
+
+interface AuthContextType {
+  user: User | null
+  firebaseUser: null
+  isLoading: boolean
+  error: string | null
+  login: (email: string, password: string, isPasswordSetup?: boolean) => Promise<void>
+  logout: () => Promise<void>
+  updateUser: (data: Partial<User>) => Promise<void>
+  requiresPasswordChange: boolean
+}
+
+export const NewAuthContext = createContext<AuthContextType>({
+  user: null,
+  firebaseUser: null,
+  isLoading: true,
+  error: null,
+  login: async () => {},
+  logout: async () => {},
+  updateUser: async () => {},
+  requiresPasswordChange: false
+})
+
+const roleBasedRoutes = {
+  admin: [
+    '/dashboard', '/profile', '/employees', '/attendance', '/attendance/reports', '/attendance/settings',
+    '/leave', '/payroll', '/payslip', '/documents', '/productivity', '/performance', '/settings', '/help',
+    '/support', '/managers', '/administrators', '/tasks', '/departments', '/wellness-check-in', '/whos-away',
+    '/test-auth', '/add-employee', '/todo', '/debug-assignments', '/fix-assignments', '/tools', '/monitoring'
+  ],
+  manager: [
+    '/dashboard', '/profile', '/employees', '/attendance', '/attendance/reports', '/leave', '/payroll',
+    '/payslip', '/documents', '/productivity', '/performance', '/settings', '/help', '/support', '/tasks',
+    '/departments', '/wellness-check-in', '/whos-away', '/test-auth', '/debug-assignments', '/fix-assignments',
+    '/tools', '/monitoring'
+  ],
+  employee: [
+    '/dashboard', '/profile', '/attendance', '/my-tasks', '/leave', '/payslip', '/help', '/support',
+    '/test-auth', '/debug-assignments', '/fix-assignments', '/tools'
+  ]
+}
+
+async function fetchCurrentUser(): Promise<User | null> {
+  const response = await fetch('/api/auth/me', { cache: 'no-store' })
+  if (!response.ok) return null
+  const payload = await response.json()
+  return payload.user || null
+}
+
+export function NewAuthProvider({ children }: { children: React.ReactNode }) {
+  const router = useRouter()
+  const pathname = usePathname()
+  const [user, setUser] = useState<User | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [requiresPasswordChange, setRequiresPasswordChange] = useState(false)
+
+  useEffect(() => {
+    let isMounted = true
+    const hydrateUser = async () => {
+      try {
+        const currentUser = await fetchCurrentUser()
+        if (!isMounted) return
+        setUser(currentUser)
+        setRequiresPasswordChange(Boolean(currentUser?.requiresPasswordChange))
+      } catch (hydrateError) {
+        console.error('Failed to hydrate auth session:', hydrateError)
+        if (isMounted) {
+          setUser(null)
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false)
+        }
+      }
+    }
+    hydrateUser()
+    return () => {
+      isMounted = false
+    }
+  }, [])
+
+  useEffect(() => {
+    if (isLoading) return
+    if (pathname?.startsWith('/auth/') && user) {
+      router.push('/dashboard')
+      return
+    }
+    if (!pathname?.startsWith('/auth/') && !user) {
+      router.push('/auth/sign-in')
+      return
+    }
+    if (user && !pathname?.startsWith('/auth/')) {
+      if (pathname === '/unauthorized') return
+      if (pathname === '/') {
+        router.push('/dashboard')
+        return
+      }
+      if (pathname === '/test-auth') return
+      const allowedRoutes = roleBasedRoutes[user.role as keyof typeof roleBasedRoutes]
+      if (allowedRoutes && !allowedRoutes.some((route) => pathname?.startsWith(route))) {
+        router.push('/unauthorized')
+      }
+    }
+  }, [user, isLoading, pathname, router])
+
+  const login = async (email: string, password: string, isPasswordSetup = false) => {
+    try {
+      setIsLoading(true)
+      setError(null)
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      })
+      const payload = await response.json()
+      if (!response.ok) {
+        throw new Error(payload.error || 'Failed to sign in')
+      }
+
+      const currentUser = await fetchCurrentUser()
+      if (!currentUser) {
+        throw new Error('User profile not found')
+      }
+
+      setUser(currentUser)
+      setRequiresPasswordChange(Boolean(currentUser.requiresPasswordChange))
+
+      try {
+        await fetch('/api/auth/track-session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: currentUser.id,
+            userName: currentUser.name,
+            action: 'login',
+            loginTime: new Date().toISOString()
+          })
+        })
+      } catch (trackError) {
+        console.error('Error tracking login:', trackError)
+      }
+
+      if (currentUser.requiresPasswordChange && !isPasswordSetup) {
+        router.push('/auth/change-password')
+      } else {
+        router.push('/dashboard')
+      }
+    } catch (loginError) {
+      const normalizedError = loginError instanceof Error ? loginError.message : 'Failed to sign in'
+      setError(normalizedError)
+      throw loginError
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const logout = async () => {
+    try {
+      setIsLoading(true)
+      if (user) {
+        try {
+          await fetch('/api/auth/track-session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              userId: user.id,
+              userName: user.name,
+              action: 'logout',
+              logoutTime: new Date().toISOString()
+            })
+          })
+        } catch (trackError) {
+          console.error('Error tracking logout:', trackError)
+        }
+      }
+
+      await fetch('/api/auth/logout', { method: 'POST' })
+      setUser(null)
+      setRequiresPasswordChange(false)
+      toast.success('Successfully signed out')
+      router.push('/auth/sign-in')
+    } catch (logoutError) {
+      console.error('Logout error:', logoutError)
+      setError('Failed to sign out')
+      toast.error('Failed to sign out')
+      throw logoutError
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const updateUser = async (data: Partial<User>) => {
+    setUser((prev) => prev ? { ...prev, ...data, updatedAt: new Date() } : prev)
+  }
+
+  return (
+    <NewAuthContext.Provider
+      value={{
+        user,
+        firebaseUser: null,
+        isLoading,
+        error,
+        login,
+        logout,
+        updateUser,
+        requiresPasswordChange
+      }}
+    >
+      {children}
+    </NewAuthContext.Provider>
+  )
+}
+
+export function useNewAuth() {
+  const context = useContext(NewAuthContext)
+  if (context === undefined) {
+    throw new Error('useNewAuth must be used within a NewAuthProvider')
+  }
+  return context
+}
+*/
+/*
+'use client'
+
+import { createContext, useContext, useEffect, useState } from 'react'
+import { auth, db } from '@/lib/_legacy_firebase'
+import { onAuthStateChanged, signOut as firebaseSignOut, User as FirebaseUser } from 'firebase/_auth'
+import { doc, getDoc, collection, query, where, limit, getDocs, updateDoc } from 'firebase/_firestore'
+import { toast } from 'react-hot-toast'
+import { useRouter, usePathname } from 'next/navigation'
+import { signIn } from '@/lib/_legacy_firebase'
+import { UserRole } from '@/types/user'
+
+interface User {
+  id: string
+  firestoreId?: string
+  collection?: 'users' | 'employees' | 'managers'
+  email: string
+  name: string
+  role: UserRole
+  department?: string
+  position?: string
+  managerId?: string | null
+  phone?: string
+  mobileNumber?: string | null
+  bankAccount?: {
+    accountNumber?: string
+    bankCode?: string
+    accountName?: string
+  } | null
+  emergencyContact?: {
+    name?: string
+    relationship?: string
+    phone?: string
+  } | null
   avatar?: string
   createdAt: Date
   updatedAt: Date
@@ -61,11 +1340,13 @@ const roleBasedRoutes = {
     '/attendance/settings',
     '/leave',
     '/payroll',
+    '/payslip',
     '/documents',
     '/productivity',
     '/performance',
     '/settings',
     '/help',
+    '/support',
     '/managers',
     '/administrators',
     '/tasks',
@@ -76,7 +1357,9 @@ const roleBasedRoutes = {
     '/add-employee',
     '/todo',
     '/debug-assignments',
-    '/fix-assignments'
+    '/fix-assignments',
+    '/tools',
+    '/monitoring'
   ],
   manager: [
     '/dashboard',
@@ -86,18 +1369,22 @@ const roleBasedRoutes = {
     '/attendance/reports',
     '/leave',
     '/payroll',
+    '/payslip',
     '/documents',
     '/productivity',
     '/performance',
     '/settings',
     '/help',
+    '/support',
     '/tasks',
     '/departments',
     '/wellness-check-in',
     '/whos-away',
     '/test-auth',
     '/debug-assignments',
-    '/fix-assignments'
+    '/fix-assignments',
+    '/tools',
+    '/monitoring'
   ],
   employee: [
     '/dashboard',
@@ -105,10 +1392,13 @@ const roleBasedRoutes = {
     '/attendance',
     '/my-tasks',
     '/leave',
+    '/payslip',
     '/help',
+    '/support',
     '/test-auth',
     '/debug-assignments',
-    '/fix-assignments'
+    '/fix-assignments',
+    '/tools'
   ]
 }
 
@@ -142,6 +1432,17 @@ export function NewAuthProvider({ children }: { children: React.ReactNode }) {
 
       // Check role-based access
       if (user && !pathname?.startsWith('/auth/')) {
+        // Allow the unauthorized page itself to render so we don't loop
+        if (pathname === '/unauthorized') {
+          return
+        }
+
+        // Treat the root path as a shortcut to the dashboard
+        if (pathname === '/') {
+          router.push('/dashboard')
+          return
+        }
+
         // Allow test pages for all authenticated users
         if (pathname === '/test-auth') {
           return
@@ -383,19 +1684,44 @@ export function NewAuthProvider({ children }: { children: React.ReactNode }) {
             console.warn("User authenticated (Firebase Auth) but no Firestore document found. (Access denied or restricted page.)");
             return;
           }
-          setUser({
+          const collectionName = userDoc?.ref.parent.id as 'users' | 'employees' | 'managers' | undefined
+          const userObj: User = {
             id: firebaseUser.uid,
             firestoreId: userDoc?.id || undefined,
+            collection: collectionName,
             email: typeof userData.email === 'string' ? userData.email : '',
             name: typeof userData.name === 'string' ? userData.name : '',
             role: (typeof userData.role === 'string' && ['admin', 'manager', 'employee'].includes(userData.role)) ? userData.role as UserRole : 'employee',
             department: typeof userData.department === 'string' ? userData.department : undefined,
             position: typeof userData.position === 'string' ? userData.position : undefined,
+            managerId: typeof userData.managerId === 'string' ? userData.managerId : null,
+            phone: typeof userData.phone === 'string' ? userData.phone : undefined,
+            mobileNumber: typeof userData.mobileNumber === 'string' ? userData.mobileNumber : null,
+            bankAccount: userData.bankAccount || null,
+            emergencyContact: userData.emergencyContact || null,
             avatar: typeof userData.avatar === 'string' ? userData.avatar : undefined,
             createdAt: (userData.createdAt && typeof userData.createdAt === 'object' && 'toDate' in userData.createdAt) ? (userData.createdAt as { toDate: () => Date }).toDate() : new Date(),
             updatedAt: (userData.updatedAt && typeof userData.updatedAt === 'object' && 'toDate' in userData.updatedAt) ? (userData.updatedAt as { toDate: () => Date }).toDate() : new Date(),
             requiresPasswordChange: typeof userData.requiresPasswordChange === 'boolean' ? userData.requiresPasswordChange : false
-          });
+          };
+          
+          setUser(userObj);
+          
+          // Track login
+          try {
+            await fetch('/api/auth/track-session', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                userId: firebaseUser.uid,
+                userName: userObj.name,
+                action: 'login',
+                loginTime: new Date().toISOString()
+              })
+            });
+          } catch (error) {
+            console.error('Error tracking login:', error);
+          }
         } catch (error) {
           console.error('Error setting up session:', error)
           setUser(null)
@@ -403,6 +1729,23 @@ export function NewAuthProvider({ children }: { children: React.ReactNode }) {
         }
       } else {
         console.log('No Firebase user, clearing user state')
+        // Track logout if user was previously logged in
+        if (user) {
+          try {
+            await fetch('/api/auth/track-session', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                userId: user.id,
+                userName: user.name,
+                action: 'logout',
+                logoutTime: new Date().toISOString()
+              })
+            });
+          } catch (error) {
+            console.error('Error tracking logout:', error);
+          }
+        }
         setUser(null)
       }
       
@@ -556,6 +1899,24 @@ export function NewAuthProvider({ children }: { children: React.ReactNode }) {
     try {
       setIsLoading(true)
       
+      // Track logout before signing out
+      if (user) {
+        try {
+          await fetch('/api/auth/track-session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              userId: user.id,
+              userName: user.name,
+              action: 'logout',
+              logoutTime: new Date().toISOString()
+            })
+          });
+        } catch (error) {
+          console.error('Error tracking logout:', error);
+        }
+      }
+      
       // Call the logout API to clear the session cookie
       await fetch('/api/auth/logout', { method: 'POST' })
       
@@ -580,9 +1941,43 @@ export function NewAuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   const updateUser = async (data: Partial<User>) => {
-    console.log('Update user attempt:', data)
-    // This is a placeholder for user update functionality
-    // Implement actual user update logic here
+    if (!user) {
+      throw new Error('No authenticated user')
+    }
+
+    const collectionName =
+      user.collection ||
+      (user.role === 'admin'
+        ? 'users'
+        : user.role === 'manager'
+        ? 'managers'
+        : 'employees')
+
+    const docId = user.firestoreId || user.id
+
+    try {
+      const payload: Record<string, any> = { updatedAt: new Date() }
+      Object.entries(data).forEach(([key, value]) => {
+        if (value === undefined) {
+          return
+        }
+        payload[key] = value
+      })
+
+      await updateDoc(doc(db, collectionName, docId), payload)
+      setUser(prev =>
+        prev
+          ? {
+              ...prev,
+              ...data,
+              updatedAt: payload.updatedAt as Date
+            }
+          : prev
+      )
+    } catch (error) {
+      console.error('Update user error:', error)
+      throw error
+    }
   }
 
   return (
@@ -607,4 +2002,5 @@ export function useNewAuth() {
     throw new Error('useNewAuth must be used within a NewAuthProvider')
   }
   return context
-} 
+}
+*/

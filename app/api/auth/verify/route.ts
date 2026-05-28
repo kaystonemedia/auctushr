@@ -1,21 +1,25 @@
 import { NextResponse } from 'next/server'
-import { getAdminAuth } from '@/lib/firebase-admin'
+import { supabaseAdmin } from '@/lib/supabase/admin'
 
 export const dynamic = 'force-dynamic'
 
 export async function POST(request: Request) {
   try {
-    const { sessionCookie } = await request.json()
+    const { accessToken } = await request.json()
 
-    if (!sessionCookie) {
+    if (!accessToken) {
       return NextResponse.json(
-        { error: 'No session cookie provided' },
+        { error: 'No access token provided' },
         { status: 401 }
       )
     }
 
-    const decodedClaims = await getAdminAuth().verifySessionCookie(sessionCookie)
-    return NextResponse.json({ user: decodedClaims })
+    const { data, error } = await supabaseAdmin.auth.getUser(accessToken)
+    if (error || !data.user) {
+      return NextResponse.json({ error: 'Invalid session' }, { status: 401 })
+    }
+
+    return NextResponse.json({ user: data.user })
   } catch (error) {
     console.error('Error verifying session:', error)
     return NextResponse.json(

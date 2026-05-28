@@ -4,8 +4,6 @@ import { useState, useEffect } from 'react'
 import { AttendanceReport } from "@/components/attendance-report"
 import { AttendanceFilterPanel } from "@/components/attendance-filter-panel"
 import { AttendanceRecord, AttendanceStats, AttendanceFilters } from "@/types/attendance"
-import { db } from "@/lib/firebase"
-import { collection, query, where, getDocs, orderBy, doc, updateDoc } from "firebase/firestore"
 import { useNewAuth } from "@/contexts/new-auth-context"
 import { Download, Filter } from "lucide-react"
 import { exportAttendanceToCSV } from "@/lib/export-attendance"
@@ -60,14 +58,12 @@ export default function AttendanceReportsPage() {
 
   const fetchDepartments = async () => {
     try {
-      const q = query(collection(db, "employees"))
-      const querySnapshot = await getDocs(q)
+      const res = await fetch('/api/employees', { credentials: 'include' })
+      if (!res.ok) throw new Error('Failed to load employees')
+      const data = await res.json()
       const depts = new Set<string>()
-      querySnapshot.docs.forEach(doc => {
-        const data = doc.data()
-        if (data.department) {
-          depts.add(data.department)
-        }
+      ;(data.employees || []).forEach((employee: { department?: string }) => {
+        if (employee.department) depts.add(employee.department)
       })
       setDepartments(Array.from(depts))
     } catch (error) {
@@ -78,50 +74,32 @@ export default function AttendanceReportsPage() {
   const fetchAttendanceRecords = async () => {
     try {
       setLoading(true)
-      let q = query(
-        collection(db, "attendance"),
-        where("date", ">=", dateRange.start),
-        where("date", "<=", dateRange.end),
-        orderBy("date", "desc")
-      )
+      const params = new URLSearchParams({
+        fromDate: dateRange.start.toISOString().slice(0, 10),
+        toDate: dateRange.end.toISOString().slice(0, 10),
+      })
+      if (user?.role !== 'admin' && user?.id) params.set('employeeId', user.id)
+      if (filters.status) params.set('status', filters.status)
 
-      // Apply filters
-      if (filters.department) {
-        q = query(q, where("department", "==", filters.department))
-      }
-      if (filters.status) {
-        q = query(q, where("status", "==", filters.status))
-      }
-      if (filters.approvalStatus) {
-        q = query(q, where("approvalStatus", "==", filters.approvalStatus))
-      }
-
-      // If user is not admin, only fetch their own records
-      if (user?.role !== 'admin' && user?.id) {
-        q = query(q, where("employeeId", "==", user.id))
-      }
-
-      const querySnapshot = await getDocs(q)
-      const recordsList = querySnapshot.docs.map(doc => {
-        const data = doc.data()
-        return {
-          id: doc.id,
-          ...data,
-          date: data.date?.toDate() || new Date(),
-          checkIn: {
-            ...data.checkIn,
-            time: data.checkIn?.time?.toDate() || new Date(),
-            location: data.checkIn?.location || null,
-            deviceInfo: data.checkIn?.deviceInfo || null
-          },
-          checkOut: data.checkOut ? {
-            ...data.checkOut,
-            time: data.checkOut.time?.toDate() || new Date(),
-            location: data.checkOut.location || null,
-            deviceInfo: data.checkOut.deviceInfo || null
-          } : undefined
-        }
-      }) as AttendanceRecord[]
+      const res = await fetch(`/api/attendance/records?${params}`, { credentials: 'include' })
+      if (!res.ok) throw new Error('Failed to load attendance records')
+      const data = await res.json()
+      const recordsList = ((data.records || []) as AttendanceRecord[])
+        .map((record) => ({
+          ...record,
+          date: new Date(record.date),
+          checkIn: record.checkIn
+            ? { ...record.checkIn, time: new Date(record.checkIn.time) }
+            : record.checkIn,
+          checkOut: record.checkOut
+            ? { ...record.checkOut, time: new Date(record.checkOut.time) }
+            : record.checkOut,
+        }))
+        .filter((record) => {
+          if (filters.department && record.department !== filters.department) return false
+          if (filters.approvalStatus && record.approvalStatus !== filters.approvalStatus) return false
+          return true
+        })
 
       // Apply search filter if present
       const filteredRecords = filters.search
@@ -201,15 +179,15 @@ export default function AttendanceReportsPage() {
 
   const handleApprove = async (recordId: string) => {
     try {
-      const recordRef = doc(db, "attendance", recordId)
-      await updateDoc(recordRef, {
-        approvalStatus: 'approved',
-        approvedBy: user?.id,
-        approvedAt: new Date()
+      await fetch(`/api/attendance/records/${recordId}/approval`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'approved',
+        }),
       })
-      
-      // Update local state
-            setRecords(prev => prev.map(record =>
+      setRecords(prev => prev.map(record =>
         record.id === recordId
           ? { ...record, approvalStatus: 'approved', approvedBy: user?.id, approvedAt: new Date() }
           : record
@@ -224,11 +202,13 @@ export default function AttendanceReportsPage() {
 
   const handleReject = async (recordId: string) => {
     try {
-      const recordRef = doc(db, "attendance", recordId)
-      await updateDoc(recordRef, {
-        approvalStatus: 'rejected',
-        rejectedBy: user?.id,
-        rejectedAt: new Date()
+      await fetch(`/api/attendance/records/${recordId}/approval`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'rejected',
+        }),
       })
       
       // Update local state

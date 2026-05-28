@@ -1,5 +1,5 @@
 import { db } from './firebase'
-import { collection, doc, addDoc, updateDoc, query, where, getDocs, Timestamp, orderBy, getDoc, setDoc } from 'firebase/firestore'
+import { collection, doc, addDoc, updateDoc, query, where, getDocs, Timestamp, orderBy, getDoc, setDoc } from '@/lib/data/firestore'
 import { 
   ProductivityRecord, 
   TaskRecord, 
@@ -225,21 +225,32 @@ export class ProductivityService {
       throw new Error('Start date and end date are required')
     }
 
-    const q = query(
-      collection(db, 'tasks'),
-      where('assignedTo', '==', employeeId),
-      where('startTime', '>=', Timestamp.fromDate(startDate)),
-      where('startTime', '<=', Timestamp.fromDate(endDate)),
-      orderBy('startTime', 'asc')
+    const assigneesSnapshot = await getDocs(
+      query(collection(db, 'task_assignees'), where('assigneeId', '==', employeeId))
     )
-    const snapshot = await getDocs(q)
+    const taskIds = assigneesSnapshot.docs
+      .map(taskAssigneeDoc => taskAssigneeDoc.data().taskId as string | undefined)
+      .filter((id): id is string => Boolean(id))
+
+    if (taskIds.length === 0) {
+      return []
+    }
+
+    const tasksQuery = query(
+      collection(db, 'tasks'),
+      where('id', 'in', taskIds),
+      where('createdAt', '>=', Timestamp.fromDate(startDate)),
+      where('createdAt', '<=', Timestamp.fromDate(endDate)),
+      orderBy('createdAt', 'asc')
+    )
+    const snapshot = await getDocs(tasksQuery)
     return snapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data(),
-      startTime: doc.data().startTime.toDate(),
+      startTime: doc.data().startTime?.toDate?.() || doc.data().createdAt?.toDate?.() || new Date(),
       endTime: doc.data().endTime?.toDate(),
-      createdAt: doc.data().createdAt.toDate(),
-      updatedAt: doc.data().updatedAt.toDate()
+      createdAt: doc.data().createdAt?.toDate?.() || new Date(),
+      updatedAt: doc.data().updatedAt?.toDate?.() || new Date()
     })) as TaskRecord[]
   }
 
@@ -279,7 +290,7 @@ export class ProductivityService {
 
     const q = query(
       collection(db, 'meetings'),
-      where('participants', 'array-contains', employeeId), // Store participant IDs as strings
+      where('userId', '==', employeeId),
       where('startTime', '>=', Timestamp.fromDate(startDate)),
       where('startTime', '<=', Timestamp.fromDate(endDate)),
       orderBy('startTime', 'asc')
@@ -561,10 +572,44 @@ export class ProductivityService {
     completed: boolean
     interruptions: number
   }): Promise<void> {
-    // TODO: Implement focus session tracking
-    // - Store session data
-    // - Update productivity metrics
-    // - Generate insights
+    try {
+      const sessionRef = await addDoc(collection(db, 'focusSessions'), {
+        userId,
+        startTime: Timestamp.fromDate(sessionData.startTime),
+        endTime: Timestamp.fromDate(sessionData.endTime),
+        duration: sessionData.duration,
+        completed: sessionData.completed,
+        interruptions: sessionData.interruptions,
+        createdAt: Timestamp.now(),
+        updatedAt: Timestamp.now()
+      })
+
+      // Also update (or create) a productivity record for the day
+      const sessionDateKey = sessionData.endTime.toISOString().split('T')[0]
+      const recordRef = doc(db, 'productivityRecords', `${userId}_${sessionDateKey}`)
+      const recordSnap = await getDoc(recordRef)
+      if (recordSnap.exists()) {
+        await updateDoc(recordRef, {
+          totalFocusSessions: (recordSnap.data().totalFocusSessions || 0) + 1,
+          totalFocusTime: (recordSnap.data().totalFocusTime || 0) + sessionData.duration,
+          updatedAt: Timestamp.now()
+        })
+      } else {
+        await setDoc(recordRef, {
+          userId,
+          date: sessionDateKey,
+          totalFocusSessions: 1,
+          totalFocusTime: sessionData.duration,
+          totalMeetingTime: 0,
+          totalTasksCompleted: 0,
+          createdAt: Timestamp.now(),
+          updatedAt: Timestamp.now()
+        })
+      }
+    } catch (error) {
+      console.error('Error tracking focus session:', error)
+      throw error
+    }
   }
 
   async trackMeeting(userId: string, meetingData: {
@@ -576,9 +621,47 @@ export class ProductivityService {
     agenda: string
     outcomes: string[]
   }): Promise<void> {
-    // TODO: Implement meeting tracking
-    // - Store meeting data
-    // - Update productivity metrics
-    // - Generate insights
+    try {
+      await addDoc(collection(db, 'meetings'), {
+        userId,
+        title: meetingData.agenda || 'Tracked meeting',
+        startTime: Timestamp.fromDate(meetingData.startTime),
+        endTime: Timestamp.fromDate(meetingData.endTime),
+        duration: meetingData.duration,
+        type: meetingData.type || 'general',
+        participants: meetingData.participants || [],
+        agenda: meetingData.agenda,
+        outcomes: meetingData.outcomes || [],
+        status: 'completed',
+        createdAt: Timestamp.now(),
+        updatedAt: Timestamp.now()
+      })
+
+      const meetingDateKey = meetingData.endTime.toISOString().split('T')[0]
+      const recordRef = doc(db, 'productivityRecords', `${userId}_${meetingDateKey}`)
+      const recordSnap = await getDoc(recordRef)
+      if (recordSnap.exists()) {
+        await updateDoc(recordRef, {
+          totalMeetingTime: (recordSnap.data().totalMeetingTime || 0) + meetingData.duration,
+          meetings: (recordSnap.data().meetings || 0) + 1,
+          updatedAt: Timestamp.now()
+        })
+      } else {
+        await setDoc(recordRef, {
+          userId,
+          date: meetingDateKey,
+          totalFocusSessions: 0,
+          totalFocusTime: 0,
+          totalMeetingTime: meetingData.duration,
+          meetings: 1,
+          totalTasksCompleted: 0,
+          createdAt: Timestamp.now(),
+          updatedAt: Timestamp.now()
+        })
+      }
+    } catch (error) {
+      console.error('Error tracking meeting:', error)
+      throw error
+    }
   }
 } 

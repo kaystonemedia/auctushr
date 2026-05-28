@@ -4,8 +4,6 @@ import { useState, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import * as z from 'zod'
-import { collection, addDoc, doc, updateDoc, getDocs, query, where } from 'firebase/firestore'
-import { db } from '@/lib/firebase'
 import { toast } from 'react-hot-toast'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -68,16 +66,17 @@ export function DepartmentForm({ department, onSuccess, onCancel }: DepartmentFo
   useEffect(() => {
     const fetchManagers = async () => {
       try {
-        // Get all employees with manager role
-        const employeesRef = collection(db, 'employees')
-        const q = query(employeesRef, where('role', '==', 'manager'))
-        const snapshot = await getDocs(q)
-        
-        const managersData = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        })) as Employee[]
-
+        const res = await fetch('/api/employees', { credentials: 'include' })
+        if (!res.ok) throw new Error('Failed to load managers')
+        const data = await res.json()
+        const managersData = (data.employees || [])
+          .filter((e: { role: string }) => e.role === 'manager' || e.role === 'admin')
+          .map((e: { id: string; firstName: string; lastName: string; role: string }) => ({
+            id: e.id,
+            firstName: e.firstName,
+            lastName: e.lastName,
+            role: e.role,
+          })) as Employee[]
         setManagers(managersData)
       } catch (error) {
         console.error('Error fetching managers:', error)
@@ -92,25 +91,26 @@ export function DepartmentForm({ department, onSuccess, onCancel }: DepartmentFo
     try {
       setIsSubmitting(true)
 
-      const departmentData = {
-        ...data,
-        managerId: data.managerId === 'none' ? undefined : data.managerId,
-        updatedAt: new Date(),
+      const payload = {
+        id: department?.id,
+        name: data.name,
+        description: data.description,
+        managerId: data.managerId === 'none' ? null : data.managerId,
       }
 
-      if (department) {
-        // Update existing department
-        await updateDoc(doc(db, 'departments', department.id), departmentData)
-        toast.success('Department updated successfully')
-      } else {
-        // Create new department
-        const newDepartmentData = {
-          ...departmentData,
-          createdAt: new Date(),
-        }
-        await addDoc(collection(db, 'departments'), newDepartmentData)
-        toast.success('Department created successfully')
+      const res = await fetch('/api/departments', {
+        method: department ? 'PUT' : 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || 'Save failed')
       }
+
+      toast.success(department ? 'Department updated successfully' : 'Department created successfully')
 
       onSuccess()
     } catch (error) {

@@ -7,8 +7,6 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { formatCurrency } from '@/lib/utils'
 import { Loader2 } from 'lucide-react'
-import { collection, addDoc } from 'firebase/firestore'
-import { db } from '@/lib/firebase'
 
 interface PayrollFormProps {
   employee: {
@@ -86,25 +84,41 @@ export function PayrollForm({ employee, onSuccess, onCancel }: PayrollFormProps)
       const grossSalary = formData.baseSalary + totalBonuses
       const netSalary = grossSalary - totalDeductions + totalAllowances
 
-      // Add payroll entry
-      const payrollEntry = {
-        employeeId: employee.id,
-        employeeName: employee.name,
-        department: employee.department,
-        baseSalary: formData.baseSalary,
-        bonuses: formData.bonuses,
-        deductions: formData.deductions,
-        allowances: formData.allowances,
-        grossSalary,
-        netSalary,
-        totalBonuses,
-        totalDeductions,
-        totalAllowances,
-        notes: formData.notes,
-        processedAt: new Date().toISOString()
+      const now = new Date()
+      const periodMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+      const response = await fetch('/api/payroll/entries', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          employeeId: employee.id,
+          periodMonth,
+          periodStart: new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10),
+          periodEnd: new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0, 10),
+          baseSalary: formData.baseSalary,
+          allowances: totalAllowances,
+          deductions: totalDeductions,
+          overtime: formData.bonuses.overtime,
+          bonus: formData.bonuses.performance + formData.bonuses.other,
+          netPay: netSalary,
+          status: 'pending',
+          notes: formData.notes,
+          metadata: {
+            department: employee.department,
+            bonuses: formData.bonuses,
+            deductionsBreakdown: formData.deductions,
+            allowancesBreakdown: formData.allowances,
+            grossSalary,
+            totalBonuses,
+            totalDeductions,
+            totalAllowances
+          }
+        })
+      })
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}))
+        throw new Error(payload.error || 'Failed to process payroll')
       }
-
-      await addDoc(collection(db, 'payrollEntries'), payrollEntry)
       onSuccess()
     } catch (err) {
       console.error('Error processing payroll:', err)

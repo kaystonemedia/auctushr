@@ -3,8 +3,6 @@
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import { Employee } from '@/types/employee'
 import { Edit2, Trash2, ChevronLeft, ChevronRight, Search, ChevronUp, ChevronDown, Loader2 } from 'lucide-react'
-import { doc, getDoc, query, where, getDocs, collection, limit } from 'firebase/firestore'
-import { db } from '@/lib/firebase'
 
 interface EmployeeTableProps {
   employees: Employee[]
@@ -80,64 +78,23 @@ export function EmployeeTable({ employees, onEdit, onDelete, hideManagerColumn =
     try {
       setLoadingManagers(prev => ({ ...prev, [managerId]: true }))
       
-      // Search for manager in multiple collections by document ID and UID
-      const collections = ['users', 'employees', 'managers']
-      let managerFound = false
-      
-      for (const collectionName of collections) {
-        try {
-          // First try to get by document ID (in case it's a document ID)
-          const docRef = doc(db, collectionName, managerId)
-          const docSnap = await getDoc(docRef)
-          
-          if (docSnap.exists()) {
-            const data = docSnap.data()
-            // Verify this is actually a manager/admin
-            if (data.role === 'manager' || data.role === 'admin' || collectionName === 'managers') {
-              setManagerNames(prev => ({
-                ...prev,
-                [managerId]: `${data.firstName || ''} ${data.lastName || ''}`.trim() || data.email || 'Unknown Manager'
-              }))
-              managerFound = true
-              break
-            }
-          }
-          
-          // If not found by document ID, try searching by UID field (for corrected assignments)
-          if (!managerFound) {
-            const uidQuery = query(
-              collection(db, collectionName),
-              where('uid', '==', managerId),
-              limit(1)
-            )
-            const uidSnapshot = await getDocs(uidQuery)
-            
-            if (!uidSnapshot.empty) {
-              const data = uidSnapshot.docs[0].data()
-              // Verify this is actually a manager/admin
-              if (data.role === 'manager' || data.role === 'admin' || collectionName === 'managers') {
-                setManagerNames(prev => ({
-                  ...prev,
-                  [managerId]: `${data.firstName || ''} ${data.lastName || ''}`.trim() || data.email || 'Unknown Manager'
-                }))
-                managerFound = true
-                break
-              }
-            }
-          }
-        } catch (error) {
-          // Continue to next collection if this one fails
-          console.warn(`Error checking ${collectionName} for manager ${managerId}:`, error)
-        }
+      const response = await fetch('/api/employees', { credentials: 'include' })
+      if (!response.ok) {
+        throw new Error('Unable to load employees for manager lookup')
       }
-      
-      // If manager not found in any collection, mark as not found
-      if (!managerFound) {
-        setManagerNames(prev => ({
-          ...prev,
-          [managerId]: 'Manager not found'
-        }))
-      }
+      const payload = await response.json()
+      const people = (payload.employees || []) as Employee[]
+      const manager = people.find((person) =>
+        (person.id === managerId || person.uid === managerId) &&
+        (person.role === 'manager' || person.role === 'admin')
+      )
+
+      setManagerNames(prev => ({
+        ...prev,
+        [managerId]: manager
+          ? `${manager.firstName || ''} ${manager.lastName || ''}`.trim() || manager.email || 'Unknown Manager'
+          : 'Manager not found'
+      }))
       
     } catch (error) {
       console.error('Error fetching manager:', error)
@@ -183,7 +140,7 @@ export function EmployeeTable({ employees, onEdit, onDelete, hideManagerColumn =
       case 'on_leave':
         return 'bg-red-50 text-red-700 border border-red-200'
       default:
-        return 'bg-red-50 text-red-700 border border-red-200'
+        return 'bg-gray-50 text-gray-700 border border-gray-200'
     }
   }
 
@@ -233,20 +190,20 @@ export function EmployeeTable({ employees, onEdit, onDelete, hideManagerColumn =
                 <div className="flex items-center space-x-3">
                                      <div className="h-10 w-10 bg-gray-200 rounded-full flex items-center justify-center">
                      <span className="text-sm font-medium text-gray-700">
-                       {employee.firstName.charAt(0).toUpperCase()}
+                       {(employee.firstName || 'U').charAt(0).toUpperCase()}
                      </span>
                    </div>
                    <div>
-                     <h3 className="font-medium text-gray-900">{employee.firstName} {employee.lastName}</h3>
+                     <h3 className="font-medium text-gray-900">{employee.firstName || 'Unknown'} {employee.lastName || 'User'}</h3>
                      <p className="text-sm text-gray-500">{employee.email}</p>
                    </div>
                 </div>
                 <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                  employee.status === 'active'
+                  (employee.status || 'active') === 'active'
                     ? 'bg-green-100 text-green-800'
                     : 'bg-red-100 text-red-800'
                 }`}>
-                  {employee.status}
+                  {employee.status || 'active'}
                 </span>
               </div>
               
@@ -379,13 +336,13 @@ export function EmployeeTable({ employees, onEdit, onDelete, hideManagerColumn =
                         <div className="flex-shrink-0 h-10 w-10">
                           <img
                             className="h-10 w-10 rounded-full ring-2 ring-gray-100 object-cover"
-                            src={employee.photoURL || `https://ui-avatars.com/api/?name=${employee.firstName}+${employee.lastName}&background=random&color=fff`}
-                            alt={`${employee.firstName} ${employee.lastName}`}
+                            src={employee.photoURL || `https://ui-avatars.com/api/?name=${employee.firstName || 'Unknown'}+${employee.lastName || 'User'}&background=random&color=fff`}
+                            alt={`${employee.firstName || 'Unknown'} ${employee.lastName || 'User'}`}
                           />
                         </div>
                         <div>
                           <div className="text-sm font-medium text-gray-900">
-                            {employee.firstName} {employee.lastName}
+                            {employee.firstName || 'Unknown'} {employee.lastName || 'User'}
                           </div>
                           <div className="text-sm text-gray-500">{employee.position}</div>
                         </div>
@@ -405,7 +362,7 @@ export function EmployeeTable({ employees, onEdit, onDelete, hideManagerColumn =
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(employee.status)}`}>
-                        {employee.status.replace('_', ' ').charAt(0).toUpperCase() + employee.status.slice(1).replace('_', ' ')}
+                        {(employee.status || 'active').replace('_', ' ').charAt(0).toUpperCase() + (employee.status || 'active').slice(1).replace('_', ' ')}
                       </span>
                     </td>
                     {!hideManagerColumn && (

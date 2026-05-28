@@ -1,5 +1,5 @@
-import { db } from '@/lib/firebase'
-import { collection, doc, updateDoc, arrayUnion, Timestamp, getDocs, addDoc, query, where } from 'firebase/firestore'
+import { db } from './firebase'
+import { collection, doc, updateDoc, arrayUnion, Timestamp, getDocs, addDoc, query, where } from '@/lib/data/firestore'
 import { AttendanceRecord, AttendanceSettings } from '@/types/attendance'
 import { LocationSettings, OfficeLocation } from '@/types/settings'
 import { countries } from './countries'
@@ -364,7 +364,7 @@ export class LocationService {
     if (!this.currentRecord) return
 
     const notificationRef = collection(db, 'notifications')
-    await addDoc(notificationRef, {
+    const docData = {
       type: 'location_mismatch',
       employeeId: this.currentRecord.employeeId,
       employeeName: this.currentRecord.employeeName,
@@ -373,6 +373,11 @@ export class LocationService {
       timestamp: Timestamp.now(),
       status: 'unread',
       attendanceId: this.currentRecord.id
-    })
+    }
+    // Before calling addDoc, ensure managerId is defined
+    if (typeof docData.managerId === 'undefined') {
+      delete docData.managerId;
+    }
+    await addDoc(notificationRef, docData)
   }
 } 

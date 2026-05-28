@@ -71,6 +71,7 @@ export interface PayrollSettings {
       }>
     }
   }
+  exchangeRate?: number; // Added for exchange rate
 }
 
 export interface OfficeLocation {
@@ -131,16 +132,91 @@ export interface Settings {
     overtimeThreshold: number // hours
     geolocationRequired: boolean
     maxDistance: number // meters
+    idleTimeSLAThreshold: number // minutes - threshold for idle time SLA (default: 3)
   }
   productivity: {
     trackingEnabled: boolean
     idleThreshold: number // minutes
     focusSessionDuration: number // minutes
     targetProductiveHours: number
+    allowedBreakMinutes?: number
+    screenshotIntervalMinutes?: number
     productiveDomains: string[]
     unproductiveSites: string[]
   }
   payroll: PayrollSettings
+  paymentFacilitator: {
+    activeProvider: 'paystack' | 'thunes' | 'flutterwave' | 'hubtel'
+    providers: {
+      paystack: {
+        enabled: boolean
+        credentials: {
+          secretKey: string
+          publicKey: string
+        }
+        settings: {
+          defaultCurrency: 'NGN' | 'GHS' | 'USD' | 'ZAR'
+          supportedCurrencies: string[]
+          supportedMethods: ('bank_transfer' | 'mobile_money' | 'ussd' | 'card')[]
+          webhookUrl?: string
+          testMode: boolean
+        }
+      }
+      thunes: {
+        enabled: boolean
+        credentials: {
+          apiKey: string
+          secretKey: string
+          clientId: string
+        }
+        settings: {
+          defaultCurrency: string
+          supportedCurrencies: string[]
+          supportedMethods: ('bank_transfer' | 'mobile_money' | 'wallet')[]
+          webhookUrl?: string
+          testMode: boolean
+          region: 'global' | 'africa' | 'asia' | 'europe' | 'americas'
+        }
+      }
+      flutterwave: {
+        enabled: boolean
+        credentials: {
+          secretKey: string
+          publicKey: string
+          encryptionKey: string
+        }
+        settings: {
+          defaultCurrency: string
+          supportedCurrencies: string[]
+          supportedMethods: ('bank_transfer' | 'mobile_money' | 'ussd' | 'card')[]
+          webhookUrl?: string
+          testMode: boolean
+        }
+      }
+      hubtel: {
+        enabled: boolean
+        credentials: {
+          clientId: string
+          clientSecret: string
+        }
+        settings: {
+          defaultCurrency: 'GHS'
+          supportedCurrencies: string[]
+          supportedMethods: ('bank_transfer' | 'mobile_money' | 'card')[]
+          webhookUrl?: string
+          testMode: boolean
+        }
+      }
+    }
+    defaultSettings: {
+      currency: string
+      retryAttempts: number
+      timeoutSeconds: number
+      batchSize: number
+      enableNotifications: boolean
+      notificationTypes: ('success' | 'failure' | 'pending')[]
+    }
+  }
   notifications: {
     email: {
       enabled: boolean

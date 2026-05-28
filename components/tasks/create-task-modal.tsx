@@ -15,9 +15,8 @@ import { format } from 'date-fns'
 import { CalendarIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'react-hot-toast'
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore'
-import { db } from '@/lib/firebase'
 import { EmployeeSelect } from './employee-select'
+import { sendTaskAssignmentNotification } from '@/lib/notifications'
 
 interface CreateTaskModalProps {
   isOpen: boolean
@@ -51,31 +50,56 @@ export function CreateTaskModal({ isOpen, onClose, onSuccess }: CreateTaskModalP
 
     try {
       setLoading(true)
-      const taskData = {
-        ...formData,
-        assignedTo: formData.assigneeId, // Add assignedTo field for compatibility
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-        completedAt: null
-      }
-      
-      const taskRef = await addDoc(collection(db, 'tasks'), taskData)
+      const res = await fetch('/api/tasks', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: formData.title,
+          description: formData.description,
+          priority: formData.priority,
+          category: formData.category,
+          dueDate: formData.dueDate.toISOString(),
+          estimatedHours: formData.estimatedHours,
+          assignees: [
+            {
+              id: formData.assigneeId,
+              name: formData.assigneeName,
+              type: 'user',
+            },
+          ],
+        }),
+      })
 
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}))
+        throw new Error(errBody.error || 'Failed to create task')
+      }
+
+      const created = await res.json()
       const newTask: Task = {
-        id: taskRef.id,
-        ...formData,
-        assignees: [{
-          id: formData.assigneeId,
-          name: formData.assigneeName,
-          type: 'user' as const
-        }],
-        createdAt: new Date(),
+        id: created.id,
+        title: created.title,
+        description: created.description || formData.description,
+        assignees: created.assignees || [
+          {
+            id: formData.assigneeId,
+            name: formData.assigneeName,
+            type: 'user' as const,
+          },
+        ],
+        assignerId: user.id,
+        department: user.department,
+        priority: created.priority || formData.priority,
+        status: (created.status || formData.status) as TaskStatus,
+        category: (created.category || formData.category) as TaskCategory,
+        dueDate: created.dueDate ? new Date(created.dueDate) : formData.dueDate,
+        estimatedHours: formData.estimatedHours,
+        createdAt: created.createdAt ? new Date(created.createdAt) : new Date(),
         updatedAt: new Date(),
-        completedAt: undefined
       }
 
       // Send notification to assigned user
-      const { sendTaskAssignmentNotification } = await import('@/lib/notifications')
       await sendTaskAssignmentNotification(formData.assigneeId, {
         title: formData.title,
         description: formData.description,

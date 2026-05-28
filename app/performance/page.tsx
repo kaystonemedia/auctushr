@@ -109,31 +109,31 @@ export default function PerformancePage() {
       setLoading(true)
       
       // Load data based on user role
-      if (user?.role === 'admin') {
+      if (user?.role === 'admin' && user?.id) {
         // Admin sees all performance data
         const [reviewsData, kpisData, analyticsData] = await Promise.all([
-          performanceService.getManagerReviews(user.uid), // This should be modified to get all reviews for admin
+          performanceService.getManagerReviews(user.id), // This should be modified to get all reviews for admin
           performanceService.getKPIs(),
           performanceService.getPerformanceAnalytics()
         ])
         setReviews(reviewsData)
         setKPIs(kpisData)
         setAnalytics(analyticsData)
-      } else if (user?.role === 'manager') {
+      } else if (user?.role === 'manager' && user?.id) {
         // Manager sees team performance data
         const [reviewsData, kpisData, goalsData] = await Promise.all([
-          performanceService.getManagerReviews(user.uid),
+          performanceService.getManagerReviews(user.id),
           performanceService.getKPIs(),
-          performanceService.getEmployeeGoals(user.uid) // This should be modified to get team goals
+          performanceService.getEmployeeGoals(user.id) // This should be modified to get team goals
         ])
         setReviews(reviewsData)
         setKPIs(kpisData)
         setGoals(goalsData)
-      } else {
+      } else if (user?.id) {
         // Employee sees own performance data
         const [reviewsData, goalsData] = await Promise.all([
-          performanceService.getEmployeeReviews(user.uid),
-          performanceService.getEmployeeGoals(user.uid)
+          performanceService.getEmployeeReviews(user.id),
+          performanceService.getEmployeeGoals(user.id)
         ])
         setReviews(reviewsData)
         setGoals(goalsData)

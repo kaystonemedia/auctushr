@@ -510,7 +510,7 @@ export default function DocumentsPage() {
         isOpen={showUploadModal}
         onClose={() => setShowUploadModal(false)}
         onSuccess={loadDocuments}
-        userId={user.uid}
+        userId={user.id}
         userRole={user.role || 'employee'}
       />
 
@@ -520,7 +520,7 @@ export default function DocumentsPage() {
         onClose={() => setShowApprovalModal(false)}
         onSuccess={loadDocuments}
         document={selectedDocument}
-        userId={user.uid}
+        userId={user.id}
         userRole={user.role || 'employee'}
       />
     </div>

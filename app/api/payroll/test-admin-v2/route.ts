@@ -1,15 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getAdminDb } from '@/lib/firebase-admin'
+import { supabaseAdmin } from '@/lib/supabase/admin'
+import { requireRole } from '@/lib/api-auth'
 
 export async function GET(request: NextRequest) {
+  const auth = await requireRole(request, ['admin'])
+  if (auth.error) return auth.error
+
   try {
-    const adminDb = getAdminDb()
-    // Simple sanity test using Admin SDK's query API
-    const snapshot = await adminDb.collection('test').limit(1).get()
+    void request
+    const { count, error } = await supabaseAdmin
+      .from('profiles')
+      .select('*', { count: 'exact', head: true })
+    if (error) throw error
+
     return NextResponse.json({
       success: true,
-      message: 'Firebase Admin SDK test successful',
-      snapshotSize: snapshot.size
+      message: 'Supabase admin test successful',
+      snapshotSize: count || 0
     })
   } catch (error) {
     console.error('Error in admin v2 test:', error)

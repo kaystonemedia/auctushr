@@ -1,49 +1,59 @@
 import { NextRequest, NextResponse } from 'next/server'
-import type { QueryDocumentSnapshot } from 'firebase-admin/firestore'
+import { supabaseAdmin } from '@/lib/supabase/admin'
+import { requireRole } from '@/lib/api-auth'
+
+type PayrollInsightRow = {
+  net_salary: number | null
+  bonus: number | null
+  payment: {
+    productivityScore?: number
+    department?: string
+  } | null
+  period_month: string
+}
 
 export async function GET(request: NextRequest) {
+  const auth = await requireRole(request, ['admin', 'manager'])
+  if (auth.error) return auth.error
+
   try {
-    // Dynamically import Firebase Admin to avoid client-side bundling issues
-    const { adminDb } = await import('@/lib/firebase-admin')
-    
-    // Check if Firebase Admin is properly initialized
-    if (!adminDb) {
-      throw new Error('Firebase Admin SDK not properly initialized. Check environment variables.')
-    }
-    
+    void request
     const currentDate = new Date()
-    const currentMonth = (currentDate.getMonth() + 1).toString()
-    const currentYear = currentDate.getFullYear()
+    const currentMonth = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`
 
-    // Get all payroll entries for current month (Admin SDK query API)
-    const payrollQuery = adminDb
-      .collection('payrollEntries')
-      .where('month', '==', currentMonth)
-      .where('year', '==', currentYear)
-    const snapshot = await payrollQuery.get()
-    const payrollEntries = snapshot.docs.map((doc: QueryDocumentSnapshot) => doc.data() as any)
+    const { data: payrollEntries, error } = await supabaseAdmin
+      .from('payroll_entries')
+      .select('net_salary, bonus, payment, period_month')
+      .eq('period_month', currentMonth)
 
-    const totalPayrollThisMonth = payrollEntries.reduce((sum: number, entry: any) => sum + (entry.netPay || 0), 0)
-    const averageProductivity = payrollEntries.length > 0 
-      ? payrollEntries.reduce((sum: number, entry: any) => sum + (entry.productivityScore || 0), 0) / payrollEntries.length 
+    if (error) {
+      throw error
+    }
+
+    const rows: PayrollInsightRow[] = (payrollEntries || []) as PayrollInsightRow[]
+
+    const totalPayrollThisMonth = rows.reduce((sum, entry) => sum + Number(entry.net_salary || 0), 0)
+    const averageProductivity = rows.length > 0
+      ? rows.reduce((sum, entry) => sum + Number(entry.payment?.productivityScore || 0), 0) / rows.length
       : 0
-    const totalBonusesDistributed = payrollEntries.reduce((sum: number, entry: any) => sum + (entry.totalBonus || 0), 0)
+    const totalBonusesDistributed = rows.reduce((sum, entry) => sum + Number(entry.bonus || 0), 0)
 
     // Group by department
-    const departmentStats = payrollEntries.reduce((
+    const departmentStats = rows.reduce((
       acc: Record<string, { totalProductivity: number; totalBonuses: number; count: number }>,
-      entry: any
+      entry: PayrollInsightRow
     ) => {
-      if (!acc[entry.department]) {
-        acc[entry.department] = {
+      const department = entry.payment?.department || 'Unassigned'
+      if (!acc[department]) {
+        acc[department] = {
           totalProductivity: 0,
           totalBonuses: 0,
           count: 0
         }
       }
-      acc[entry.department].totalProductivity += entry.productivityScore || 0
-      acc[entry.department].totalBonuses += entry.totalBonus || 0
-      acc[entry.department].count++
+      acc[department].totalProductivity += Number(entry.payment?.productivityScore || 0)
+      acc[department].totalBonuses += Number(entry.bonus || 0)
+      acc[department].count++
       return acc
     }, {} as Record<string, { totalProductivity: number; totalBonuses: number; count: number }>)
 
