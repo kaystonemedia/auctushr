@@ -1,0 +1,1482 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>AuctusHR</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+      background: #ffffff;
+      color: #525252;
+      overflow-x: hidden;
+      min-height: 100vh;
+      line-height: 1.5;
+    }
+    
+    .container {
+      min-height: 100vh;
+      background: #ffffff;
+    }
+    
+    .header {
+      border-bottom: 1px solid #e5e5e5;
+      background: rgba(255, 255, 255, 0.5);
+      backdrop-filter: blur(8px);
+      padding: 24px 0;
+    }
+    
+    .header-content {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    
+    .logo-section h1 {
+      font-size: 30px;
+      font-weight: 700;
+      color: #171717;
+      margin-bottom: 4px;
+      letter-spacing: -0.5px;
+    }
+    
+    .logo-section p {
+      font-size: 14px;
+      color: #737373;
+      font-weight: 500;
+    }
+    
+    .system-status {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    
+    .status-indicator {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: rgba(34, 197, 94, 0.1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .status-indicator .dot {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #22c55e;
+    }
+    
+    .system-status span {
+      font-size: 14px;
+      font-weight: 500;
+      color: #737373;
+    }
+    
+    .main-content {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 32px 24px;
+    }
+    
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 24px;
+    }
+    
+    .content-grid {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 24px;
+    }
+    
+    .sidebar-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 24px;
+    }
+    
+    .card {
+      background: #fafafa;
+      border: 1px solid #e5e5e5;
+      border-radius: 8px;
+      padding: 24px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06);
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    
+    .card:hover {
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1), 0 2px 4px rgba(0, 0, 0, 0.06);
+    }
+    
+    .auth-card {
+      border: 1px solid rgba(251, 146, 60, 0.2);
+      background: rgba(251, 146, 60, 0.05);
+    }
+    
+    .auth-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    
+    .auth-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: rgba(251, 146, 60, 0.1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #ea580c;
+    }
+    
+    .auth-status h3 {
+      font-size: 16px;
+      font-weight: 600;
+      color: #171717;
+      margin: 0;
+    }
+    
+    .auth-status p {
+      font-size: 14px;
+      color: #737373;
+      margin: 0;
+    }
+    
+    @keyframes pulse {
+      0% { opacity: 1; }
+      50% { opacity: 0.5; }
+      100% { opacity: 1; }
+    }
+    
+    .auth-text {
+      font-size: 20px;
+      font-weight: 600;
+    }
+    
+    .auth-user {
+      font-size: 14px;
+      color: #888888;
+      margin-bottom: 20px;
+    }
+    
+    .control-card {
+      text-align: center;
+    }
+    
+    .status-indicator {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 15px;
+      margin-bottom: 30px;
+    }
+    
+    .status-dot {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      box-shadow: 0 0 20px currentColor;
+    }
+    
+    .status-dot.active { 
+      background: #ffffff; 
+      color: #ffffff;
+    }
+    .status-dot.inactive { 
+      background: #555555; 
+      color: #555555;
+    }
+    .status-dot.paused { 
+      background: #888888; 
+      color: #888888;
+    }
+    
+    .status-text {
+      font-size: 24px;
+      font-weight: 600;
+    }
+    
+    .time-display {
+      text-align: center;
+      margin: 30px 0;
+    }
+    
+    .current-time {
+      font-size: 36px;
+      font-weight: 300;
+      margin-bottom: 10px;
+      font-family: 'SF Mono', 'Monaco', monospace;
+    }
+    
+    .session-time {
+      font-size: 20px;
+      color: #888888;
+      font-family: 'SF Mono', 'Monaco', monospace;
+      margin-bottom: 5px;
+    }
+    
+    .active-time {
+      font-size: 18px;
+      color: #4CAF50;
+      font-family: 'SF Mono', 'Monaco', monospace;
+      margin-bottom: 5px;
+      font-weight: 500;
+    }
+    
+    .idle-time {
+      font-size: 18px;
+      color: #FF9800;
+      font-family: 'SF Mono', 'Monaco', monospace;
+      font-weight: 500;
+    }
+    
+    .control-buttons {
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+    }
+    
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 12px 24px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 500;
+      font-size: 14px;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      font-family: inherit;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+    
+    .btn-primary {
+      background: #171717;
+      color: #ffffff;
+      border: 1px solid #171717;
+    }
+    
+    .btn-primary:hover {
+      background: #262626;
+      border-color: #262626;
+    }
+    
+    .btn-secondary {
+      background: transparent;
+      color: #525252;
+      border: 1px solid #e5e5e5;
+    }
+    
+    .btn-secondary:hover {
+      background: #f5f5f5;
+      border-color: #d4d4d4;
+    }
+    
+    .btn-lg {
+      padding: 16px 32px;
+      font-size: 16px;
+      height: 48px;
+    }
+    
+    .btn-sm {
+      padding: 8px 16px;
+      font-size: 14px;
+      height: 44px;
+    }
+    
+    .btn-danger {
+      background: #333333;
+      color: #ffffff;
+      box-shadow: 0 4px 20px rgba(51, 51, 51, 0.3);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    
+    .btn-danger:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 30px rgba(51, 51, 51, 0.4);
+      background: #444444;
+    }
+    
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      pointer-events: none;
+    }
+    
+    .screenshot-btn {
+      background: rgba(255, 255, 255, 0.08);
+      color: #ffffff;
+      margin-top: 10px;
+      position: relative;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+    }
+    
+    .screenshot-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 30px rgba(255, 255, 255, 0.1);
+      background: rgba(255, 255, 255, 0.12);
+    }
+    
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 20px;
+    }
+    
+    .stat-item {
+      text-align: center;
+      padding: 20px;
+      background: rgba(255, 255, 255, 0.02);
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    
+    .stat-icon {
+      font-size: 32px;
+      margin-bottom: 12px;
+      display: block;
+    }
+    
+    .stat-title {
+      font-size: 14px;
+      font-weight: 500;
+      color: #888888;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    
+    .stat-value {
+      font-size: 28px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    
+    .stat-description {
+      font-size: 12px;
+      color: #666666;
+    }
+    
+    .progress-bar {
+      width: 100%;
+      height: 6px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 3px;
+      overflow: hidden;
+      margin-top: 12px;
+    }
+    
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #ffffff, #cccccc);
+      border-radius: 3px;
+      transition: width 0.3s ease;
+      width: 0%;
+    }
+    
+    .screenshot-feedback {
+      display: none;
+      margin-top: 20px;
+      padding: 20px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 12px;
+      backdrop-filter: blur(10px);
+    }
+    
+    .feedback-content {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+      margin-bottom: 15px;
+    }
+    
+    .feedback-icon {
+      font-size: 28px;
+    }
+    
+    .feedback-text h4 {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 5px;
+    }
+    
+    .feedback-text p {
+      font-size: 14px;
+      color: #888888;
+    }
+    
+    .notification {
+      position: fixed;
+      top: 30px;
+      right: 30px;
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(20px);
+      color: #000000;
+      padding: 20px 25px;
+      border-radius: 12px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      z-index: 10000;
+      max-width: 350px;
+      display: none;
+      animation: slideInRight 0.3s ease;
+    }
+    
+    @keyframes slideInRight {
+      from { 
+        transform: translateX(100%); 
+        opacity: 0; 
+      }
+      to { 
+        transform: translateX(0); 
+        opacity: 1; 
+      }
+    }
+    
+    .notification-title {
+      font-weight: 600;
+      margin-bottom: 8px;
+      color: #000000;
+    }
+    
+    .notification-message {
+      color: #444444;
+      font-size: 14px;
+    }
+    
+    /* Responsive Design */
+    @media (max-width: 1024px) {
+      .content-grid {
+        grid-template-columns: 1fr;
+        gap: 24px;
+      }
+      
+      .sidebar-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 24px;
+      }
+    }
+    
+    @media (max-width: 768px) {
+      .header-content {
+        padding: 0 16px;
+      }
+      
+      .main-content {
+        padding: 24px 16px;
+      }
+      
+      .logo-section h1 {
+        font-size: 24px;
+      }
+      
+      .sidebar-grid {
+        grid-template-columns: 1fr;
+      }
+      
+      .card {
+        padding: 20px;
+      }
+    }
+    
+    @media (max-width: 480px) {
+      .logo-section h1 {
+        font-size: 20px;
+      }
+      
+      .card {
+        padding: 16px;
+      }
+      
+      .system-status {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header class="header">
+      <div class="header-content">
+        <div class="logo-section">
+          <h1>AuctusHR</h1>
+          <p>Productivity Monitor</p>
+        </div>
+        
+        <div class="system-status">
+          <div class="status-indicator">
+            <div class="dot"></div>
+          </div>
+          <span>System Active</span>
+        </div>
+      </div>
+    </header>
+    
+    <main class="main-content">
+      <div class="main-grid">
+        <!-- Authentication Card -->
+        <div class="card auth-card">
+          <div class="auth-header">
+            <div class="auth-icon">
+              ⚠️
+            </div>
+            <div class="auth-status">
+              <h3 id="authStatus">Not Authenticated</h3>
+              <p id="authUser">Please login to start monitoring your productivity</p>
+            </div>
+          </div>
+          <button class="btn btn-primary btn-lg" id="loginBtn">
+            🌐 Open Web App to Login
+          </button>
+        </div>
+      
+        <div class="content-grid">
+          <!-- Monitoring Card -->
+          <div class="card">
+            <div class="card-header">
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;">
+                <h2 style="font-size: 20px; font-weight: 600; color: #171717; margin: 0;">Session Monitor</h2>
+                <span class="badge" id="monitoringBadge" style="background: #f3f4f6; color: #6b7280; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 500;">Not Monitoring</span>
+              </div>
+            </div>
+            
+            <div class="time-display" style="text-align: center; margin-bottom: 24px;">
+              <div class="current-time" id="currentTime" style="font-size: 36px; font-family: monospace; font-weight: 700; color: #171717; margin-bottom: 16px; letter-spacing: 0.05em;">2:06:10 PM</div>
+              <div style="display: grid; gap: 8px; font-size: 14px; color: #737373;">
+                <div style="display: flex; justify-content: space-between;">
+                  <span>Session:</span>
+                  <span style="font-family: monospace;" id="sessionTime">00:00:00</span>
+                </div>
+                <div style="display: flex; justify-content: space-between;">
+                  <span>Break:</span>
+                  <span style="font-family: monospace; color: #f59e0b;" id="activeTime">00:00</span>
+                </div>
+                <div style="display: flex; justify-content: space-between;">
+                  <span>Idle:</span>
+                  <span style="font-family: monospace; color: #ea580c;" id="idleTime">00:00</span>
+                </div>
+              </div>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
+              <button class="btn btn-primary btn-lg" id="startBtn" disabled>
+                ▶️ Start Monitoring
+              </button>
+              <button class="btn btn-secondary btn-lg" id="pauseBtn" disabled>
+                ⏸️ Pause
+              </button>
+            </div>
+            
+            <button class="btn btn-secondary" style="width: 100%;" id="screenshotBtn">
+              📸 Take Screenshot
+            </button>
+            
+            <!-- Task Stats Section -->
+            <div style="margin-top: 24px; padding-top: 24px; border-top: 1px solid #e5e5e5;">
+              <h3 style="font-size: 16px; font-weight: 600; color: #171717; margin: 0 0 16px 0; display: flex; align-items: center; gap: 8px;">
+                📋 Task Overview
+              </h3>
+              
+              <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;">
+                <div style="text-align: center; padding: 12px; background: rgba(34, 197, 94, 0.05); border: 1px solid rgba(34, 197, 94, 0.2); border-radius: 6px;">
+                  <div style="font-size: 18px; font-weight: 700; color: #22c55e; margin-bottom: 4px;" id="receivedTasks">0</div>
+                  <div style="font-size: 11px; color: #737373; font-weight: 500; letter-spacing: 0.5px;">RECEIVED</div>
+                </div>
+                
+                <div style="text-align: center; padding: 12px; background: rgba(251, 146, 60, 0.05); border: 1px solid rgba(251, 146, 60, 0.2); border-radius: 6px;">
+                  <div style="font-size: 18px; font-weight: 700; color: #ea580c; margin-bottom: 4px;" id="pendingTasks">0</div>
+                  <div style="font-size: 11px; color: #737373; font-weight: 500; letter-spacing: 0.5px;">PENDING</div>
+                </div>
+                
+                <div style="text-align: center; padding: 12px; background: rgba(168, 85, 247, 0.05); border: 1px solid rgba(168, 85, 247, 0.2); border-radius: 6px;">
+                  <div style="font-size: 18px; font-weight: 700; color: #a855f7; margin-bottom: 4px;" id="completedTasks">0</div>
+                  <div style="font-size: 11px; color: #737373; font-weight: 500; letter-spacing: 0.5px;">COMPLETED</div>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Quick Actions Section -->
+            <div style="margin-top: 24px; padding-top: 24px; border-top: 1px solid #e5e5e5;">
+              <h3 style="font-size: 16px; font-weight: 600; color: #171717; margin: 0 0 16px 0; display: flex; align-items: center; gap: 8px;">
+                ⚙️ Quick Actions
+              </h3>
+              
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                <button class="btn btn-secondary btn-sm" style="justify-content: center; font-size: 12px;" id="openWebAppBtn">
+                  🏢 Dashboard
+                </button>
+                <button class="btn btn-secondary btn-sm" style="justify-content: center; font-size: 12px;" id="showTimerBtn">
+                  ⏱️ Timer
+                </button>
+                <button class="btn btn-secondary btn-sm" style="justify-content: center; font-size: 12px;" id="exportDataBtn">
+                  📊 Export
+                </button>
+                <button class="btn btn-secondary btn-sm" style="justify-content: center; font-size: 12px;">
+                  📱 Screenshots
+                </button>
+              </div>
+            </div>
+          </div>
+          
+          <div class="sidebar-grid">
+            <!-- Performance Card -->
+            <div class="card">
+              <div class="card-header" style="margin-bottom: 24px;">
+                <h2 style="font-size: 18px; font-weight: 600; color: #171717; margin: 0; display: flex; align-items: center; gap: 8px;">
+                  📊 Today's Performance
+                </h2>
+              </div>
+              
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px;">
+                <div style="text-align: center;">
+                  <div style="width: 48px; height: 48px; border-radius: 50%; background: rgba(34, 197, 94, 0.1); display: flex; align-items: center; justify-content: center; margin: 0 auto 12px;">
+                    <span style="font-size: 24px;">🎯</span>
+                  </div>
+                  <div style="font-size: 24px; font-weight: 700; color: #171717; margin-bottom: 4px;" id="productivityScore">0%</div>
+                  <div style="font-size: 12px; color: #737373; font-weight: 500; letter-spacing: 0.5px;">PRODUCTIVITY</div>
+                </div>
+                
+                <div style="text-align: center;">
+                  <div style="width: 48px; height: 48px; border-radius: 50%; background: rgba(168, 85, 247, 0.1); display: flex; align-items: center; justify-content: center; margin: 0 auto 12px;">
+                    <span style="font-size: 24px;">⚡</span>
+                  </div>
+                  <div style="font-size: 24px; font-weight: 700; color: #171717; margin-bottom: 4px;" id="focusLevel">0%</div>
+                  <div style="font-size: 12px; color: #737373; font-weight: 500; letter-spacing: 0.5px;">FOCUS LEVEL</div>
+                </div>
+              </div>
+              
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                <div style="text-align: center;">
+                  <div style="width: 48px; height: 48px; border-radius: 50%; background: rgba(34, 197, 94, 0.1); display: flex; align-items: center; justify-content: center; margin: 0 auto 12px;">
+                    <span style="font-size: 24px;">⏰</span>
+                  </div>
+                  <div style="font-size: 20px; font-weight: 700; color: #171717; margin-bottom: 4px;" id="performanceActiveTime">00:00</div>
+                  <div style="font-size: 12px; color: #737373; font-weight: 500; letter-spacing: 0.5px;">ACTIVE TIME</div>
+                  <div style="font-size: 12px; color: #22c55e;">Time working</div>
+                </div>
+                
+                <div style="text-align: center;">
+                  <div style="width: 48px; height: 48px; border-radius: 50%; background: rgba(251, 146, 60, 0.1); display: flex; align-items: center; justify-content: center; margin: 0 auto 12px;">
+                    <span style="font-size: 24px;">😴</span>
+                  </div>
+                  <div style="font-size: 20px; font-weight: 700; color: #171717; margin-bottom: 4px;" id="performanceIdleTime">00:00</div>
+                  <div style="font-size: 12px; color: #737373; font-weight: 500; letter-spacing: 0.5px;">IDLE TIME</div>
+                  <div style="font-size: 12px; color: #ea580c;">Time inactive</div>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Notifications Card -->
+            <div class="card">
+              <div class="card-header" style="margin-bottom: 20px;">
+                <h2 style="font-size: 18px; font-weight: 600; color: #171717; margin: 0; display: flex; align-items: center; justify-content: space-between;">
+                  <span style="display: flex; align-items: center; gap: 8px;">
+                    🔔 Notifications
+                  </span>
+                  <span style="background: #f59e0b; color: white; padding: 2px 8px; border-radius: 12px; font-size: 12px; font-weight: 500;" id="notificationBadge">0</span>
+                </h2>
+              </div>
+              
+              <div style="max-height: 200px; overflow-y: auto;" id="notificationsList">
+                <div style="text-align: center; padding: 20px; color: #737373; font-size: 14px;">
+                  No notifications
+                </div>
+              </div>
+              
+              <div style="padding-top: 16px; border-top: 1px solid #e5e5e5;">
+                <button class="btn btn-secondary btn-sm" style="width: 100%; justify-content: center;" id="clearNotificationsBtn">
+                  🗑️ Clear All
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+    
+    <!-- Screenshot Feedback -->
+    <div style="display: none; position: fixed; top: 20px; right: 20px; background: white; border: 1px solid #e5e5e5; border-radius: 8px; padding: 20px; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1); max-width: 300px; z-index: 1000;" id="screenshotFeedback">
+      <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
+        <div style="font-size: 24px;">📸</div>
+        <div>
+          <h4 style="font-size: 16px; font-weight: 600; color: #171717; margin: 0;" id="feedbackTitle">Screenshot Status</h4>
+          <p style="font-size: 14px; color: #737373; margin: 0;" id="feedbackMessage">Processing...</p>
+        </div>
+      </div>
+      <div style="width: 100%; height: 4px; background: #f3f4f6; border-radius: 2px; overflow: hidden;">
+        <div style="height: 100%; background: #22c55e; width: 0%; transition: width 0.3s ease;" id="progressBar"></div>
+      </div>
+    </div>
+    </div>
+  </div>
+  
+  <!-- Notification -->
+  <div style="display: none; position: fixed; top: 20px; right: 20px; background: white; border: 1px solid #e5e5e5; border-radius: 8px; padding: 20px; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1); max-width: 350px; z-index: 10000;" id="notification">
+    <div style="font-size: 16px; font-weight: 600; color: #171717; margin-bottom: 8px;" id="notificationTitle">Notification</div>
+    <div style="font-size: 14px; color: #737373;" id="notificationMessage">Message content</div>
+  </div>
+  
+  <script>
+    // Check if running in Electron
+    const isElectron = typeof window !== 'undefined' && window.electronAPI;
+    
+    // Variables for session tracking
+    let monitoring = false;
+    let sessionStartTime = null;
+    let currentInterval = null;
+    let breakInterval = null;
+    
+    // Update current time
+    function updateCurrentTime() {
+      const now = new Date();
+      document.getElementById('currentTime').textContent = now.toLocaleTimeString();
+    }
+    
+    // Update session time
+    function updateSessionTime() {
+      if (sessionStartTime) {
+        const elapsed = Date.now() - sessionStartTime;
+        const hours = Math.floor(elapsed / 3600000);
+        const minutes = Math.floor((elapsed % 3600000) / 60000);
+        const seconds = Math.floor((elapsed % 60000) / 1000);
+        document.getElementById('sessionTime').textContent = `Session: ${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+      }
+    }
+    
+    // Start monitoring
+    function startMonitoring() {
+      monitoring = true;
+      sessionStartTime = Date.now();
+      const monitoringBadge = document.getElementById('monitoringBadge');
+      const startBtn = document.getElementById('startBtn');
+      const pauseBtn = document.getElementById('pauseBtn');
+      
+      monitoringBadge.style.background = '#22c55e';
+      monitoringBadge.style.color = '#ffffff';
+      monitoringBadge.textContent = 'Active';
+      startBtn.innerHTML = '⏹️ Stop Monitoring';
+      pauseBtn.disabled = false;
+      pauseBtn.style.opacity = '1';
+      
+      // Start intervals
+      currentInterval = setInterval(() => {
+        updateSessionTime();
+        updateStats();
+      }, 1000);
+      
+      showNotification('Monitoring Started', 'Your productivity is being tracked.');
+    }
+    
+    // Pause monitoring
+    function pauseMonitoring() {
+      monitoring = false;
+      const monitoringBadge = document.getElementById('monitoringBadge');
+      const startBtn = document.getElementById('startBtn');
+      const pauseBtn = document.getElementById('pauseBtn');
+      
+      monitoringBadge.style.background = '#f59e0b';
+      monitoringBadge.style.color = '#ffffff';
+      monitoringBadge.textContent = 'Paused';
+      startBtn.innerHTML = '▶️ Resume Monitoring';
+      pauseBtn.innerHTML = '⏸️ Paused';
+      
+      if (currentInterval) {
+        clearInterval(currentInterval);
+        currentInterval = null;
+      }
+      
+      showNotification('Monitoring Paused', 'Click Start to resume.');
+    }
+    
+    // Stop monitoring
+    function stopMonitoring() {
+      monitoring = false;
+      sessionStartTime = null;
+      const monitoringBadge = document.getElementById('monitoringBadge');
+      const startBtn = document.getElementById('startBtn');
+      const pauseBtn = document.getElementById('pauseBtn');
+      
+      monitoringBadge.style.background = '#f3f4f6';
+      monitoringBadge.style.color = '#6b7280';
+      monitoringBadge.textContent = 'Not Monitoring';
+      startBtn.innerHTML = '▶️ Start Monitoring';
+      pauseBtn.innerHTML = '⏸️ Pause';
+      pauseBtn.disabled = true;
+      pauseBtn.style.opacity = '0.5';
+      document.getElementById('sessionTime').textContent = '00:00:00';
+      
+      if (currentInterval) {
+        clearInterval(currentInterval);
+        currentInterval = null;
+      }
+      
+      resetStats();
+      showNotification('Monitoring Stopped', 'Session data has been saved.');
+    }
+    
+    // Update statistics
+    function updateStats() {
+      if (isElectron && window.electronAPI) {
+        try {
+          // Get real data from Electron
+          window.electronAPI.getProductivityData().then(data => {
+            if (data.productivityScore !== undefined) {
+              document.getElementById('productivityScore').textContent = data.productivityScore + '%';
+              document.getElementById('productivityBar').style.width = data.productivityScore + '%';
+            }
+            if (data.focusLevel !== undefined) {
+              document.getElementById('focusLevel').textContent = data.focusLevel + '%';
+              document.getElementById('focusBar').style.width = data.focusLevel + '%';
+            }
+            if (data.activeTime) {
+              document.getElementById('activeTime').textContent = data.activeTime;
+            }
+          }).catch(() => updateStatsFallback());
+        } catch (error) {
+          updateStatsFallback();
+        }
+      } else {
+        updateStatsFallback();
+      }
+    }
+    
+    // Fallback statistics update
+    function updateStatsFallback() {
+      const elapsed = sessionStartTime ? Date.now() - sessionStartTime : 0;
+      const minutes = Math.floor(elapsed / 60000);
+      
+      const productivityScore = Math.min(75 + Math.floor(minutes / 2), 95);
+      const focusLevel = Math.min(60 + Math.floor(minutes / 3), 90);
+      
+      document.getElementById('productivityScore').textContent = productivityScore + '%';
+      document.getElementById('productivityBar').style.width = productivityScore + '%';
+      document.getElementById('focusLevel').textContent = focusLevel + '%';
+      document.getElementById('focusBar').style.width = focusLevel + '%';
+      
+      const hours = Math.floor(elapsed / 3600000);
+      const mins = Math.floor((elapsed % 3600000) / 60000);
+      document.getElementById('activeTime').textContent = `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
+    }
+    
+    // Reset statistics
+    function resetStats() {
+      document.getElementById('productivityScore').textContent = '0%';
+      document.getElementById('productivityBar').style.width = '0%';
+      document.getElementById('focusLevel').textContent = '0%';
+      document.getElementById('focusBar').style.width = '0%';
+      document.getElementById('activeTime').textContent = '00:00';
+      document.getElementById('idleTime').textContent = '00:00';
+    }
+    
+    // Show notification
+    function showNotification(title, message) {
+      const notification = document.getElementById('notification');
+      document.getElementById('notificationTitle').textContent = title;
+      document.getElementById('notificationMessage').textContent = message;
+      notification.style.display = 'block';
+      setTimeout(() => {
+        notification.style.display = 'none';
+      }, 4000);
+    }
+    
+    // Authentication status handling
+    function updateAuthStatus(authData) {
+      const authCard = document.querySelector('.auth-card');
+      const authIcon = document.querySelector('.auth-icon');
+      const authStatus = document.getElementById('authStatus');
+      const authUser = document.getElementById('authUser');
+      const loginBtn = document.getElementById('loginBtn');
+      const startBtn = document.getElementById('startBtn');
+
+      if (authData.authenticated && authData.user) {
+        authCard.style.borderColor = 'rgba(34, 197, 94, 0.2)';
+        authCard.style.backgroundColor = 'rgba(34, 197, 94, 0.05)';
+        authIcon.innerHTML = '✅';
+        authIcon.style.background = 'rgba(34, 197, 94, 0.1)';
+        authIcon.style.color = '#22c55e';
+        authStatus.textContent = 'Authenticated';
+        authUser.textContent = authData.user.email || 'Ready to start monitoring your productivity';
+        loginBtn.innerHTML = '🏢 Open Dashboard';
+        startBtn.disabled = false;
+        showNotification('Authentication Success', 'You can now start monitoring.');
+      } else {
+        authCard.style.borderColor = 'rgba(251, 146, 60, 0.2)';
+        authCard.style.backgroundColor = 'rgba(251, 146, 60, 0.05)';
+        authIcon.innerHTML = '⚠️';
+        authIcon.style.background = 'rgba(251, 146, 60, 0.1)';
+        authIcon.style.color = '#ea580c';
+        authStatus.textContent = 'Not Authenticated';
+        authUser.textContent = 'Please login to start monitoring your productivity';
+        loginBtn.innerHTML = '🌐 Open Web App to Login';
+        startBtn.disabled = true;
+      }
+    }
+
+    // Handle monitoring status changes
+    function updateMonitoringStatus(statusData) {
+      const monitoringBadge = document.getElementById('monitoringBadge');
+      const startBtn = document.getElementById('startBtn');
+      const pauseBtn = document.getElementById('pauseBtn');
+
+      if (statusData.isMonitoring) {
+        monitoringBadge.style.background = '#22c55e';
+        monitoringBadge.style.color = '#ffffff';
+        monitoringBadge.textContent = 'Active';
+        startBtn.innerHTML = '⏹️ Stop Monitoring';
+        startBtn.className = 'btn btn-primary btn-lg';
+        pauseBtn.disabled = false;
+        pauseBtn.style.opacity = '1';
+        
+        if (statusData.startTime) {
+          sessionStartTime = new Date(statusData.startTime).getTime();
+        }
+        
+        // Start real-time stats updates
+        if (statsInterval) {
+          clearInterval(statsInterval);
+        }
+        statsInterval = setInterval(updateRealTimeStats, 1000);
+      } else {
+        monitoringBadge.style.background = '#f3f4f6';
+        monitoringBadge.style.color = '#6b7280';
+        monitoringBadge.textContent = 'Not Monitoring';
+        startBtn.innerHTML = '▶️ Start Monitoring';
+        startBtn.className = 'btn btn-primary btn-lg';
+        pauseBtn.disabled = true;
+        pauseBtn.style.opacity = '0.5';
+        sessionStartTime = null;
+        
+        // Stop real-time stats updates
+        if (statsInterval) {
+          clearInterval(statsInterval);
+          statsInterval = null;
+        }
+      }
+    }
+
+    // Handle stats updates
+    function updateStatsDisplay(statsData) {
+      // Update global last activity time
+      if (statsData.lastActivity !== undefined) {
+        window.lastActivityTime = statsData.lastActivity;
+      }
+      
+      if (statsData.sessionDuration !== undefined) {
+        const hours = Math.floor(statsData.sessionDuration / 3600000);
+        const minutes = Math.floor((statsData.sessionDuration % 3600000) / 60000);
+        const seconds = Math.floor((statsData.sessionDuration % 60000) / 1000);
+        document.getElementById('sessionTime').textContent = 
+          `Session: ${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+      }
+      
+      if (statsData.activeTime !== undefined) {
+        const hours = Math.floor(statsData.activeTime / 3600000);
+        const minutes = Math.floor((statsData.activeTime % 3600000) / 60000);
+        const seconds = Math.floor((statsData.activeTime % 60000) / 1000);
+        document.getElementById('activeTime').textContent = 
+          `Active: ${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        
+        // Update active time in performance card
+        const activeTimeDisplay = document.getElementById('performanceActiveTime');
+        if (activeTimeDisplay) {
+          activeTimeDisplay.textContent = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+        }
+      }
+      
+      if (statsData.idleTime !== undefined) {
+        const minutes = Math.floor(statsData.idleTime / 60000);
+        const seconds = Math.floor((statsData.idleTime % 60000) / 1000);
+        document.getElementById('idleTime').textContent = 
+          `Idle: ${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        
+        // Update idle time in performance card
+        const idleTimeDisplay = document.getElementById('performanceIdleTime');
+        if (idleTimeDisplay) {
+          idleTimeDisplay.textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        }
+      }
+      
+      // Calculate and update realistic productivity score
+      if (statsData.sessionDuration !== undefined && statsData.activeTime !== undefined && statsData.idleTime !== undefined) {
+        const productivityScore = calculateRealisticProductivityScore(statsData.sessionDuration, statsData.activeTime, statsData.idleTime);
+        document.getElementById('productivityScore').textContent = Math.round(productivityScore) + '%';
+        document.getElementById('productivityBar').style.width = Math.round(productivityScore) + '%';
+        
+        const focusLevel = calculateFocusLevel(statsData.activeTime, statsData.sessionDuration);
+        document.getElementById('focusLevel').textContent = Math.round(focusLevel) + '%';
+        document.getElementById('focusBar').style.width = Math.round(focusLevel) + '%';
+      }
+    }
+
+    // Handle idle time updates
+    function handleIdleTimeUpdate(idleData) {
+      const minutes = Math.floor(idleData.idleTime / 60000);
+      const seconds = Math.floor((idleData.idleTime % 60000) / 1000);
+      document.getElementById('idleTime').textContent = 
+        `Idle: ${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    }
+
+    // Handle idle alerts
+    function showIdleAlert(notification) {
+      showNotification('Idle Alert', notification.message);
+    }
+    
+    // Event Listeners
+    document.getElementById('startBtn').addEventListener('click', () => {
+      const startBtn = document.getElementById('startBtn');
+      const isCurrentlyMonitoring = startBtn.innerHTML.includes('Stop');
+      
+      if (isElectron) {
+        if (isCurrentlyMonitoring) {
+          window.electronAPI.stopMonitoring();
+        } else {
+          window.electronAPI.startMonitoring();
+        }
+      } else {
+        if (isCurrentlyMonitoring) {
+          stopMonitoring();
+        } else {
+          startMonitoring();
+        }
+      }
+    });
+    
+    document.getElementById('pauseBtn').addEventListener('click', () => {
+      if (isElectron) {
+        window.electronAPI.pauseMonitoring();
+      } else {
+        pauseMonitoring();
+      }
+    });
+    
+    
+    document.getElementById('screenshotBtn').addEventListener('click', async () => {
+      if (isElectron) {
+        try {
+          const feedback = document.getElementById('screenshotFeedback');
+          document.getElementById('feedbackTitle').textContent = 'Taking Screenshot';
+          document.getElementById('feedbackMessage').textContent = 'Please wait...';
+          feedback.style.display = 'block';
+          
+          const result = await window.electronAPI.takeScreenshotNow();
+          if (result?.success) {
+            document.getElementById('feedbackTitle').textContent = 'Success!';
+            document.getElementById('feedbackMessage').textContent = 'Screenshot captured successfully';
+            document.getElementById('progressBar').style.width = '100%';
+            
+            const currentCount = parseInt(document.getElementById('screenshotCount').textContent) || 0;
+            document.getElementById('screenshotCount').textContent = (currentCount + 1).toString();
+            
+            setTimeout(() => {
+              feedback.style.display = 'none';
+              document.getElementById('progressBar').style.width = '0%';
+            }, 3000);
+          }
+        } catch (error) {
+          document.getElementById('feedbackTitle').textContent = 'Error';
+          document.getElementById('feedbackMessage').textContent = 'Failed to capture screenshot';
+          setTimeout(() => {
+            document.getElementById('screenshotFeedback').style.display = 'none';
+          }, 3000);
+        }
+      } else {
+        showNotification('Screenshot', 'Feature only available in desktop app');
+      }
+    });
+    
+    document.getElementById('loginBtn').addEventListener('click', () => {
+      if (isElectron) {
+        window.electronAPI.openWebApp();
+      } else {
+        window.open('http://localhost:3000/auth/sign-in', '_blank');
+      }
+    });
+    
+    document.getElementById('openWebAppBtn').addEventListener('click', () => {
+      if (isElectron) {
+        window.electronAPI.openWebApp();
+      } else {
+        window.open('http://localhost:3000', '_blank');
+      }
+    });
+    
+    document.getElementById('showTimerBtn').addEventListener('click', () => {
+      if (isElectron) {
+        window.electronAPI.showTimerOverlay();
+      } else {
+        showNotification('Timer', 'Timer overlay only available in desktop app');
+      }
+    });
+    
+    document.getElementById('exportDataBtn').addEventListener('click', () => {
+      if (isElectron) {
+        window.electronAPI.exportData();
+        showNotification('Export', 'Session data exported successfully');
+      } else {
+        showNotification('Export', 'Export only available in desktop app');
+      }
+    });
+    
+    document.getElementById('clearNotificationsBtn').addEventListener('click', () => {
+      clearAllNotifications();
+    });
+
+    // Listen for Electron events
+    if (isElectron && window.electronAPI) {
+      window.electronAPI.onAuthStateChanged((event, authData) => {
+        updateAuthStatus(authData);
+      });
+
+      window.electronAPI.onMonitoringStatusChanged((event, statusData) => {
+        updateMonitoringStatus(statusData);
+      });
+
+      window.electronAPI.onStatsUpdated((event, statsData) => {
+        updateStatsDisplay(statsData);
+      });
+
+      window.electronAPI.onIdleTimeUpdate((event, idleData) => {
+        handleIdleTimeUpdate(idleData);
+      });
+
+      window.electronAPI.onShowIdleAlert((event, notification) => {
+        showIdleAlert(notification);
+      });
+
+      window.electronAPI.onTaskStatsUpdated((event, stats) => {
+        updateTaskStats(stats);
+      });
+
+      window.electronAPI.onNotificationReceived((event, notification) => {
+        addNotificationToList(notification);
+      });
+
+      window.electronAPI.onNotificationsCleared((event) => {
+        notifications = [];
+        renderNotifications();
+        updateNotificationBadge();
+      });
+    }
+    
+    // Initialize
+    updateCurrentTime();
+    setInterval(updateCurrentTime, 1000);
+    resetStats();
+    
+    // Start real-time stats update interval
+    let statsInterval = null;
+    
+    // Real-time stats update function
+    function updateRealTimeStats() {
+      if (isElectron && window.electronAPI && sessionStartTime) {
+        const now = Date.now();
+        const sessionDuration = now - sessionStartTime;
+        const lastActivity = window.lastActivityTime || now;
+        const idleTime = now - lastActivity;
+        const activeTime = Math.max(0, sessionDuration - idleTime);
+        
+        // Update session time
+        const hours = Math.floor(sessionDuration / 3600000);
+        const minutes = Math.floor((sessionDuration % 3600000) / 60000);
+        const seconds = Math.floor((sessionDuration % 60000) / 1000);
+        document.getElementById('sessionTime').textContent = 
+          `Session: ${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        
+        // Update active time (in control card)
+        const activeHours = Math.floor(activeTime / 3600000);
+        const activeMinutes = Math.floor((activeTime % 3600000) / 60000);
+        const activeSeconds = Math.floor((activeTime % 60000) / 1000);
+        document.getElementById('activeTime').textContent = 
+          `Active: ${activeHours.toString().padStart(2, '0')}:${activeMinutes.toString().padStart(2, '0')}:${activeSeconds.toString().padStart(2, '0')}`;
+        
+        // Update active time in performance card
+        const activeTimeDisplay = document.getElementById('performanceActiveTime');
+        if (activeTimeDisplay) {
+          activeTimeDisplay.textContent = `${activeHours.toString().padStart(2, '0')}:${activeMinutes.toString().padStart(2, '0')}`;
+        }
+        
+        // Update idle time
+        const idleMinutes = Math.floor(idleTime / 60000);
+        const idleSeconds = Math.floor((idleTime % 60000) / 1000);
+        document.getElementById('idleTime').textContent = 
+          `Idle: ${idleMinutes.toString().padStart(2, '0')}:${idleSeconds.toString().padStart(2, '0')}`;
+        
+        // Update idle time in performance card
+        const idleTimeDisplay = document.getElementById('performanceIdleTime');
+        if (idleTimeDisplay) {
+          idleTimeDisplay.textContent = `${idleMinutes.toString().padStart(2, '0')}:${idleSeconds.toString().padStart(2, '0')}`;
+        }
+        
+        // Calculate realistic productivity score
+        const productivityScore = calculateRealisticProductivityScore(sessionDuration, activeTime, idleTime);
+        document.getElementById('productivityScore').textContent = Math.round(productivityScore) + '%';
+        document.getElementById('productivityBar').style.width = Math.round(productivityScore) + '%';
+        
+        // Calculate focus level
+        const focusLevel = calculateFocusLevel(activeTime, sessionDuration);
+        document.getElementById('focusLevel').textContent = Math.round(focusLevel) + '%';
+        document.getElementById('focusBar').style.width = Math.round(focusLevel) + '%';
+      }
+    }
+    
+    // Calculate realistic productivity score (like Time Doctor, RescueTime)
+    function calculateRealisticProductivityScore(sessionDuration, activeTime, idleTime) {
+      if (sessionDuration === 0) return 0;
+      
+      // Base productivity on active time ratio
+      const activeRatio = activeTime / sessionDuration;
+      
+      // Productivity factors (like modern productivity apps)
+      let score = 0;
+      
+      // Active time score (0-60 points)
+      if (activeRatio >= 0.9) score += 60; // 90%+ active time
+      else if (activeRatio >= 0.8) score += 50; // 80-89% active time
+      else if (activeRatio >= 0.7) score += 40; // 70-79% active time
+      else if (activeRatio >= 0.6) score += 30; // 60-69% active time
+      else if (activeRatio >= 0.5) score += 20; // 50-59% active time
+      else if (activeRatio >= 0.4) score += 10; // 40-49% active time
+      
+      // Session length bonus (0-20 points)
+      const sessionHours = sessionDuration / 3600000;
+      if (sessionHours >= 8) score += 20; // 8+ hours
+      else if (sessionHours >= 6) score += 15; // 6-7 hours
+      else if (sessionHours >= 4) score += 10; // 4-5 hours
+      else if (sessionHours >= 2) score += 5; // 2-3 hours
+      
+      // Idle time penalty (0-20 points deduction)
+      const idleMinutes = idleTime / 60000;
+      if (idleMinutes > 30) score -= 20; // 30+ minutes idle
+      else if (idleMinutes > 20) score -= 15; // 20-29 minutes idle
+      else if (idleMinutes > 10) score -= 10; // 10-19 minutes idle
+      else if (idleMinutes > 5) score -= 5; // 5-9 minutes idle
+      
+      // Consistency bonus (0-20 points)
+      const activeMinutes = activeTime / 60000;
+      if (activeMinutes >= 480) score += 20; // 8+ hours active
+      else if (activeMinutes >= 360) score += 15; // 6+ hours active
+      else if (activeMinutes >= 240) score += 10; // 4+ hours active
+      else if (activeMinutes >= 120) score += 5; // 2+ hours active
+      
+      return Math.max(0, Math.min(100, score));
+    }
+    
+    // Calculate focus level based on active time consistency
+    function calculateFocusLevel(activeTime, sessionDuration) {
+      if (sessionDuration === 0) return 0;
+      
+      const activeRatio = activeTime / sessionDuration;
+      const activeMinutes = activeTime / 60000;
+      
+      let focusScore = 0;
+      
+      // Focus based on active time ratio
+      if (activeRatio >= 0.95) focusScore += 50; // 95%+ focus
+      else if (activeRatio >= 0.9) focusScore += 40; // 90-94% focus
+      else if (activeRatio >= 0.8) focusScore += 30; // 80-89% focus
+      else if (activeRatio >= 0.7) focusScore += 20; // 70-79% focus
+      else if (activeRatio >= 0.6) focusScore += 10; // 60-69% focus
+      
+      // Sustained focus bonus
+      if (activeMinutes >= 60) focusScore += 30; // 1+ hour sustained
+      else if (activeMinutes >= 30) focusScore += 20; // 30+ minutes sustained
+      else if (activeMinutes >= 15) focusScore += 10; // 15+ minutes sustained
+      
+      // Session consistency bonus
+      if (sessionDuration >= 3600000) focusScore += 20; // 1+ hour session
+      else if (sessionDuration >= 1800000) focusScore += 10; // 30+ minute session
+      
+      return Math.max(0, Math.min(100, focusScore));
+    }
+    
+    // Task Stats Management
+    let taskStats = {
+      received: 0,
+      pending: 0,
+      completed: 0
+    };
+    
+    let notifications = [];
+    
+    function updateTaskStats(stats) {
+      if (stats) {
+        taskStats = { ...taskStats, ...stats };
+      }
+      
+      document.getElementById('receivedTasks').textContent = taskStats.received || 0;
+      document.getElementById('pendingTasks').textContent = taskStats.pending || 0;
+      document.getElementById('completedTasks').textContent = taskStats.completed || 0;
+    }
+    
+    function addNotificationToList(notification) {
+      notifications.unshift(notification);
+      if (notifications.length > 10) {
+        notifications = notifications.slice(0, 10);
+      }
+      
+      renderNotifications();
+      updateNotificationBadge();
+    }
+    
+    function renderNotifications() {
+      const notificationsList = document.getElementById('notificationsList');
+      
+      if (notifications.length === 0) {
+        notificationsList.innerHTML = `
+          <div style="text-align: center; padding: 20px; color: #737373; font-size: 14px;">
+            No notifications
+          </div>
+        `;
+        return;
+      }
+      
+      notificationsList.innerHTML = notifications.map(notification => {
+        const timeAgo = getTimeAgo(notification.timestamp);
+        const typeIcon = getNotificationIcon(notification.type);
+        
+        return `
+          <div style="padding: 12px; border-bottom: 1px solid #f3f4f6; display: flex; align-items: flex-start; gap: 8px;">
+            <div style="font-size: 16px; margin-top: 2px;">${typeIcon}</div>
+            <div style="flex: 1;">
+              <div style="font-size: 13px; font-weight: 500; color: #171717; margin-bottom: 2px;">
+                ${notification.title || 'Notification'}
+              </div>
+              <div style="font-size: 12px; color: #737373; line-height: 1.4;">
+                ${notification.message}
+              </div>
+              <div style="font-size: 11px; color: #9ca3af; margin-top: 4px;">
+                ${timeAgo}
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+    
+    function getNotificationIcon(type) {
+      const icons = {
+        task: '📋',
+        break: '☕',
+        meeting: '🤝',
+        idle: '😴',
+        late: '⏰',
+        early: '🚶',
+        custom: '📢',
+        system: '⚙️',
+        productivity: '📊',
+        focus: '🎯'
+      };
+      return icons[type] || '📢';
+    }
+    
+    function getTimeAgo(timestamp) {
+      const now = new Date();
+      const time = new Date(timestamp);
+      const diff = now - time;
+      const minutes = Math.floor(diff / 60000);
+      const hours = Math.floor(minutes / 60);
+      const days = Math.floor(hours / 24);
+      
+      if (minutes < 1) return 'Just now';
+      if (minutes < 60) return `${minutes}m ago`;
+      if (hours < 24) return `${hours}h ago`;
+      return `${days}d ago`;
+    }
+    
+    function updateNotificationBadge() {
+      const badge = document.getElementById('notificationBadge');
+      badge.textContent = notifications.length;
+      badge.style.display = notifications.length > 0 ? 'inline' : 'none';
+    }
+    
+    function clearAllNotifications() {
+      if (isElectron && window.electronAPI) {
+        window.electronAPI.clearAllNotifications();
+      }
+      notifications = [];
+      renderNotifications();
+      updateNotificationBadge();
+      showNotification('Notifications Cleared', 'All notifications have been removed.');
+    }
+    
+    // Real API functions
+    async function loadTaskStats() {
+      if (isElectron && window.electronAPI) {
+        try {
+          const stats = await window.electronAPI.getTaskStats();
+          updateTaskStats(stats);
+        } catch (error) {
+          console.error('Failed to load task stats:', error);
+          // Fallback to mock data if API fails
+          updateTaskStats({ received: 0, pending: 0, completed: 0 });
+        }
+      } else {
+        // Fallback for non-electron environment
+        updateTaskStats({ received: 0, pending: 0, completed: 0 });
+      }
+    }
+    
+    async function loadNotifications() {
+      if (isElectron && window.electronAPI) {
+        try {
+          const apiNotifications = await window.electronAPI.getNotifications();
+          notifications = apiNotifications || [];
+          renderNotifications();
+          updateNotificationBadge();
+        } catch (error) {
+          console.error('Failed to load notifications:', error);
+          notifications = [];
+          renderNotifications();
+          updateNotificationBadge();
+        }
+      } else {
+        // Fallback for non-electron environment
+        notifications = [];
+        renderNotifications();
+        updateNotificationBadge();
+      }
+    }
+    
+    // Initialize task stats and notifications
+    updateTaskStats();
+    renderNotifications();
+    updateNotificationBadge();
+    
+    // Load real data after initialization
+    setTimeout(async () => {
+      await loadTaskStats();
+      await loadNotifications();
+    }, 2000);
+    
+    // Periodically refresh data
+    setInterval(async () => {
+      await loadTaskStats();
+      await loadNotifications();
+    }, 60000); // Every minute
+    
+    // Show welcome message
+    setTimeout(() => {
+      showNotification('Welcome!', 'AuctusHR is ready to use.');
+    }, 1000);
+  </script>
+</body>
+</html>

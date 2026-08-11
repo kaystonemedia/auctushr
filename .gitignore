@@ -32,12 +32,18 @@ yarn-error.log*
 # vercel
 .vercel
 
-# electron build artifacts and temporary bundles
-/dist-electron/
-/electron/
-*.exe
+# electron — track source + installers; skip deps/unpacked/oversized builds
+/electron/node_modules/
+/electron/dist/win-unpacked/
+/dist-electron/node_modules/
+/dist-electron/win-unpacked/
+/dist-electron/*.exe
 *.dll
 *.pak
+# allow portable Electron Setup installers under electron/dist (<100MB GitHub limit)
+*.exe
+!/electron/dist/*.exe
+!/electron/dist/*.blockmap
 /tmp-logs/
 /kaystonehr-attendance-extension/
 /kaystonehr-attendance-extension.zip
