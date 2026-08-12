@@ -1,6 +1,6 @@
 # Prevent bulky artifacts from being uploaded to Vercel
-dist-electron/
-electron/
+/dist-electron/
+/electron/
 *.exe
 *.dll
 *.pak
