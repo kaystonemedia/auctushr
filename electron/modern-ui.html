@@ -1142,35 +1142,35 @@
 
     // Listen for Electron events
     if (isElectron && window.electronAPI) {
-      window.electronAPI.onAuthStateChanged((event, authData) => {
+      window.electronAPI.onAuthStateChanged((authData) => {
         updateAuthStatus(authData);
       });
 
-      window.electronAPI.onMonitoringStatusChanged((event, statusData) => {
+      window.electronAPI.onMonitoringStatusChanged((statusData) => {
         updateMonitoringStatus(statusData);
       });
 
-      window.electronAPI.onStatsUpdated((event, statsData) => {
+      window.electronAPI.onStatsUpdated((statsData) => {
         updateStatsDisplay(statsData);
       });
 
-      window.electronAPI.onIdleTimeUpdate((event, idleData) => {
+      window.electronAPI.onIdleTimeUpdate((idleData) => {
         handleIdleTimeUpdate(idleData);
       });
 
-      window.electronAPI.onShowIdleAlert((event, notification) => {
+      window.electronAPI.onShowIdleAlert((notification) => {
         showIdleAlert(notification);
       });
 
-      window.electronAPI.onTaskStatsUpdated((event, stats) => {
+      window.electronAPI.onTaskStatsUpdated((stats) => {
         updateTaskStats(stats);
       });
 
-      window.electronAPI.onNotificationReceived((event, notification) => {
+      window.electronAPI.onNotificationReceived((notification) => {
         addNotificationToList(notification);
       });
 
-      window.electronAPI.onNotificationsCleared((event) => {
+      window.electronAPI.onNotificationsCleared(() => {
         notifications = [];
         renderNotifications();
         updateNotificationBadge();
