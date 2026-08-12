@@ -96,8 +96,28 @@ export async function POST(request: Request) {
       ? (body.managerId || (authResult.user.role === 'manager' ? authResult.user.profileId : null))
       : null
 
+    // profiles.auth_user_id is NOT NULL, so a Supabase Auth user must exist before
+    // the profile row is created. The employee never learns this password — they
+    // set their real one via the first-time-password flow, which just calls
+    // auth.admin.updateUserById to replace it. Mirrors migrate-to-supabase.js.
+    const placeholderPassword = `invite-${email}-${Date.now()}-${Math.random().toString(36).slice(2)}!Aa1`
+
+    const { data: createdAuthUser, error: createAuthError } = await supabaseAdmin.auth.admin.createUser({
+      email,
+      password: placeholderPassword,
+      email_confirm: true,
+      user_metadata: { requires_password_setup: true }
+    })
+
+    if (createAuthError || !createdAuthUser?.user) {
+      return NextResponse.json(
+        { error: createAuthError?.message || 'Failed to create authentication account for employee' },
+        { status: 400 }
+      )
+    }
+
     const insertPayload = {
-      auth_user_id: null,
+      auth_user_id: createdAuthUser.user.id,
       email,
       first_name: body.firstName || '',
       last_name: body.lastName || '',
@@ -125,6 +145,7 @@ export async function POST(request: Request) {
       .single()
 
     if (error) {
+      await supabaseAdmin.auth.admin.deleteUser(createdAuthUser.user.id)
       throw error
     }
 
