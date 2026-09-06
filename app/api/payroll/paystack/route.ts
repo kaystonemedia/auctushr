@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { genericPaymentService, GenericPayrollItem } from '@/lib/generic-payment-service'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { requireRole } from '@/lib/api-auth'
+import { getBiweeklyPeriodForDate, periodStartDateString, periodEndDateString } from '@/lib/pay-periods'
 
 export async function POST(request: NextRequest) {
   const auth = await requireRole(request, ['admin'])
@@ -40,8 +41,9 @@ export async function POST(request: NextRequest) {
 
     // Persist payment metadata to payroll_entries (best-effort)
     try {
-      const now = new Date()
-      const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+      const currentPeriod = getBiweeklyPeriodForDate(new Date())
+      const periodStart = periodStartDateString(currentPeriod)
+      const periodEnd = periodEndDateString(currentPeriod)
 
       const itemByEmployeeId = new Map<string, GenericPayrollItem>()
       for (const item of payrollItems) {
@@ -73,15 +75,20 @@ export async function POST(request: NextRequest) {
           .from('payroll_entries')
           .select('id, payment')
           .eq('employee_id', profile.id)
-          .eq('period_month', month)
+          .eq('period_start_date', periodStart)
+          .eq('period_end_date', periodEnd)
           .order('updated_at', { ascending: false })
           .limit(1)
+
+        const nextStatus = result.status === 'success' ? 'paid' : result.status === 'pending' ? 'processed' : 'cancelled'
+        const paymentDate = result.status === 'success' ? new Date().toISOString() : null
 
         if (existingRows && existingRows.length > 0) {
           await supabaseAdmin
             .from('payroll_entries')
             .update({
-              status: result.status === 'success' ? 'paid' : result.status === 'pending' ? 'processed' : 'cancelled',
+              status: nextStatus,
+              ...(paymentDate ? { payment_date: paymentDate } : {}),
               payment: {
                 ...((existingRows[0].payment || {}) as Record<string, unknown>),
                 ...payment
@@ -91,9 +98,12 @@ export async function POST(request: NextRequest) {
         } else {
           await supabaseAdmin.from('payroll_entries').insert({
             employee_id: profile.id,
-            period_month: month,
+            period_start_date: periodStart,
+            period_end_date: periodEnd,
+            pay_frequency: 'biweekly',
             net_salary: original?.netSalary || 0,
-            status: result.status === 'success' ? 'paid' : result.status === 'pending' ? 'processed' : 'cancelled',
+            status: nextStatus,
+            ...(paymentDate ? { payment_date: paymentDate } : {}),
             payment
           })
         }

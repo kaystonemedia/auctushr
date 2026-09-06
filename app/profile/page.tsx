@@ -96,10 +96,13 @@ export default function ProfilePage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [paymentDetails, setPaymentDetails] = useState({
     mobileNumber: '',
+    ssnitNumber: '',
     bankAccount: {
       accountNumber: '',
       bankCode: '',
-      accountName: ''
+      accountName: '',
+      bankName: '',
+      branch: ''
     }
   })
   const [emergencyDetails, setEmergencyDetails] = useState({
@@ -116,10 +119,13 @@ export default function ProfilePage() {
       setProfileImage(user.avatar || null)
       setPaymentDetails({
         mobileNumber: user.mobileNumber || '',
+        ssnitNumber: user.ssnitNumber || '',
         bankAccount: {
           accountNumber: user.bankAccount?.accountNumber || '',
           bankCode: user.bankAccount?.bankCode || '',
-          accountName: user.bankAccount?.accountName || ''
+          accountName: user.bankAccount?.accountName || '',
+          bankName: user.bankAccount?.bankName || '',
+          branch: user.bankAccount?.branch || ''
         }
       })
       setEmergencyDetails({
@@ -312,14 +318,18 @@ export default function ProfilePage() {
     setIsSavingPayment(true)
     try {
       const mobileNumber = paymentDetails.mobileNumber.trim()
+      const ssnitNumber = paymentDetails.ssnitNumber.trim()
       const bankAccountInput = {
         accountNumber: paymentDetails.bankAccount.accountNumber.trim(),
         bankCode: paymentDetails.bankAccount.bankCode.trim(),
-        accountName: paymentDetails.bankAccount.accountName.trim()
+        accountName: paymentDetails.bankAccount.accountName.trim(),
+        bankName: paymentDetails.bankAccount.bankName.trim(),
+        branch: paymentDetails.bankAccount.branch.trim()
       }
       const hasBankAccount = Object.values(bankAccountInput).some(value => value !== '')
       await updateUser({
         mobileNumber: mobileNumber || null,
+        ssnitNumber: ssnitNumber || null,
         bankAccount: hasBankAccount ? bankAccountInput : null
       })
       toast({
@@ -473,16 +483,59 @@ export default function ProfilePage() {
             </CardHeader>
             <CardContent>
               <form onSubmit={handleSavePaymentDetails} className="space-y-4">
-                <div>
-                  <Label htmlFor="paymentMobile">Payment Phone / Mobile Money</Label>
-                  <Input
-                    id="paymentMobile"
-                    value={paymentDetails.mobileNumber}
-                    onChange={(e) =>
-                      setPaymentDetails(prev => ({ ...prev, mobileNumber: e.target.value }))
-                    }
-                    placeholder="+233XXXXXXXXX"
-                  />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="paymentMobile">Payment Phone / Mobile Money</Label>
+                    <Input
+                      id="paymentMobile"
+                      value={paymentDetails.mobileNumber}
+                      onChange={(e) =>
+                        setPaymentDetails(prev => ({ ...prev, mobileNumber: e.target.value }))
+                      }
+                      placeholder="+233XXXXXXXXX"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="ssnitNumber">SSNIT Number</Label>
+                    <Input
+                      id="ssnitNumber"
+                      value={paymentDetails.ssnitNumber}
+                      onChange={(e) =>
+                        setPaymentDetails(prev => ({ ...prev, ssnitNumber: e.target.value }))
+                      }
+                      placeholder="C123456789012"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="bankName">Bank Name</Label>
+                    <Input
+                      id="bankName"
+                      value={paymentDetails.bankAccount.bankName}
+                      onChange={(e) =>
+                        setPaymentDetails(prev => ({
+                          ...prev,
+                          bankAccount: { ...prev.bankAccount, bankName: e.target.value }
+                        }))
+                      }
+                      placeholder="e.g. GCB Bank"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="bankBranch">Branch</Label>
+                    <Input
+                      id="bankBranch"
+                      value={paymentDetails.bankAccount.branch}
+                      onChange={(e) =>
+                        setPaymentDetails(prev => ({
+                          ...prev,
+                          bankAccount: { ...prev.bankAccount, branch: e.target.value }
+                        }))
+                      }
+                      placeholder="e.g. Osu Branch"
+                    />
+                  </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>

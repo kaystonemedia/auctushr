@@ -16,10 +16,13 @@ interface User {
   managerId?: string | null
   phone?: string
   mobileNumber?: string | null
+  ssnitNumber?: string | null
   bankAccount?: {
     accountNumber?: string
     bankCode?: string
     accountName?: string
+    bankName?: string
+    branch?: string
   } | null
   emergencyContact?: {
     name?: string
@@ -61,9 +64,9 @@ export const NewAuthContext = createContext<AuthContextType>({
 })
 
 const roleBasedRoutes = {
-  admin: ['/dashboard', '/profile', '/employees', '/attendance', '/leave', '/payroll', '/payslip', '/documents', '/productivity', '/performance', '/settings', '/help', '/support', '/managers', '/administrators', '/tasks', '/departments', '/wellness-check-in', '/whos-away', '/test-auth', '/add-employee', '/todo', '/debug-assignments', '/fix-assignments', '/tools', '/monitoring'],
-  manager: ['/dashboard', '/profile', '/employees', '/attendance', '/leave', '/payroll', '/payslip', '/documents', '/productivity', '/performance', '/settings', '/help', '/support', '/tasks', '/departments', '/wellness-check-in', '/whos-away', '/test-auth', '/debug-assignments', '/fix-assignments', '/tools', '/monitoring'],
-  employee: ['/dashboard', '/profile', '/attendance', '/my-tasks', '/leave', '/payslip', '/help', '/support', '/test-auth', '/debug-assignments', '/fix-assignments', '/tools']
+  admin: ['/dashboard', '/profile', '/employees', '/attendance', '/leave', '/payroll', '/payslip', '/documents', '/productivity', '/performance', '/settings', '/help', '/support', '/managers', '/administrators', '/tasks', '/departments', '/wellness-check-in', '/whos-away', '/test-auth', '/add-employee', '/todo', '/debug-assignments', '/fix-assignments', '/tools', '/toolkit', '/monitoring'],
+  manager: ['/dashboard', '/profile', '/employees', '/attendance', '/leave', '/payroll', '/payslip', '/documents', '/productivity', '/performance', '/settings', '/help', '/support', '/tasks', '/departments', '/wellness-check-in', '/whos-away', '/test-auth', '/debug-assignments', '/fix-assignments', '/tools', '/toolkit', '/monitoring'],
+  employee: ['/dashboard', '/profile', '/attendance', '/my-tasks', '/leave', '/payslip', '/help', '/support', '/test-auth', '/debug-assignments', '/fix-assignments', '/tools', '/toolkit']
 }
 
 async function fetchCurrentUser(): Promise<User | null> {
@@ -212,7 +215,17 @@ export function NewAuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   const updateUser = async (data: Partial<User>) => {
-    setUser((prev) => (prev ? { ...prev, ...data, updatedAt: new Date() } : prev))
+    const response = await fetch('/api/profile', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    })
+    if (!response.ok) {
+      const errorPayload = await response.json().catch(() => ({}))
+      throw new Error(errorPayload.error || 'Failed to update profile')
+    }
+    const payload = await response.json()
+    setUser((prev) => (prev ? { ...prev, ...payload.user } : payload.user))
   }
 
   const firebaseUser: LegacyFirebaseUser | null = user
@@ -313,9 +326,9 @@ export const NewAuthContext = createContext<AuthContextType>({
 })
 
 const roleBasedRoutes = {
-  admin: ['/dashboard', '/profile', '/employees', '/attendance', '/leave', '/payroll', '/payslip', '/documents', '/productivity', '/performance', '/settings', '/help', '/support', '/managers', '/administrators', '/tasks', '/departments', '/wellness-check-in', '/whos-away', '/test-auth', '/add-employee', '/todo', '/debug-assignments', '/fix-assignments', '/tools', '/monitoring'],
-  manager: ['/dashboard', '/profile', '/employees', '/attendance', '/leave', '/payroll', '/payslip', '/documents', '/productivity', '/performance', '/settings', '/help', '/support', '/tasks', '/departments', '/wellness-check-in', '/whos-away', '/test-auth', '/debug-assignments', '/fix-assignments', '/tools', '/monitoring'],
-  employee: ['/dashboard', '/profile', '/attendance', '/my-tasks', '/leave', '/payslip', '/help', '/support', '/test-auth', '/debug-assignments', '/fix-assignments', '/tools']
+  admin: ['/dashboard', '/profile', '/employees', '/attendance', '/leave', '/payroll', '/payslip', '/documents', '/productivity', '/performance', '/settings', '/help', '/support', '/managers', '/administrators', '/tasks', '/departments', '/wellness-check-in', '/whos-away', '/test-auth', '/add-employee', '/todo', '/debug-assignments', '/fix-assignments', '/tools', '/toolkit', '/monitoring'],
+  manager: ['/dashboard', '/profile', '/employees', '/attendance', '/leave', '/payroll', '/payslip', '/documents', '/productivity', '/performance', '/settings', '/help', '/support', '/tasks', '/departments', '/wellness-check-in', '/whos-away', '/test-auth', '/debug-assignments', '/fix-assignments', '/tools', '/toolkit', '/monitoring'],
+  employee: ['/dashboard', '/profile', '/attendance', '/my-tasks', '/leave', '/payslip', '/help', '/support', '/test-auth', '/debug-assignments', '/fix-assignments', '/tools', '/toolkit']
 }
 
 async function fetchCurrentUser(): Promise<User | null> {
@@ -564,9 +577,9 @@ export const NewAuthContext = createContext<AuthContextType>({
 })
 
 const roleBasedRoutes = {
-  admin: ['/dashboard', '/profile', '/employees', '/attendance', '/leave', '/payroll', '/payslip', '/documents', '/productivity', '/performance', '/settings', '/help', '/support', '/managers', '/administrators', '/tasks', '/departments', '/wellness-check-in', '/whos-away', '/test-auth', '/add-employee', '/todo', '/debug-assignments', '/fix-assignments', '/tools', '/monitoring'],
-  manager: ['/dashboard', '/profile', '/employees', '/attendance', '/leave', '/payroll', '/payslip', '/documents', '/productivity', '/performance', '/settings', '/help', '/support', '/tasks', '/departments', '/wellness-check-in', '/whos-away', '/test-auth', '/debug-assignments', '/fix-assignments', '/tools', '/monitoring'],
-  employee: ['/dashboard', '/profile', '/attendance', '/my-tasks', '/leave', '/payslip', '/help', '/support', '/test-auth', '/debug-assignments', '/fix-assignments', '/tools']
+  admin: ['/dashboard', '/profile', '/employees', '/attendance', '/leave', '/payroll', '/payslip', '/documents', '/productivity', '/performance', '/settings', '/help', '/support', '/managers', '/administrators', '/tasks', '/departments', '/wellness-check-in', '/whos-away', '/test-auth', '/add-employee', '/todo', '/debug-assignments', '/fix-assignments', '/tools', '/toolkit', '/monitoring'],
+  manager: ['/dashboard', '/profile', '/employees', '/attendance', '/leave', '/payroll', '/payslip', '/documents', '/productivity', '/performance', '/settings', '/help', '/support', '/tasks', '/departments', '/wellness-check-in', '/whos-away', '/test-auth', '/debug-assignments', '/fix-assignments', '/tools', '/toolkit', '/monitoring'],
+  employee: ['/dashboard', '/profile', '/attendance', '/my-tasks', '/leave', '/payslip', '/help', '/support', '/test-auth', '/debug-assignments', '/fix-assignments', '/tools', '/toolkit']
 }
 
 async function fetchCurrentUser(): Promise<User | null> {

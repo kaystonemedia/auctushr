@@ -36,11 +36,12 @@ interface PaymentStatus {
 }
 
 interface PaymentStatusTrackerProps {
-  period?: string
+  periodStart?: string | null
+  periodEnd?: string | null
   limit?: number
 }
 
-export function PaymentStatusTracker({ period, limit: limitCount = 50 }: PaymentStatusTrackerProps) {
+export function PaymentStatusTracker({ periodStart, periodEnd, limit: limitCount = 50 }: PaymentStatusTrackerProps) {
   const [payments, setPayments] = useState<PaymentStatus[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -52,7 +53,8 @@ export function PaymentStatusTracker({ period, limit: limitCount = 50 }: Payment
       setError(null)
 
       const params = new URLSearchParams({ hasPayment: 'true' })
-      if (period) params.set('periodMonth', period)
+      if (periodStart) params.set('periodStart', periodStart)
+      if (periodEnd) params.set('periodEnd', periodEnd)
 
       const res = await fetch(`/api/payroll/entries?${params}`, { credentials: 'include' })
       if (!res.ok) throw new Error('Failed to load payments')
@@ -101,7 +103,7 @@ export function PaymentStatusTracker({ period, limit: limitCount = 50 }: Payment
 
   useEffect(() => {
     loadPaymentStatus()
-  }, [period, limitCount])
+  }, [periodStart, periodEnd, limitCount])
 
   const handleRefresh = async () => {
     setRefreshing(true)

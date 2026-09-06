@@ -11,6 +11,7 @@ import { formatCurrency } from '@/lib/utils'
 import { Loader2, Users, DollarSign, CheckCircle, XCircle, Clock, AlertTriangle } from 'lucide-react'
 import { settingsClientService } from '@/lib/settings-client'
 import { GenericPayrollItem } from '@/lib/generic-payment-service'
+import { getBiweeklyPeriodForDate, periodStartDateString, periodEndDateString } from '@/lib/pay-periods'
 
 interface Employee {
   id: string
@@ -251,8 +252,7 @@ export function BulkPayrollProcessor({ onSuccess, onCancel }: BulkPayrollProcess
 
       setResults(processingResults)
 
-      const now = new Date()
-      const periodMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+      const currentPeriod = getBiweeklyPeriodForDate(new Date())
 
       for (const res of processingResults) {
         if (res.status !== 'success') continue
@@ -265,7 +265,8 @@ export function BulkPayrollProcessor({ onSuccess, onCancel }: BulkPayrollProcess
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             employeeId: res.employeeId,
-            periodMonth,
+            periodStartDate: periodStartDateString(currentPeriod),
+            periodEndDate: periodEndDateString(currentPeriod),
             basicSalary: gross,
             grossSalary: gross,
             netSalary: res.amount,

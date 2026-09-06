@@ -12,6 +12,7 @@ import { Loader2, Calculator, TrendingUp, Clock, Calendar, DollarSign } from 'lu
 import { settingsClientService } from '@/lib/settings-client'
 import { ProductivityService } from '@/lib/productivity'
 import { GenericPayrollItem } from '@/lib/generic-payment-service'
+import { getBiweeklyPeriodForDate, periodStartDateString, periodEndDateString } from '@/lib/pay-periods'
 
 interface EnhancedPayrollFormProps {
   employee: {
@@ -276,14 +277,15 @@ export function EnhancedPayrollForm({ employee, onSuccess, onCancel }: EnhancedP
         status: 'processed'
       }
 
-      const periodMonth = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
+      const currentPeriod = getBiweeklyPeriodForDate(new Date())
       const res = await fetch('/api/payroll/entries', {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           employeeId: employee.id,
-          periodMonth,
+          periodStartDate: periodStartDateString(currentPeriod),
+          periodEndDate: periodEndDateString(currentPeriod),
           basicSalary: calculation.baseSalary,
           grossSalary: calculation.summary.grossSalary,
           netSalary: calculation.summary.netSalary,
@@ -377,18 +379,16 @@ export function EnhancedPayrollForm({ employee, onSuccess, onCancel }: EnhancedP
 
       // Upsert payroll entry before initiating payment (ensures a record exists for reconciliation)
       try {
-        const now = new Date()
-        const month = String(now.getMonth() + 1)
-        const year = now.getFullYear()
+        const currentPeriod = getBiweeklyPeriodForDate(new Date())
 
-        const periodMonth = `${year}-${month.padStart(2, '0')}`
         await fetch('/api/payroll/entries', {
           method: 'POST',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             employeeId: employee.id,
-            periodMonth,
+            periodStartDate: periodStartDateString(currentPeriod),
+            periodEndDate: periodEndDateString(currentPeriod),
             basicSalary: calculation.baseSalary,
             grossSalary: calculation.summary.grossSalary,
             netSalary: calculation.summary.netSalary,

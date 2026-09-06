@@ -33,6 +33,12 @@ import { Loader2, CheckCircle2, AlertCircle, FileText, Download, CreditCard, Use
 import { format } from "date-fns";
 import { useRouter } from "next/navigation";
 import { useNewAuth } from "@/contexts/new-auth-context";
+import {
+  formatPeriodLabel,
+  getBiweeklyPeriodForDate,
+  periodStartDateString,
+  periodEndDateString,
+} from "@/lib/pay-periods";
 
 /** Coerce Firestore Timestamp, ISO string, or Date from the Supabase shim. */
 function coerceToDate(value: unknown): Date | null {
@@ -55,10 +61,17 @@ function coerceToDate(value: unknown): Date | null {
 function formatPayrollPeriodLabel(entry: {
   period?: string;
   periodId?: string;
+  periodStartDate?: Date | string | null;
+  periodEndDate?: Date | string | null;
+  payFrequency?: string;
   createdAt?: unknown;
   processedAt?: unknown;
   updatedAt?: unknown;
 }): string {
+  if (entry.periodStartDate && entry.periodEndDate) {
+    const label = formatPeriodLabel(entry.periodStartDate, entry.periodEndDate);
+    return entry.payFrequency === "monthly_legacy" ? `${label} (legacy monthly)` : label;
+  }
   const periodKey = entry.period || entry.periodId;
   if (typeof periodKey === "string" && /^\d{4}-\d{2}$/.test(periodKey)) {
     const [year, month] = periodKey.split("-").map(Number);
@@ -204,9 +217,24 @@ export function PayrollDashboard() {
       setEmployees(uniqueEmployees);
       setPayrollEntries(payrollData.entries || []);
 
-      const periods = (payrollData.periods || []) as string[];
+      const periodDetails = (payrollData.periodDetails || []) as Array<{
+        key: string;
+        periodStartDate?: string | null;
+        periodEndDate?: string | null;
+        payFrequency?: string;
+      }>;
       setPayrollPeriods(
-        periods.map((p) => ({ id: p, periodId: p, period: p } as PayrollEntry))
+        periodDetails.map(
+          (p) =>
+            ({
+              id: p.key,
+              periodId: p.key,
+              period: p.key,
+              periodStartDate: p.periodStartDate,
+              periodEndDate: p.periodEndDate,
+              payFrequency: p.payFrequency,
+            } as unknown as PayrollEntry)
+        )
       );
 
       setLoading(false);
@@ -389,13 +417,19 @@ export function PayrollDashboard() {
           : 0;
       const netSalary = grossSalary - deductions + allowances;
 
+      const matchedPeriod = payrollPeriods.find((p) => p.period === selectedPeriod);
+      const currentPeriod = getBiweeklyPeriodForDate(new Date());
+      const periodStartDate = matchedPeriod?.periodStartDate ?? periodStartDateString(currentPeriod);
+      const periodEndDate = matchedPeriod?.periodEndDate ?? periodEndDateString(currentPeriod);
+
       const res = await fetch('/api/payroll/entries', {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           employeeId,
-          periodMonth: selectedPeriod,
+          periodStartDate,
+          periodEndDate,
           basicSalary: grossSalary,
           grossSalary,
           netSalary,
@@ -435,19 +469,31 @@ export function PayrollDashboard() {
 
       // Transform payroll entry to payslip format
       const payslipData = {
+        employeeCode: payrollEntry.employeeCode || null,
         employeeName: payrollEntry.employeeName || `${employee.firstName} ${employee.lastName}`,
         department: payrollEntry.department || employee.department,
-        baseSalary: payrollEntry.grossSalary || employee.salary,
+        position: payrollEntry.position || null,
+        ssnitNumber: payrollEntry.ssnitNumber || null,
+        bankAccount: payrollEntry.bankAccount || employee.bankAccount || null,
+        baseSalary: payrollEntry.basicSalary || employee.salary,
         performanceBonus: payrollEntry.bonus || 0,
         attendanceBonus: 0, // Calculate from productivity data if available
+        overtimeHours: payrollEntry.overtimeHours || 0,
+        overtimeRate: payrollEntry.overtimeRate || 0,
+        overtimeAmount: (payrollEntry.overtimeHours || 0) * (payrollEntry.overtimeRate || 0),
         totalBonus: payrollEntry.bonus || 0,
         grossSalary: payrollEntry.grossSalary || employee.salary,
-        deductions: {
-          tax: payrollEntry.deductions?.tax || 0,
-          insurance: payrollEntry.deductions?.insurance || 0,
-          other: payrollEntry.deductions?.other || 0,
-        },
+        allowances: Array.isArray(payrollEntry.allowances) ? payrollEntry.allowances : [],
+        deductions: Array.isArray(payrollEntry.deductions) ? payrollEntry.deductions : [],
         netPay: payrollEntry.netSalary || payrollEntry.grossSalary,
+        payFrequency: payrollEntry.payFrequency,
+        periodStartDate: payrollEntry.periodStartDate || null,
+        periodEndDate: payrollEntry.periodEndDate || null,
+        daysWorked: payrollEntry.daysWorked ?? null,
+        daysAbsent: payrollEntry.daysAbsent ?? null,
+        currency: payrollEntry.currency || 'GHS',
+        exchangeRate: payrollEntry.exchangeRate ?? null,
+        paymentDate: payrollEntry.paymentDate || null,
         month: format(processedDate, "MM"),
         year: processedDate.getFullYear(),
         processedAt: payrollEntry.processedAt,
@@ -975,7 +1021,10 @@ export function PayrollDashboard() {
       )}
 
       {activeTab === 'payments' && (
-        <PaymentStatusTracker period={selectedPeriod} />
+        <PaymentStatusTracker
+          periodStart={(payrollPeriods.find((p) => p.period === selectedPeriod)?.periodStartDate as string) ?? null}
+          periodEnd={(payrollPeriods.find((p) => p.period === selectedPeriod)?.periodEndDate as string) ?? null}
+        />
       )}
 
       <Dialog open={showPayrollForm} onOpenChange={setShowPayrollForm}>

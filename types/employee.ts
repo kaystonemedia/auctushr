@@ -1,6 +1,7 @@
 export interface Employee {
   id: string;
   uid?: string | null;
+  employeeCode?: string; // Auto-generated (EMP-0001) — see profiles.employee_code
   firstName: string;
   lastName: string;
   email: string;
@@ -16,10 +17,13 @@ export interface Employee {
   photoURL?: string | null;
   // Payment details for payroll
   mobileNumber?: string; // E.164 format (e.g., 233XXXXXXXXX for Ghana)
+  ssnitNumber?: string; // Ghana social security number, shown on payslips
   bankAccount?: {
     accountNumber: string;
     bankCode: string;
     accountName: string;
+    bankName?: string;
+    branch?: string;
   };
   // Source collection this document lives in
   collection?: 'users' | 'employees' | 'managers';

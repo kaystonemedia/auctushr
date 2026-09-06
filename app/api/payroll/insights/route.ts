@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { requireRole } from '@/lib/api-auth'
+import { getBiweeklyPeriodForDate, periodStartDateString, periodEndDateString } from '@/lib/pay-periods'
 
 type PayrollInsightRow = {
   net_salary: number | null
@@ -9,7 +10,7 @@ type PayrollInsightRow = {
     productivityScore?: number
     department?: string
   } | null
-  period_month: string
+  period_start_date: string
 }
 
 export async function GET(request: NextRequest) {
@@ -18,13 +19,13 @@ export async function GET(request: NextRequest) {
 
   try {
     void request
-    const currentDate = new Date()
-    const currentMonth = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`
+    const currentPeriod = getBiweeklyPeriodForDate(new Date())
 
     const { data: payrollEntries, error } = await supabaseAdmin
       .from('payroll_entries')
-      .select('net_salary, bonus, payment, period_month')
-      .eq('period_month', currentMonth)
+      .select('net_salary, bonus, payment, period_start_date')
+      .eq('period_start_date', periodStartDateString(currentPeriod))
+      .eq('period_end_date', periodEndDateString(currentPeriod))
 
     if (error) {
       throw error

@@ -55,7 +55,7 @@ export interface PayrollPeriod {
 }
 
 export interface PayrollDeduction {
-  type: 'tax' | 'insurance' | 'loan' | 'other'
+  type: 'tax' | 'insurance' | 'loan' | 'paye' | 'ssnit' | 'other'
   name: string
   amount: number
   description?: string
@@ -72,8 +72,22 @@ export interface PayrollEntry {
   id: string
   employeeId: string
   employeeName: string
+  employeeCode?: string
   departmentId: string
   periodId: string
+  /** Display-friendly duplicate of periodId, as returned by the entries API. */
+  period?: string
+  /** Biweekly period boundaries (the source of truth going forward). */
+  periodStartDate?: Date | string
+  periodEndDate?: Date | string
+  /** 'monthly_legacy' marks entries created before the biweekly migration. */
+  payFrequency?: 'biweekly' | 'monthly_legacy'
+  /** Snapshotted at generation time from attendance records for the period. */
+  daysWorked?: number
+  daysAbsent?: number
+  /** Display/payout currency and the USD exchange rate snapshotted at generation time. */
+  currency?: string
+  exchangeRate?: number
   basicSalary: number
   allowances: PayrollAllowance[]
   deductions: PayrollDeduction[]

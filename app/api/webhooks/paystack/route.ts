@@ -106,6 +106,7 @@ async function handleTransferSuccess(transferData: TransferWebhookData) {
 
     await updatePayrollByReference(reference, {
       status: 'paid',
+      payment_date: new Date().toISOString(),
       payment: {
         status: 'success',
         transactionId: transferData.transfer_code,

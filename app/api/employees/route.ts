@@ -30,6 +30,7 @@ export async function GET(request: Request) {
     const employees = (data || []).map((item) => ({
       id: item.id,
       uid: item.auth_user_id,
+      employeeCode: item.employee_code || null,
       email: item.email || '',
       firstName: item.first_name || '',
       lastName: item.last_name || '',
@@ -45,6 +46,7 @@ export async function GET(request: Request) {
       updatedAt: item.updated_at ? new Date(item.updated_at) : new Date(),
       documents: item.documents || [],
       mobileNumber: item.mobile_number || null,
+      ssnitNumber: item.ssnit_number || null,
       bankAccount: item.bank_account || null,
       address: item.address || null,
       emergencyContact: item.emergency_contact || null
@@ -132,11 +134,14 @@ export async function POST(request: Request) {
       salary: Number(body.salary || 0),
       status: body.status || 'active',
       mobile_number: body.mobileNumber || null,
+      ssnit_number: body.ssnitNumber || null,
       bank_account: body.bankAccount || null,
       address: body.address || null,
       emergency_contact: body.emergencyContact || null,
       documents: body.documents || []
     }
+    // employee_code is intentionally omitted — profiles.employee_code has a
+    // DB default that auto-assigns the next EMP-#### sequence value.
 
     const { data, error } = await supabaseAdmin
       .from('profiles')
@@ -153,6 +158,7 @@ export async function POST(request: Request) {
       employee: {
         id: data.id,
         uid: data.auth_user_id,
+        employeeCode: data.employee_code || null,
         email: data.email || '',
         firstName: data.first_name || '',
         lastName: data.last_name || '',
@@ -167,6 +173,7 @@ export async function POST(request: Request) {
         createdAt: data.created_at ? new Date(data.created_at) : new Date(),
         updatedAt: data.updated_at ? new Date(data.updated_at) : new Date(),
         mobileNumber: data.mobile_number || null,
+        ssnitNumber: data.ssnit_number || null,
         bankAccount: data.bank_account || null,
         address: data.address || null,
         emergencyContact: data.emergency_contact || null,
@@ -213,6 +220,7 @@ export async function PUT(request: Request) {
       salary: body.salary !== undefined ? Number(body.salary) : undefined,
       status: body.status,
       mobile_number: body.mobileNumber ?? null,
+      ssnit_number: body.ssnitNumber ?? null,
       bank_account: body.bankAccount ?? null,
       address: body.address ?? null,
       emergency_contact: body.emergencyContact ?? null,
@@ -244,6 +252,7 @@ export async function PUT(request: Request) {
       employee: {
         id: data.id,
         uid: data.auth_user_id,
+        employeeCode: data.employee_code || null,
         email: data.email || '',
         firstName: data.first_name || '',
         lastName: data.last_name || '',
@@ -258,6 +267,7 @@ export async function PUT(request: Request) {
         createdAt: data.created_at ? new Date(data.created_at) : new Date(),
         updatedAt: data.updated_at ? new Date(data.updated_at) : new Date(),
         mobileNumber: data.mobile_number || null,
+        ssnitNumber: data.ssnit_number || null,
         bankAccount: data.bank_account || null,
         address: data.address || null,
         emergencyContact: data.emergency_contact || null,

@@ -8,37 +8,53 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Payslip } from '@/components/payroll/payslip'
+import { formatPeriodLabel, getBiweeklyPeriodForDate, periodStartDateString, periodEndDateString } from '@/lib/pay-periods'
 
-import { format } from 'date-fns'
-import { FileText, Download, Search, RefreshCw } from 'lucide-react'
+import { FileText, Download, Search, RefreshCw, CalendarRange } from 'lucide-react'
 import { toast } from 'react-hot-toast'
+
+interface PayslipLineItem {
+  type?: string
+  name: string
+  amount: number
+}
 
 interface PayslipEntry {
   id: string
   employeeId: string
+  employeeCode?: string | null
   employeeName: string
   department: string
+  position?: string
+  ssnitNumber?: string | null
+  bankAccount?: {
+    accountNumber?: string
+    bankName?: string
+    branch?: string
+    accountName?: string
+  } | null
   baseSalary: number
   performanceBonus: number
   attendanceBonus: number
+  overtimeHours?: number
+  overtimeRate?: number
+  overtimeAmount?: number
   totalBonus: number
   grossSalary: number
-  deductions: {
-    tax: number
-    insurance: number
-    other: number
-  }
+  allowances?: PayslipLineItem[]
+  deductions: PayslipLineItem[]
   netPay: number
+  payFrequency?: string
+  periodStartDate?: string | null
+  periodEndDate?: string | null
+  daysWorked?: number | null
+  daysAbsent?: number | null
+  currency?: string
+  exchangeRate?: number | null
+  paymentDate?: string | null
   month: string
   year: number
   processedAt: string
-  productivityScore?: number
-  attendanceRate?: number
-  focusTimePercentage?: number
-  taskCompletionRate?: number
-  totalFocusSessions?: number
-  totalTasksCompleted?: number
-  totalMeetingHours?: number
 }
 
 export default function PayslipPage() {
@@ -46,10 +62,11 @@ export default function PayslipPage() {
   const [payslips, setPayslips] = useState<PayslipEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
-  const [selectedMonth, setSelectedMonth] = useState('')
+  const [selectedPeriod, setSelectedPeriod] = useState('')
   const [selectedYear, setSelectedYear] = useState('')
   const [showPayslip, setShowPayslip] = useState(false)
   const [selectedPayslip, setSelectedPayslip] = useState<PayslipEntry | null>(null)
+  const [selectedPayslipType, setSelectedPayslipType] = useState<'biweekly' | 'annual'>('biweekly')
   const [refreshing, setRefreshing] = useState(false)
 
   useEffect(() => {
@@ -61,32 +78,30 @@ export default function PayslipPage() {
   const fetchPayslips = async () => {
     try {
       setLoading(true)
-      
+
       // Use the working API endpoint with user ID for specific employee payslips
       // If user is admin/manager, don't pass employeeId to get all payslips
       let url = '/api/payroll/payslip-working'
       if (user?.role === 'employee') {
         url += `?employeeId=${user.id}`
       }
-      
+
       const response = await fetch(url)
-      
+
       if (!response.ok) {
         throw new Error('Failed to fetch payslips')
       }
-      
+
       const data = await response.json()
-      
+
       if (data.success) {
         const list = Array.isArray(data.payslips)
           ? data.payslips
           : data.payslip
           ? [data.payslip]
           : []
-        console.log('Payslips fetched from API:', list)
         setPayslips(list)
       } else {
-        console.log('No payslips found or API returned error:', data)
         setPayslips([])
       }
     } catch (error) {
@@ -101,14 +116,17 @@ export default function PayslipPage() {
   const handleViewPayslip = async (payslip: PayslipEntry) => {
     try {
       setRefreshing(true)
-      
-      // Fetch enhanced payslip data from API
-      const response = await fetch(`/api/payroll/payslip-working?employeeId=${payslip.employeeId}&month=${payslip.month}&year=${payslip.year}`)
-      
+
+      const params = new URLSearchParams({ employeeId: payslip.employeeId })
+      if (payslip.periodStartDate) params.set('periodStart', payslip.periodStartDate)
+      if (payslip.periodEndDate) params.set('periodEnd', payslip.periodEndDate)
+
+      const response = await fetch(`/api/payroll/payslip-working?${params.toString()}`)
+
       if (!response.ok) {
         throw new Error('Failed to fetch payslip data')
       }
-      
+
       const data = await response.json()
       if (data.success) {
         const detailedPayslip =
@@ -116,14 +134,14 @@ export default function PayslipPage() {
           (Array.isArray(data.payslips) && data.payslips.length > 0 ? data.payslips[0] : null)
 
         if (!detailedPayslip) {
-          console.warn('Payslip API responded without payslip data, falling back to basic payslip.', data)
-          // Fall back to the basic payslip that was already loaded in the list
           setSelectedPayslip(payslip)
+          setSelectedPayslipType('biweekly')
           setShowPayslip(true)
           return
         }
 
         setSelectedPayslip(detailedPayslip)
+        setSelectedPayslipType('biweekly')
         setShowPayslip(true)
       } else {
         throw new Error(data.error || 'Failed to fetch payslip data')
@@ -131,82 +149,102 @@ export default function PayslipPage() {
     } catch (error) {
       console.error('Error fetching payslip data:', error)
       toast.error('Failed to load payslip data')
-      // Fallback to basic payslip data
       setSelectedPayslip(payslip)
+      setSelectedPayslipType('biweekly')
       setShowPayslip(true)
     } finally {
       setRefreshing(false)
     }
   }
 
-     const handleGeneratePayslip = async (employeeId: string, month: string, year: number) => {
-     try {
-       setRefreshing(true)
-       
-       // Validate parameters before sending
-       if (!employeeId || !month || !year) {
-         throw new Error(`Missing parameters: employeeId=${employeeId}, month=${month}, year=${year}`)
-       }
-       
-       console.log('Generating payslip with:', { employeeId, month, year })
-       
-       const response = await fetch('/api/payroll/payslip-working', {
-         method: 'POST',
-         headers: {
-           'Content-Type': 'application/json',
-         },
-         body: JSON.stringify({
-           employeeId,
-           month,
-           year
-         })
-       })
-      
+  const handleViewYearlyPayslip = async (payslip: PayslipEntry) => {
+    try {
+      setRefreshing(true)
+      const params = new URLSearchParams({
+        employeeId: payslip.employeeId,
+        year: String(payslip.year),
+        frequency: 'annual'
+      })
+      const response = await fetch(`/api/payroll/payslip-working?${params.toString()}`)
       const data = await response.json()
-      
-             if (!response.ok) {
-         console.error('API Error Response:', data)
-         const errorMsg = data.details || data.error || `HTTP ${response.status}: Failed to generate payslip`
-         throw new Error(errorMsg)
-       }
-      
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to load yearly payslip')
+      }
+
+      setSelectedPayslip(data.payslip)
+      setSelectedPayslipType('annual')
+      setShowPayslip(true)
+    } catch (error) {
+      console.error('Error fetching yearly payslip:', error)
+      toast.error(error instanceof Error ? error.message : 'Failed to load yearly payslip')
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
+  const handleGeneratePayslip = async (employeeId: string, periodStartDate: string, periodEndDate: string) => {
+    try {
+      setRefreshing(true)
+
+      const response = await fetch('/api/payroll/payslip-working', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          employeeId,
+          periodStart: periodStartDate,
+          periodEnd: periodEndDate
+        })
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        const errorMsg = data.details || data.error || `HTTP ${response.status}: Failed to generate payslip`
+        throw new Error(errorMsg)
+      }
+
       if (data.success && data.payslip) {
         setSelectedPayslip(data.payslip)
+        setSelectedPayslipType('biweekly')
         setShowPayslip(true)
         toast.success('Payslip generated successfully')
-        // Refresh the payslips list
         await fetchPayslips()
       } else {
         throw new Error(data.error || data.details || 'Failed to generate payslip')
       }
-         } catch (error) {
-       console.error('Error generating payslip:', error)
-       console.error('Error details:', {
-         message: error instanceof Error ? error.message : 'Unknown error',
-         stack: error instanceof Error ? error.stack : undefined,
-         employeeId,
-         month,
-         year
-       })
-       const errorMessage = error instanceof Error ? error.message : 'Failed to generate payslip'
-       toast.error(`Payslip generation failed: ${errorMessage}`)
-     } finally {
+    } catch (error) {
+      console.error('Error generating payslip:', error)
+      const errorMessage = error instanceof Error ? error.message : 'Failed to generate payslip'
+      toast.error(`Payslip generation failed: ${errorMessage}`)
+    } finally {
       setRefreshing(false)
     }
   }
+
+  const periodKey = (p: PayslipEntry) =>
+    p.periodStartDate && p.periodEndDate ? `${p.periodStartDate}_${p.periodEndDate}` : `${p.month}/${p.year}`
+
+  const periodDisplayLabel = (p: PayslipEntry) =>
+    p.periodStartDate && p.periodEndDate ? formatPeriodLabel(p.periodStartDate, p.periodEndDate) : `${p.month}/${p.year}`
 
   const filteredPayslips = payslips.filter(payslip => {
     const search = searchQuery.toLowerCase()
     const name = (payslip.employeeName || '').toLowerCase()
     const department = (payslip.department || '').toLowerCase()
     const matchesSearch = !search || name.includes(search) || department.includes(search)
-    const matchesMonth = !selectedMonth || selectedMonth === 'all' || payslip.month === selectedMonth
+    const matchesPeriod = !selectedPeriod || selectedPeriod === 'all' || periodKey(payslip) === selectedPeriod
     const matchesYear = !selectedYear || selectedYear === 'all' || payslip.year?.toString() === selectedYear
 
-    return matchesSearch && matchesMonth && matchesYear
+    return matchesSearch && matchesPeriod && matchesYear
   })
 
-  const availableMonths = [...new Set(payslips.map(p => p.month).filter(month => month && month !== ''))].sort()
+  const availablePeriods = Array.from(
+    new Map(payslips.map(p => [periodKey(p), { key: periodKey(p), label: periodDisplayLabel(p) }])).values()
+  ).sort((a, b) => b.key.localeCompare(a.key))
+
   const availableYears = [...new Set(payslips.map(p => p.year).filter(year => year && !isNaN(year)))].sort((a, b) => b - a)
 
   if (!user) {
@@ -222,56 +260,38 @@ export default function PayslipPage() {
 
   return (
     <div className="space-y-6">
-             <div className="flex justify-between items-center">
-         <div>
-           <h1 className="text-2xl font-semibold text-gray-900">Payslips</h1>
-           <p className="text-gray-500">
-             {user.role === 'admin' ? 'View all employee payslips' :
-              user.role === 'manager' ? 'View team payslips' :
-              'View your payslips'}
-           </p>
-         </div>
-         <div className="flex gap-2">
-           <Button
-             onClick={fetchPayslips}
-             disabled={loading}
-             variant="outline"
-             className="flex items-center gap-2"
-           >
-             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-             Refresh
-           </Button>
-           {user.role === 'admin' && (
-             <>
-              <Button
-                onClick={async () => {
-                  try {
-                    const currentDate = new Date()
-                    const currentMonth = (currentDate.getMonth() + 1).toString()
-                    const currentYear = currentDate.getFullYear()
-                    
-                    console.log('Generating payslip for current period:', { 
-                      employeeId: user.id, 
-                      month: currentMonth, 
-                      year: currentYear 
-                    })
-                    
-                    await handleGeneratePayslip(user.id, currentMonth, currentYear)
-                    toast.success('Payslip generated successfully')
-                    await fetchPayslips()
-                  } catch (error) {
-                    console.error('Error generating payslip:', error)
-                    toast.error('Failed to generate payslip')
-                  }
-                }}
-                variant="outline"
-                size="sm"
-              >
-                Generate My Payslip
-              </Button>
-            </>
-           )}
-         </div>
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-2xl font-semibold text-gray-900">Payslips</h1>
+          <p className="text-gray-500">
+            {user.role === 'admin' ? 'View all employee payslips' :
+             user.role === 'manager' ? 'View team payslips' :
+             'View your payslips'}
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Button
+            onClick={fetchPayslips}
+            disabled={loading}
+            variant="outline"
+            className="flex items-center gap-2"
+          >
+            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+          {user.role === 'admin' && (
+            <Button
+              onClick={async () => {
+                const period = getBiweeklyPeriodForDate(new Date())
+                await handleGeneratePayslip(user.id, periodStartDateString(period), periodEndDateString(period))
+              }}
+              variant="outline"
+              size="sm"
+            >
+              Generate My Payslip
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Filters */}
@@ -294,22 +314,16 @@ export default function PayslipPage() {
               </div>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Month</label>
-              <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Pay Period</label>
+              <Select value={selectedPeriod} onValueChange={setSelectedPeriod}>
                 <SelectTrigger>
-                  <SelectValue placeholder="All months" />
+                  <SelectValue placeholder="All periods" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All months</SelectItem>
-                  {availableMonths.map(month => (
-                    <SelectItem key={month} value={month}>
-                      {(() => {
-                        try {
-                          return format(new Date(2024, parseInt(month) - 1), 'MMMM')
-                        } catch {
-                          return `Month ${month}`
-                        }
-                      })()}
+                  <SelectItem value="all">All periods</SelectItem>
+                  {availablePeriods.map(period => (
+                    <SelectItem key={period.key} value={period.key}>
+                      {period.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -354,9 +368,9 @@ export default function PayslipPage() {
               <p>No payslips found</p>
               <p className="text-sm">Payslips will appear here once payroll is processed</p>
             </div>
-                     ) : (
-             <div className="space-y-4">
-               {filteredPayslips.map((payslip) => (
+          ) : (
+            <div className="space-y-4">
+              {filteredPayslips.map((payslip) => (
                 <div
                   key={payslip.id}
                   className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors"
@@ -368,15 +382,13 @@ export default function PayslipPage() {
                     <div>
                       <h3 className="font-medium text-gray-900">
                         {payslip.employeeName}
+                        {payslip.employeeCode && (
+                          <span className="ml-2 text-xs text-gray-400">{payslip.employeeCode}</span>
+                        )}
                       </h3>
                       <p className="text-sm text-gray-500">
-                        {payslip.department} • {payslip.processedAt ? format(new Date(payslip.processedAt), 'MMMM yyyy') : `${payslip.month}/${payslip.year}`}
+                        {payslip.department} • {periodDisplayLabel(payslip)}
                       </p>
-                      {payslip.productivityScore && (
-                        <p className="text-xs text-green-600">
-                          Productivity: {payslip.productivityScore.toFixed(1)}%
-                        </p>
-                      )}
                     </div>
                   </div>
                   <div className="flex items-center space-x-4">
@@ -397,33 +409,34 @@ export default function PayslipPage() {
                         <Download className="h-4 w-4" />
                         <span>View</span>
                       </Button>
-                                             {user.role === 'admin' && (
-                         <Button
-                           variant="outline"
-                           size="sm"
-                           onClick={() => {
-                             // Use current month/year if the payslip data is missing these values
-                             const currentDate = new Date()
-                             const month = payslip.month || (currentDate.getMonth() + 1).toString()
-                             const year = payslip.year || currentDate.getFullYear()
-                             
-                             console.log('Regenerating payslip with:', { 
-                               employeeId: payslip.employeeId, 
-                               month, 
-                               year,
-                               originalMonth: payslip.month,
-                               originalYear: payslip.year
-                             })
-                             
-                             handleGeneratePayslip(payslip.employeeId, month, year)
-                           }}
-                           disabled={refreshing}
-                           className="flex items-center space-x-2"
-                         >
-                           <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
-                           <span>Regenerate</span>
-                         </Button>
-                       )}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleViewYearlyPayslip(payslip)}
+                        disabled={refreshing}
+                        className="flex items-center space-x-2"
+                      >
+                        <CalendarRange className="h-4 w-4" />
+                        <span>Yearly</span>
+                      </Button>
+                      {user.role === 'admin' && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            if (!payslip.periodStartDate || !payslip.periodEndDate) {
+                              toast.error('This entry has no biweekly period to regenerate')
+                              return
+                            }
+                            handleGeneratePayslip(payslip.employeeId, payslip.periodStartDate, payslip.periodEndDate)
+                          }}
+                          disabled={refreshing}
+                          className="flex items-center space-x-2"
+                        >
+                          <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+                          <span>Regenerate</span>
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -437,29 +450,46 @@ export default function PayslipPage() {
       <Dialog open={showPayslip} onOpenChange={setShowPayslip}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Employee Payslip</DialogTitle>
+            <DialogTitle>{selectedPayslipType === 'annual' ? 'Annual Payslip' : 'Employee Payslip'}</DialogTitle>
           </DialogHeader>
           {selectedPayslip && (
-            <Payslip 
+            <Payslip
+              payslipType={selectedPayslipType}
               payroll={{
+                employeeCode: selectedPayslip.employeeCode,
                 employeeName: selectedPayslip.employeeName,
                 department: selectedPayslip.department,
+                position: selectedPayslip.position,
+                ssnitNumber: selectedPayslip.ssnitNumber,
+                bankAccount: selectedPayslip.bankAccount,
                 baseSalary: selectedPayslip.baseSalary,
                 performanceBonus: selectedPayslip.performanceBonus,
                 attendanceBonus: selectedPayslip.attendanceBonus,
+                overtimeHours: selectedPayslip.overtimeHours,
+                overtimeRate: selectedPayslip.overtimeRate,
+                overtimeAmount: selectedPayslip.overtimeAmount,
                 totalBonus: selectedPayslip.totalBonus,
                 grossSalary: selectedPayslip.grossSalary,
+                allowances: selectedPayslip.allowances,
                 deductions: selectedPayslip.deductions,
                 netPay: selectedPayslip.netPay,
+                payFrequency: selectedPayslip.payFrequency,
+                periodStartDate: selectedPayslip.periodStartDate,
+                periodEndDate: selectedPayslip.periodEndDate,
+                daysWorked: selectedPayslip.daysWorked,
+                daysAbsent: selectedPayslip.daysAbsent,
+                currency: selectedPayslip.currency,
+                exchangeRate: selectedPayslip.exchangeRate,
+                paymentDate: selectedPayslip.paymentDate,
                 month: selectedPayslip.month,
                 year: selectedPayslip.year,
                 processedAt: selectedPayslip.processedAt,
-              }} 
-              onClose={() => setShowPayslip(false)} 
+              }}
+              onClose={() => setShowPayslip(false)}
             />
           )}
         </DialogContent>
       </Dialog>
     </div>
   )
-} 
+}

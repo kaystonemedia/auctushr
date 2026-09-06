@@ -29,6 +29,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Monitor,
+  Grid3x3,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from './ui/button'
@@ -81,6 +82,7 @@ const sections = [
   {
     heading: 'SYSTEM',
     items: [
+      { title: 'Toolkit', href: '/toolkit', icon: <Grid3x3 className="w-5 h-5" />, roles: ['admin', 'manager', 'employee'] },
       { title: 'Tools', href: '/tools', icon: <Wrench className="w-5 h-5" />, roles: ['admin', 'manager', 'employee'] },
       { title: 'Settings', href: '/settings', icon: <Settings className="w-5 h-5" />, roles: ['admin', 'manager'] },
       { title: 'Help & Support', href: '/help', icon: <HelpCircle className="w-5 h-5" />, roles: ['admin', 'manager', 'employee'] },
