@@ -12,7 +12,7 @@ const {
 } = require('./supabase-session');
 
 const ENV_FILES = ['.env.local', '.env.production', '.env'];
-const DEFAULT_PROD_URL = 'https://auctushr.vercel.app';
+const DEFAULT_PROD_URL = 'https://www.auctushr.com';
 
 function normalizeBaseUrl(url) {
   if (!url || typeof url !== 'string') {
@@ -97,6 +97,12 @@ class AuctusMonitor {
     this.currentIdleTime = 0;
     this.cumulativeIdleTime = 0;
     this.lastStatsTimestamp = Date.now();
+    // Work session sync with the web app (/api/tools/session)
+    this.isPaused = false;
+    this.pausedAt = null;
+    this.sessionPushInterval = null;
+    this.remoteSessionPollInterval = null;
+    this.lastSessionChangeAt = Date.now();
     this.maxIdleTime = 10 * 60 * 1000; // 10 minutes in milliseconds (overridden by settings)
     this.breakReminderMs = 4 * 60 * 60 * 1000; // default: 4 hours (half of 8h)
     this.lastBreakAlertTime = 0;
@@ -197,6 +203,9 @@ class AuctusMonitor {
     
     // Initialize timer overlay
     this.setupTimerOverlay();
+
+    // Follow work sessions started or stopped from the web app
+    this.startRemoteSessionPolling();
   }
 
   async loadAppSettings() {
@@ -559,7 +568,9 @@ class AuctusMonitor {
     // For now, always load from production URL
     const webAppUrl = this.serverUrl || this.productionServerUrl || DEFAULT_PROD_URL;
 
+    // The installed app always shows the monitoring UI; in dev it needs --monitoring-ui
     this.useStandaloneMonitoringUI =
+      app.isPackaged ||
       process.argv.includes('--monitoring-ui') ||
       process.env.ELECTRON_STANDALONE_MONITORING === '1';
     
@@ -1311,15 +1322,8 @@ class AuctusMonitor {
       const currentIdleStreak = Math.max(0, now - this.lastActivity);
       const idleTime = Math.min(sessionDuration, this.cumulativeIdleTime + currentIdleStreak);
       const activeTime = Math.max(0, sessionDuration - idleTime);
-      const productivityScore = sessionDuration > 0
-        ? Math.round((activeTime / sessionDuration) * 100)
-        : 0;
-      const focusLevel = currentIdleStreak < 60000
-        ? 90
-        : currentIdleStreak < 5 * 60 * 1000
-          ? 60
-          : 25;
-      
+      const { productivityScore, focusLevel } = this.calculateSessionScores(sessionDuration, activeTime);
+
       return {
         productivityScore,
         focusLevel,
@@ -1678,10 +1682,11 @@ class AuctusMonitor {
       new Date(activity.timestamp) >= new Date(sessionStart)
     );
     
-    const avgProductivity = sessionActivities.length > 0 
-      ? sessionActivities.reduce((sum, act) => sum + act.productivityScore, 0) / sessionActivities.length
-      : 0;
-    
+    const currentIdleStreak = Math.max(0, now - this.lastActivity);
+    const idleTime = Math.min(sessionDuration, this.cumulativeIdleTime + currentIdleStreak);
+    const activeTime = Math.max(0, sessionDuration - idleTime);
+    const { productivityScore: avgProductivity } = this.calculateSessionScores(sessionDuration, activeTime);
+
     const focusTime = sessionActivities.filter(act => act.focusLevel === 'focused').length * 30; // 30 seconds per activity
     const communicationTime = sessionActivities.filter(act => act.focusLevel === 'communication').length * 30;
     const browsingTime = sessionActivities.filter(act => act.focusLevel === 'browsing').length * 30;
@@ -1698,7 +1703,8 @@ class AuctusMonitor {
     };
   }
 
-  startMonitoring() {
+  // options.sessionStart keeps the start time of a session begun in the web app
+  startMonitoring(options = {}) {
     if (this.isMonitoring) return;
     
     // Ensure we have user data (create offline user if needed)
@@ -1711,11 +1717,17 @@ class AuctusMonitor {
       }
     }
 
+    // Resuming after Pause keeps the existing session start
+    const resumingStart = this.isPaused ? store.get('sessionStartTime') : null;
+    const sessionStart = options.sessionStart || resumingStart || new Date().toISOString();
+
     this.isMonitoring = true;
+    this.isPaused = false;
+    this.pausedAt = null;
     this.lastActivity = Date.now();
-    this.cumulativeIdleTime = 0;
+    if (!resumingStart) this.cumulativeIdleTime = 0;
     this.lastStatsTimestamp = Date.now();
-    store.set('sessionStartTime', new Date().toISOString()); // Start session
+    store.set('sessionStartTime', sessionStart); // Start session
 
     // Start enhanced periodic screenshots with idle monitoring
     this.startPeriodicScreenshots();
@@ -1764,22 +1776,27 @@ class AuctusMonitor {
     // Notify renderer process
     this.safeSendToMainWindow('monitoring-status-changed', {
       isMonitoring: true,
-      startTime: new Date().toISOString()
+      startTime: sessionStart
     });
-    
+
     // Start stats update interval
+    if (this.statsInterval) clearInterval(this.statsInterval);
     this.statsInterval = setInterval(() => {
       this.updateStats();
     }, 1000); // Update every second for real-time display
-    
+
     // Start task and notification polling
     this.startTaskAndNotificationPolling();
+
+    this.startSessionPush();
   }
 
   stopMonitoring() {
-    if (!this.isMonitoring) return;
+    if (!this.isMonitoring && !this.isPaused) return;
 
     this.isMonitoring = false;
+    this.isPaused = false;
+    this.pausedAt = null;
     this.cumulativeIdleTime = 0;
     this.lastStatsTimestamp = Date.now();
 
@@ -1822,7 +1839,8 @@ class AuctusMonitor {
       clearInterval(this.statsInterval);
       this.statsInterval = null;
     }
-    
+
+    this.stopSessionPush();
   }
 
   // Apply blur effect to screenshot for privacy
@@ -2043,6 +2061,37 @@ class AuctusMonitor {
     }
     
     return Math.max(0, Math.min(100, score));
+  }
+
+  // Single source for the Productivity and Focus Level percentages shown in the
+  // desktop monitor and the web app. Keep in sync with lib/tools/format.ts.
+  calculateSessionScores(sessionDuration, activeTime) {
+    if (!sessionDuration || sessionDuration <= 0) {
+      return { productivityScore: 0, focusLevel: 0 };
+    }
+
+    const activeRatio = activeTime / sessionDuration;
+    const activeMinutes = activeTime / 60000;
+
+    // Productivity: share of the session spent active
+    const productivityScore = Math.min(100, Math.round(activeRatio * 100));
+
+    // Focus: active share (up to 50) + sustained active minutes (up to 30) + session length (up to 20)
+    let focusLevel = 0;
+    if (activeRatio >= 0.95) focusLevel += 50;
+    else if (activeRatio >= 0.9) focusLevel += 40;
+    else if (activeRatio >= 0.8) focusLevel += 30;
+    else if (activeRatio >= 0.7) focusLevel += 20;
+    else if (activeRatio >= 0.6) focusLevel += 10;
+
+    if (activeMinutes >= 60) focusLevel += 30;
+    else if (activeMinutes >= 30) focusLevel += 20;
+    else if (activeMinutes >= 15) focusLevel += 10;
+
+    if (sessionDuration >= 3600000) focusLevel += 20;
+    else if (sessionDuration >= 1800000) focusLevel += 10;
+
+    return { productivityScore, focusLevel: Math.min(100, focusLevel) };
   }
 
   calculateFocusLevel(activeWindow) {
@@ -2467,6 +2516,8 @@ class AuctusMonitor {
   pauseMonitoring() {
     if (this.isMonitoring) {
       this.isMonitoring = false;
+      this.isPaused = true;
+      this.pausedAt = new Date().toISOString();
       
       // Clear intervals
       if (this.screenshotInterval) {
@@ -2489,8 +2540,10 @@ class AuctusMonitor {
       if (this.mainWindow) {
         this.mainWindow.webContents.send('monitoring-stopped', { status: 'paused' });
       }
-      
+
       console.log('Monitoring paused');
+      this.markSessionChanged();
+      this.pushWorkSession();
     }
   }
 
@@ -2794,10 +2847,8 @@ class AuctusMonitor {
       }
       const idleTime = Math.min(sessionDuration, this.cumulativeIdleTime + currentIdleStreak);
       const activeTime = Math.max(0, sessionDuration - idleTime);
-      const productivityScore = sessionDuration > 0
-        ? Math.round((activeTime / sessionDuration) * 100)
-        : 0;
-      
+      const { productivityScore, focusLevel } = this.calculateSessionScores(sessionDuration, activeTime);
+
       // Calculate basic stats
       const stats = {
         sessionDuration: sessionDuration,
@@ -2808,6 +2859,7 @@ class AuctusMonitor {
         lastActivity: this.lastActivity,
         isActive: currentIdleStreak < 60000, // Active if activity within last minute
         productivityScore,
+        focusLevel,
         timestamp: now,
         activeTime,
         isIdle: currentIdleStreak > 5 * 60 * 1000 // 5 minutes current streak
@@ -3901,6 +3953,114 @@ class AuctusMonitor {
       this.taskStatsPollingInterval = null;
     }
     this.lastNotificationId = null;
+  }
+
+  // ---- Work session sync with the web app (/api/tools/session) ----
+  // The desktop app saves its session in the same shape the web app's Tools page uses
+  // (ToolsWorkSession in types/tools.ts), tagged source: 'desktop'. It also follows
+  // sessions started, paused or stopped in the web app (source: 'web').
+
+  markSessionChanged() {
+    this.lastSessionChangeAt = Date.now();
+  }
+
+  buildWorkSession() {
+    const now = Date.now();
+    const sessionStart = store.get('sessionStartTime') || null;
+    const hasSession = Boolean(sessionStart) && (this.isMonitoring || this.isPaused);
+    const sessionDurationMs = hasSession ? Math.max(0, now - new Date(sessionStart).getTime()) : 0;
+    const currentIdleStreak = this.isMonitoring ? Math.max(0, now - this.lastActivity) : 0;
+    const idleDurationMs = Math.min(sessionDurationMs, this.cumulativeIdleTime + currentIdleStreak);
+
+    return {
+      isMonitoring: hasSession,
+      isOnBreak: hasSession && this.isPaused,
+      sessionStart: hasSession ? sessionStart : null,
+      breakStart: hasSession && this.isPaused ? this.pausedAt : null,
+      breakDurationMs: 0,
+      idleDurationMs,
+      sessionDurationMs,
+      updatedAt: new Date(now).toISOString(),
+      source: 'desktop'
+    };
+  }
+
+  async pushWorkSession() {
+    const token = this.authToken || this.userData?.token;
+    if (!token || store.get('offlineMode') || this.userData?.offline) return;
+
+    try {
+      const response = await this.makeAPIRequest('/api/tools/session', {
+        method: 'POST',
+        body: { session: this.buildWorkSession() }
+      });
+      // Server timestamp of our own write, so the poll doesn't treat it as a web change
+      if (response?.syncedAt) this.lastOwnSessionSyncAt = response.syncedAt;
+    } catch (error) {
+      console.log('Work session sync failed:', error.message);
+    }
+  }
+
+  startSessionPush() {
+    this.markSessionChanged();
+    this.pushWorkSession();
+    if (this.sessionPushInterval) clearInterval(this.sessionPushInterval);
+    // Same cadence as the web app's own session sync
+    this.sessionPushInterval = setInterval(() => this.pushWorkSession(), 20 * 1000);
+  }
+
+  stopSessionPush() {
+    if (this.sessionPushInterval) {
+      clearInterval(this.sessionPushInterval);
+      this.sessionPushInterval = null;
+    }
+    this.markSessionChanged();
+    this.pushWorkSession();
+  }
+
+  startRemoteSessionPolling() {
+    if (this.remoteSessionPollInterval) return;
+    this.remoteSessionPollInterval = setInterval(() => this.pollRemoteWorkSession(), 15 * 1000);
+  }
+
+  async pollRemoteWorkSession() {
+    const token = this.authToken || this.userData?.token;
+    if (!token || store.get('offlineMode') || this.userData?.offline) return;
+
+    let response;
+    try {
+      response = await this.makeAPIRequest('/api/tools/session');
+    } catch (error) {
+      console.log('Work session poll failed:', error.message);
+      return;
+    }
+
+    const remote = response?.session;
+    if (!remote || !remote.updatedAt || remote.source === 'desktop') return;
+
+    // First poll after launch only records the current state, so an old
+    // session left in the database doesn't start monitoring by itself
+    const isFirstPoll = this.lastSeenRemoteSessionAt === undefined;
+    const isNew = remote.updatedAt !== this.lastSeenRemoteSessionAt;
+    this.lastSeenRemoteSessionAt = remote.updatedAt;
+    if (isFirstPoll || !isNew) return;
+    if (this.lastOwnSessionSyncAt && remote.updatedAt <= this.lastOwnSessionSyncAt) return;
+
+    // Ignore web sessions that stopped syncing (for example, a closed browser tab)
+    const serverNow = response.serverTime ? new Date(response.serverTime).getTime() : Date.now();
+    if (serverNow - new Date(remote.updatedAt).getTime() > 90 * 1000) return;
+
+    const hasSession = this.isMonitoring || this.isPaused;
+    if (remote.isMonitoring && !remote.isOnBreak && !this.isMonitoring) {
+      console.log('Starting monitoring to match the web app session');
+      this.startMonitoring({ sessionStart: this.isPaused ? undefined : remote.sessionStart || undefined });
+    } else if (remote.isMonitoring && remote.isOnBreak && this.isMonitoring) {
+      console.log('Pausing monitoring to match the web app break');
+      this.pauseMonitoring();
+    } else if (!remote.isMonitoring && hasSession) {
+      console.log('Stopping monitoring to match the web app');
+      this.stopMonitoring();
+    }
   }
 }
 

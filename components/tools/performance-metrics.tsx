@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Target, Zap, Clock, Moon, BarChart3, Briefcase } from 'lucide-react'
 import { useToolsSession } from '@/contexts/tools-session-context'
 import { useElectronFeatures } from '@/lib/electron-bridge'
-import { formatDurationMs } from '@/lib/tools/format'
+import { computeFocusLevel, formatDurationMs } from '@/lib/tools/format'
 
 interface ElectronProductivity {
   productivityScore?: number
@@ -48,7 +48,7 @@ export function PerformanceMetrics() {
   const productivity = Math.max(0, Math.min(100, Math.round(electronProd?.productivityScore ?? activity.productivityScore ?? 0)))
   const focus = Math.max(
     0,
-    Math.min(100, Math.round(electronProd?.focusLevel ?? productivity))
+    Math.min(100, Math.round(electronProd?.focusLevel ?? computeFocusLevel(activeMs, workSession.sessionDurationMs)))
   )
   const clientMinutes = activity.clientWorkMinutes || 0
 

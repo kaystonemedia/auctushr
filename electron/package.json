@@ -1,6 +1,6 @@
 {
   "name": "auctushr-desktop",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Main process for the AuctusHR desktop app",
   "main": "main.js",
   "private": true,
@@ -11,7 +11,9 @@
     "dist": "electron-builder --publish=never"
   },
   "dependencies": {
-    "electron-store": "^8.1.0"
+    "electron-store": "^8.1.0",
+    "electron-window-state": "^5.0.3",
+    "screenshot-desktop": "^1.15.3"
   },
   "devDependencies": {
     "electron": "^28.0.0",
@@ -33,8 +35,7 @@
       "package.json"
     ],
     "win": {
-      "target": "nsis",
-      "icon": "../public/electron/icon.ico"
+      "target": "nsis"
     },
     "mac": {
       "target": "dmg",

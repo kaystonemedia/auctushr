@@ -31,6 +31,8 @@ export async function GET(request: NextRequest) {
       success: true,
       session: getToolsSession(metadata),
       lastMonitoringSync: metadata.lastMonitoringSync || null,
+      // Lets clients judge how fresh session.updatedAt is without trusting their own clock
+      serverTime: new Date().toISOString(),
     })
   } catch (error) {
     console.error('Tools session GET error:', error)
@@ -85,7 +87,7 @@ export async function POST(request: NextRequest) {
       await supabaseAdmin.from('monitoring_events').insert({
         employee_id: authResult.user.profileId,
         event_type: 'work_session',
-        source: 'web_app',
+        source: session.source === 'desktop' ? 'desktop_app' : 'web_app',
         payload: {
           isMonitoring: session.isMonitoring,
           isOnBreak: session.isOnBreak,

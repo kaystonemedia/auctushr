@@ -90,6 +90,10 @@ export function ToolsSessionProvider({ children }: { children: React.ReactNode }
   const workSessionRef = useRef(workSession)
   const clientSessionsRef = useRef(clientSessions)
   const syncInFlightRef = useRef(false)
+  // Desktop app session sync: true while this page mirrors a session the desktop app owns
+  const followingDesktopRef = useRef(false)
+  const lastSeenRemoteSessionRef = useRef<string | null>(null)
+  const lastOwnSyncAtRef = useRef<string | null>(null)
 
   workSessionRef.current = workSession
   clientSessionsRef.current = clientSessions
@@ -196,6 +200,8 @@ export function ToolsSessionProvider({ children }: { children: React.ReactNode }
   }, [])
 
   const syncToServer = useCallback(async () => {
+    // While showing a session owned by the desktop app, let the desktop app write it
+    if (followingDesktopRef.current) return
     if (syncInFlightRef.current) return
     syncInFlightRef.current = true
     try {
@@ -204,6 +210,7 @@ export function ToolsSessionProvider({ children }: { children: React.ReactNode }
       const sessionPayload: ToolsWorkSession = {
         ...session,
         updatedAt: new Date().toISOString(),
+        source: 'web',
       }
 
       const [sessionRes, clientRes] = await Promise.all([
@@ -222,6 +229,9 @@ export function ToolsSessionProvider({ children }: { children: React.ReactNode }
       if (!sessionRes.ok || !clientRes.ok) {
         throw new Error('Background sync failed')
       }
+
+      const sessionData = await sessionRes.json().catch(() => null)
+      if (sessionData?.syncedAt) lastOwnSyncAtRef.current = sessionData.syncedAt
 
       persistLocal(sessionPayload, sessions)
     } catch (error) {
@@ -328,6 +338,53 @@ export function ToolsSessionProvider({ children }: { children: React.ReactNode }
     })
   }, [isElectronEnv, electronAPI])
 
+  // In a normal browser, mirror the session the desktop monitoring app saves to
+  // /api/tools/session (source: 'desktop'), so both apps show the same session.
+  useEffect(() => {
+    if (isElectronEnv) return
+    let cancelled = false
+
+    const pollDesktopSession = async () => {
+      try {
+        const res = await fetch('/api/tools/session')
+        if (!res.ok || cancelled) return
+        const data = await res.json()
+        const remote = data.session as ToolsWorkSession | null
+        if (!remote?.updatedAt || remote.source !== 'desktop') return
+        if (remote.updatedAt === lastSeenRemoteSessionRef.current) return
+        if (lastOwnSyncAtRef.current && remote.updatedAt <= lastOwnSyncAtRef.current) return
+        lastSeenRemoteSessionRef.current = remote.updatedAt
+
+        // The desktop app saves every 20s; older than 90s means it closed without stopping
+        const serverNow = data.serverTime ? new Date(data.serverTime).getTime() : Date.now()
+        const isFresh = serverNow - new Date(remote.updatedAt).getTime() <= 90_000
+
+        if (remote.isMonitoring && isFresh) {
+          followingDesktopRef.current = true
+          sessionStartRef.current = remote.sessionStart ? new Date(remote.sessionStart) : null
+          breakStartRef.current = remote.breakStart ? new Date(remote.breakStart) : null
+          setWorkSession(remote)
+          void refreshSummary()
+        } else if (followingDesktopRef.current || workSessionRef.current.isMonitoring) {
+          followingDesktopRef.current = false
+          sessionStartRef.current = null
+          breakStartRef.current = null
+          setWorkSession({ ...remote, isMonitoring: false, isOnBreak: false, breakStart: null })
+          void refreshSummary()
+        }
+      } catch (error) {
+        console.error('Desktop session poll failed:', error)
+      }
+    }
+
+    void pollDesktopSession()
+    const interval = setInterval(pollDesktopSession, 10_000)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [isElectronEnv, refreshSummary])
+
   useEffect(() => {
     const tick = setInterval(() => {
       setWorkSession((prev) => {
@@ -402,6 +459,7 @@ export function ToolsSessionProvider({ children }: { children: React.ReactNode }
   }, [syncToServer])
 
   const startWork = useCallback(() => {
+    followingDesktopRef.current = false
     if (isElectronEnv && electronAPI) {
       try {
         electronAPI.startMonitoring?.()
@@ -426,6 +484,7 @@ export function ToolsSessionProvider({ children }: { children: React.ReactNode }
   }, [isElectronEnv, electronAPI, syncToServer])
 
   const stopWork = useCallback(() => {
+    followingDesktopRef.current = false
     if (isElectronEnv && electronAPI) {
       try {
         electronAPI.pauseMonitoring?.()
@@ -460,6 +519,7 @@ export function ToolsSessionProvider({ children }: { children: React.ReactNode }
 
   const toggleBreak = useCallback(() => {
     if (!workSession.isMonitoring) return
+    followingDesktopRef.current = false
     if (workSession.isOnBreak) {
       const added = breakStartRef.current ? Date.now() - breakStartRef.current.getTime() : 0
       breakStartRef.current = null

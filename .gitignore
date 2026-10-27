@@ -19,6 +19,7 @@
 .DS_Store
 *.pem
 
+
 # debug
 npm-debug.log*
 yarn-debug.log*
@@ -34,6 +35,7 @@ yarn-error.log*
 
 # electron — track source + installers; skip deps/unpacked/oversized builds
 /electron/node_modules/
+/electron/dist
 /electron/dist/win-unpacked/
 /dist-electron/node_modules/
 /dist-electron/win-unpacked/

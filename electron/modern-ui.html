@@ -839,20 +839,10 @@
         try {
           // Get real data from Electron
           window.electronAPI.getProductivityData().then(data => {
-            if (data.productivityScore !== undefined) {
-              document.getElementById('productivityScore').textContent = data.productivityScore + '%';
-              document.getElementById('productivityBar').style.width = data.productivityScore + '%';
-            }
-            if (data.focusLevel !== undefined) {
-              document.getElementById('focusLevel').textContent = data.focusLevel + '%';
-              document.getElementById('focusBar').style.width = data.focusLevel + '%';
-            }
-            if (data.activeTime) {
-              document.getElementById('activeTime').textContent = data.activeTime;
-            }
-          }).catch(() => updateStatsFallback());
+            setScores(data.productivityScore, data.focusLevel);
+          }).catch(error => console.error('Failed to load productivity data:', error));
         } catch (error) {
-          updateStatsFallback();
+          console.error('Failed to load productivity data:', error);
         }
       } else {
         updateStatsFallback();
@@ -867,22 +857,32 @@
       const productivityScore = Math.min(75 + Math.floor(minutes / 2), 95);
       const focusLevel = Math.min(60 + Math.floor(minutes / 3), 90);
       
-      document.getElementById('productivityScore').textContent = productivityScore + '%';
-      document.getElementById('productivityBar').style.width = productivityScore + '%';
-      document.getElementById('focusLevel').textContent = focusLevel + '%';
-      document.getElementById('focusBar').style.width = focusLevel + '%';
-      
+      setScores(productivityScore, focusLevel);
+
       const hours = Math.floor(elapsed / 3600000);
       const mins = Math.floor((elapsed % 3600000) / 60000);
       document.getElementById('activeTime').textContent = `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
     }
     
     // Reset statistics
+    // Show the Productivity and Focus Level percentages calculated by the
+    // Electron main process (calculateSessionScores in main.js)
+    function setScores(productivityScore, focusLevel) {
+      setPercent('productivityScore', 'productivityBar', productivityScore);
+      setPercent('focusLevel', 'focusBar', focusLevel);
+    }
+
+    function setPercent(labelId, barId, value) {
+      if (typeof value !== 'number' || isNaN(value)) return;
+      const percent = Math.round(value) + '%';
+      const label = document.getElementById(labelId);
+      const bar = document.getElementById(barId);
+      if (label) label.textContent = percent;
+      if (bar) bar.style.width = percent;
+    }
+
     function resetStats() {
-      document.getElementById('productivityScore').textContent = '0%';
-      document.getElementById('productivityBar').style.width = '0%';
-      document.getElementById('focusLevel').textContent = '0%';
-      document.getElementById('focusBar').style.width = '0%';
+      setScores(0, 0);
       document.getElementById('activeTime').textContent = '00:00';
       document.getElementById('idleTime').textContent = '00:00';
     }
@@ -943,6 +943,7 @@
         monitoringBadge.textContent = 'Active';
         startBtn.innerHTML = '⏹️ Stop Monitoring';
         startBtn.className = 'btn btn-primary btn-lg';
+        pauseBtn.innerHTML = '⏸️ Pause';
         pauseBtn.disabled = false;
         pauseBtn.style.opacity = '1';
         
@@ -961,6 +962,7 @@
         monitoringBadge.textContent = 'Not Monitoring';
         startBtn.innerHTML = '▶️ Start Monitoring';
         startBtn.className = 'btn btn-primary btn-lg';
+        pauseBtn.innerHTML = '⏸️ Pause';
         pauseBtn.disabled = true;
         pauseBtn.style.opacity = '0.5';
         sessionStartTime = null;
@@ -1015,16 +1017,8 @@
         }
       }
       
-      // Calculate and update realistic productivity score
-      if (statsData.sessionDuration !== undefined && statsData.activeTime !== undefined && statsData.idleTime !== undefined) {
-        const productivityScore = calculateRealisticProductivityScore(statsData.sessionDuration, statsData.activeTime, statsData.idleTime);
-        document.getElementById('productivityScore').textContent = Math.round(productivityScore) + '%';
-        document.getElementById('productivityBar').style.width = Math.round(productivityScore) + '%';
-        
-        const focusLevel = calculateFocusLevel(statsData.activeTime, statsData.sessionDuration);
-        document.getElementById('focusLevel').textContent = Math.round(focusLevel) + '%';
-        document.getElementById('focusBar').style.width = Math.round(focusLevel) + '%';
-      }
+      // Scores are calculated once in the main process
+      setScores(statsData.productivityScore, statsData.focusLevel);
     }
 
     // Handle idle time updates
@@ -1150,6 +1144,16 @@
         updateMonitoringStatus(statusData);
       });
 
+      // Paused from this window or from the web app
+      window.electronAPI.onMonitoringStopped((data) => {
+        if (data?.status !== 'paused') return;
+        pauseMonitoring();
+        if (statsInterval) {
+          clearInterval(statsInterval);
+          statsInterval = null;
+        }
+      });
+
       window.electronAPI.onStatsUpdated((statsData) => {
         updateStatsDisplay(statsData);
       });
@@ -1225,87 +1229,8 @@
         if (idleTimeDisplay) {
           idleTimeDisplay.textContent = `${idleMinutes.toString().padStart(2, '0')}:${idleSeconds.toString().padStart(2, '0')}`;
         }
-        
-        // Calculate realistic productivity score
-        const productivityScore = calculateRealisticProductivityScore(sessionDuration, activeTime, idleTime);
-        document.getElementById('productivityScore').textContent = Math.round(productivityScore) + '%';
-        document.getElementById('productivityBar').style.width = Math.round(productivityScore) + '%';
-        
-        // Calculate focus level
-        const focusLevel = calculateFocusLevel(activeTime, sessionDuration);
-        document.getElementById('focusLevel').textContent = Math.round(focusLevel) + '%';
-        document.getElementById('focusBar').style.width = Math.round(focusLevel) + '%';
+        // Productivity and Focus Level come from the main process via updateStats()
       }
-    }
-    
-    // Calculate realistic productivity score (like Time Doctor, RescueTime)
-    function calculateRealisticProductivityScore(sessionDuration, activeTime, idleTime) {
-      if (sessionDuration === 0) return 0;
-      
-      // Base productivity on active time ratio
-      const activeRatio = activeTime / sessionDuration;
-      
-      // Productivity factors (like modern productivity apps)
-      let score = 0;
-      
-      // Active time score (0-60 points)
-      if (activeRatio >= 0.9) score += 60; // 90%+ active time
-      else if (activeRatio >= 0.8) score += 50; // 80-89% active time
-      else if (activeRatio >= 0.7) score += 40; // 70-79% active time
-      else if (activeRatio >= 0.6) score += 30; // 60-69% active time
-      else if (activeRatio >= 0.5) score += 20; // 50-59% active time
-      else if (activeRatio >= 0.4) score += 10; // 40-49% active time
-      
-      // Session length bonus (0-20 points)
-      const sessionHours = sessionDuration / 3600000;
-      if (sessionHours >= 8) score += 20; // 8+ hours
-      else if (sessionHours >= 6) score += 15; // 6-7 hours
-      else if (sessionHours >= 4) score += 10; // 4-5 hours
-      else if (sessionHours >= 2) score += 5; // 2-3 hours
-      
-      // Idle time penalty (0-20 points deduction)
-      const idleMinutes = idleTime / 60000;
-      if (idleMinutes > 30) score -= 20; // 30+ minutes idle
-      else if (idleMinutes > 20) score -= 15; // 20-29 minutes idle
-      else if (idleMinutes > 10) score -= 10; // 10-19 minutes idle
-      else if (idleMinutes > 5) score -= 5; // 5-9 minutes idle
-      
-      // Consistency bonus (0-20 points)
-      const activeMinutes = activeTime / 60000;
-      if (activeMinutes >= 480) score += 20; // 8+ hours active
-      else if (activeMinutes >= 360) score += 15; // 6+ hours active
-      else if (activeMinutes >= 240) score += 10; // 4+ hours active
-      else if (activeMinutes >= 120) score += 5; // 2+ hours active
-      
-      return Math.max(0, Math.min(100, score));
-    }
-    
-    // Calculate focus level based on active time consistency
-    function calculateFocusLevel(activeTime, sessionDuration) {
-      if (sessionDuration === 0) return 0;
-      
-      const activeRatio = activeTime / sessionDuration;
-      const activeMinutes = activeTime / 60000;
-      
-      let focusScore = 0;
-      
-      // Focus based on active time ratio
-      if (activeRatio >= 0.95) focusScore += 50; // 95%+ focus
-      else if (activeRatio >= 0.9) focusScore += 40; // 90-94% focus
-      else if (activeRatio >= 0.8) focusScore += 30; // 80-89% focus
-      else if (activeRatio >= 0.7) focusScore += 20; // 70-79% focus
-      else if (activeRatio >= 0.6) focusScore += 10; // 60-69% focus
-      
-      // Sustained focus bonus
-      if (activeMinutes >= 60) focusScore += 30; // 1+ hour sustained
-      else if (activeMinutes >= 30) focusScore += 20; // 30+ minutes sustained
-      else if (activeMinutes >= 15) focusScore += 10; // 15+ minutes sustained
-      
-      // Session consistency bonus
-      if (sessionDuration >= 3600000) focusScore += 20; // 1+ hour session
-      else if (sessionDuration >= 1800000) focusScore += 10; // 30+ minute session
-      
-      return Math.max(0, Math.min(100, focusScore));
     }
     
     // Task Stats Management

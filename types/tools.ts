@@ -17,6 +17,8 @@ export interface ToolsWorkSession {
   idleDurationMs: number
   sessionDurationMs: number
   updatedAt: string
+  /** Which app last wrote the session; the other app follows it */
+  source?: 'web' | 'desktop'
 }
 
 export interface ClientWorkSession {
