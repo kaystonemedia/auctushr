@@ -351,13 +351,18 @@ export function ToolsSessionProvider({ children }: { children: React.ReactNode }
         const data = await res.json()
         const remote = data.session as ToolsWorkSession | null
         if (!remote?.updatedAt || remote.source !== 'desktop') return
-        if (remote.updatedAt === lastSeenRemoteSessionRef.current) return
-        if (lastOwnSyncAtRef.current && remote.updatedAt <= lastOwnSyncAtRef.current) return
-        lastSeenRemoteSessionRef.current = remote.updatedAt
 
-        // The desktop app saves every 20s; older than 90s means it closed without stopping
+        // The desktop app saves every 20s; older than 90s means it closed or stopped
+        // syncing without saying so
         const serverNow = data.serverTime ? new Date(data.serverTime).getTime() : Date.now()
         const isFresh = serverNow - new Date(remote.updatedAt).getTime() <= 90_000
+
+        const isNew =
+          remote.updatedAt !== lastSeenRemoteSessionRef.current &&
+          !(lastOwnSyncAtRef.current && remote.updatedAt <= lastOwnSyncAtRef.current)
+        // Keep checking a mirrored session even without new saves, so it ends once stale
+        if (!isNew && !(followingDesktopRef.current && !isFresh)) return
+        lastSeenRemoteSessionRef.current = remote.updatedAt
 
         if (remote.isMonitoring && isFresh) {
           followingDesktopRef.current = true

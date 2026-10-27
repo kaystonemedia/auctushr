@@ -1,5 +1,5 @@
 {
-  "name": "auctushr-desktop",
+  "name": "auctushr",
   "version": "1.1.0",
   "description": "Main process for the AuctusHR desktop app",
   "main": "main.js",
@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "electron-store": "^8.1.0",
+    "electron-updater": "^6.8.11",
     "electron-window-state": "^5.0.3",
     "screenshot-desktop": "^1.15.3"
   },
@@ -20,8 +21,8 @@
     "electron-builder": "^24.6.4"
   },
   "build": {
-    "appId": "com.auctushr.desktop",
-    "productName": "AuctusHR",
+    "appId": "com.auctushr.monitor",
+    "productName": "Auctushr Monitor",
     "directories": {
       "output": "dist"
     },
@@ -44,6 +45,16 @@
     "linux": {
       "target": "AppImage",
       "icon": "../public/electron/icon.png"
+    },
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://www.auctushr.com/desktop-updates"
+      }
+    ],
+    "nsis": {
+      "include": "installer.nsh",
+      "runAfterFinish": true
     }
   }
 }

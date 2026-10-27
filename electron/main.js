@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, screen, systemPreferences, Menu, Tray, dialog, nativeTheme } = require('electron');
 const path = require('path');
 const Store = require('electron-store');
+const { autoUpdater } = require('electron-updater');
 const fs = require('fs');
 const os = require('os');
 const http = require('http');
@@ -204,8 +205,58 @@ class AuctusMonitor {
     // Initialize timer overlay
     this.setupTimerOverlay();
 
+    // Keep the login valid past the 1-hour access token lifetime
+    this.startAuthRenewal();
+
     // Follow work sessions started or stopped from the web app
     this.startRemoteSessionPolling();
+
+    this.setupAutoUpdates();
+  }
+
+  // Checks the publish location in package.json ("build.publish") for a newer
+  // version, downloads it in the background and installs it on restart.
+  setupAutoUpdates() {
+    if (!app.isPackaged) return;
+
+    autoUpdater.autoDownload = true;
+    autoUpdater.autoInstallOnAppQuit = true;
+
+    autoUpdater.on('update-available', (info) => {
+      console.log('Update available:', info.version);
+    });
+
+    autoUpdater.on('update-downloaded', async (info) => {
+      console.log('Update downloaded:', info.version);
+      const { response } = await dialog.showMessageBox({
+        type: 'info',
+        buttons: ['Restart now', 'Later'],
+        defaultId: 0,
+        cancelId: 1,
+        title: 'Update ready',
+        message: `Auctushr Monitor ${info.version} is ready to install.`,
+        detail: 'Restart now to update, or it will install the next time the app quits.'
+      });
+      if (response === 0) {
+        // Stop the session cleanly so the web app sees it end
+        this.stopMonitoring();
+        app.isQuiting = true;
+        autoUpdater.quitAndInstall();
+      }
+    });
+
+    autoUpdater.on('error', (error) => {
+      console.log('Auto-update error:', error?.message || error);
+    });
+
+    const check = () => {
+      autoUpdater.checkForUpdates().catch((error) => {
+        console.log('Update check failed:', error?.message || error);
+      });
+    };
+    check();
+    // The app usually runs all day from the tray, so check again every 4 hours
+    this.updateCheckInterval = setInterval(check, 4 * 60 * 60 * 1000);
   }
 
   async loadAppSettings() {
@@ -597,7 +648,10 @@ class AuctusMonitor {
       minWidth: 800,
       minHeight: 600,
       show: false,
-      frame: false,  // Fully frameless - no native frame at all
+      // The web app draws its own title bar; the standalone monitor page has none,
+      // so it gets the native Windows frame (minimize, maximize, close, dragging)
+      frame: this.useStandaloneMonitoringUI,
+      autoHideMenuBar: this.useStandaloneMonitoringUI,
       movable: true,
       resizable: true,
       webPreferences: {
@@ -1247,6 +1301,7 @@ class AuctusMonitor {
       this.stopTaskAndNotificationPolling();
       store.delete('userData');
       store.delete('sessionStartTime');
+      store.delete('authRefreshToken');
     });
 
     // Handle privacy settings updates
@@ -3583,6 +3638,7 @@ class AuctusMonitor {
             const token = url.searchParams.get('token');
             const user = url.searchParams.get('user');
             const success = url.searchParams.get('success');
+            const refreshToken = url.searchParams.get('refresh');
             
             console.log('OAuth callback params:', { token: token ? 'present' : 'missing', user: user ? 'present' : 'missing', success });
             
@@ -3606,7 +3662,7 @@ class AuctusMonitor {
               try {
                 const userData = JSON.parse(decodeURIComponent(user));
                 console.log('OAuth user data parsed successfully:', userData.email);
-                this.handleOAuthSuccess(token, userData);
+                this.handleOAuthSuccess(token, userData, refreshToken);
               } catch (error) {
                 console.error('Error parsing OAuth user data:', error);
                 this.handleOAuthError('Failed to parse user data');
@@ -3659,9 +3715,15 @@ class AuctusMonitor {
   }
 
   // Handle successful OAuth
-  handleOAuthSuccess(token, userData) {
+  handleOAuthSuccess(token, userData, refreshToken = null) {
     console.log('OAuth authentication successful:', userData.email);
     applyAuthSession(this, token, userData, store);
+    // Only logins from /api/auth/electron-callback include a refresh token
+    if (refreshToken) {
+      store.set('authRefreshToken', refreshToken);
+    } else {
+      store.delete('authRefreshToken');
+    }
     
     // Show success notification
     this.safeSendToMainWindow('auth-success', {
@@ -3761,7 +3823,20 @@ class AuctusMonitor {
   }
 
   // HTTP API Integration Methods
+  // Renews the access token first if it is about to expire, and once more on a 401
   async makeAPIRequest(endpoint, options = {}) {
+    await this.ensureFreshAuthToken();
+    try {
+      return await this.sendAPIRequest(endpoint, options);
+    } catch (error) {
+      if (error.statusCode === 401 && await this.refreshAuthToken()) {
+        return this.sendAPIRequest(endpoint, options);
+      }
+      throw error;
+    }
+  }
+
+  sendAPIRequest(endpoint, options = {}) {
     return new Promise((resolve, reject) => {
       const url = `${this.serverUrl}${endpoint}`;
       const parsedUrl = new URL(url);
@@ -3795,10 +3870,14 @@ class AuctusMonitor {
             if (res.statusCode >= 200 && res.statusCode < 300) {
               resolve(response);
             } else {
-              reject(new Error(`API Error: ${res.statusCode} - ${response.message || 'Unknown error'}`));
+              const apiError = new Error(`API Error: ${res.statusCode} - ${response.message || response.error || 'Unknown error'}`);
+              apiError.statusCode = res.statusCode;
+              reject(apiError);
             }
           } catch (error) {
-            reject(new Error(`Failed to parse API response: ${error.message}`));
+            const parseError = new Error(`Failed to parse API response: ${error.message}`);
+            parseError.statusCode = res.statusCode;
+            reject(parseError);
           }
         });
       });
@@ -3813,6 +3892,76 @@ class AuctusMonitor {
 
       req.end();
     });
+  }
+
+  // ---- Login renewal ----
+  // Supabase access tokens last about an hour. The desktop app keeps its own refresh
+  // token (from /api/auth/electron-callback) and swaps it for a new access token
+  // shortly before expiry, so uploads and session sync keep working all day.
+
+  getAuthTokenExpiry(token) {
+    try {
+      const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString('utf8'));
+      return payload.exp ? payload.exp * 1000 : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  async ensureFreshAuthToken() {
+    const token = this.authToken || this.userData?.token;
+    if (!token || !store.get('authRefreshToken')) return;
+    const expiresAt = this.getAuthTokenExpiry(token);
+    if (expiresAt && expiresAt - Date.now() < 5 * 60 * 1000) {
+      await this.refreshAuthToken();
+    }
+  }
+
+  // Returns true when a new access token was stored. Concurrent callers share one request,
+  // because each refresh token can only be used once.
+  refreshAuthToken() {
+    if (this.authRefreshPromise) return this.authRefreshPromise;
+
+    const refreshToken = store.get('authRefreshToken');
+    if (!refreshToken) return Promise.resolve(false);
+
+    this.authRefreshPromise = this.sendAPIRequest('/api/auth/electron-refresh', {
+      method: 'POST',
+      body: { refreshToken }
+    })
+      .then((response) => {
+        if (!response?.accessToken) return false;
+        const token = response.accessToken;
+        this.authToken = token;
+        if (this.userData) this.userData.token = token;
+        if (this.authUser) this.authUser.token = token;
+        store.set('authToken', token);
+        if (response.refreshToken) store.set('authRefreshToken', response.refreshToken);
+        const user = this.authUser || this.userData;
+        if (user) {
+          store.set('webAppAuthData', { token, user });
+          store.set('webAppAuthTimestamp', Date.now());
+        }
+        console.log('Login renewed');
+        return true;
+      })
+      .catch((error) => {
+        console.log('Login renewal failed:', error.message);
+        // The refresh token was rejected; the user has to sign in again
+        if (error.statusCode === 401) store.delete('authRefreshToken');
+        return false;
+      })
+      .finally(() => {
+        this.authRefreshPromise = null;
+      });
+
+    return this.authRefreshPromise;
+  }
+
+  startAuthRenewal() {
+    if (this.authRenewalInterval) return;
+    this.ensureFreshAuthToken();
+    this.authRenewalInterval = setInterval(() => this.ensureFreshAuthToken(), 60 * 1000);
   }
 
   async fetchTaskStats() {

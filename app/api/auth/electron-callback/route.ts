@@ -1,5 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
 import { supabaseAdmin } from '@/lib/supabase/admin'
+
+// Gives the desktop app its own Supabase session (separate from the browser's), so it
+// can renew its access token with its own refresh token. Sharing the browser's refresh
+// token would break one of the two sessions, because Supabase rotates refresh tokens.
+async function createDesktopSession(email: string) {
+  const { data: link, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
+    type: 'magiclink',
+    email,
+  })
+  if (linkError || !link?.properties?.hashed_token) return null
+
+  const verifier = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { auth: { persistSession: false, autoRefreshToken: false } }
+  )
+  const { data, error } = await verifier.auth.verifyOtp({
+    type: 'magiclink',
+    token_hash: link.properties.hashed_token,
+  })
+  if (error || !data.session) return null
+  return data.session
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -74,8 +98,16 @@ export async function GET(request: NextRequest) {
     
     if (isHttpCallback) {
       // New HTTP callback method - redirect to localhost callback server
-      const callbackUrl = `http://localhost:8765/oauth/callback?success=true&token=${effectiveToken}&user=${encodedUser}&state=${state || ''}`
-      console.log('Redirecting to HTTP callback server:', callbackUrl)
+      const desktopSession = authUser.email ? await createDesktopSession(authUser.email) : null
+      if (!desktopSession) {
+        console.warn('Could not create a separate desktop session; desktop login will not auto-renew')
+      }
+      const desktopToken = desktopSession?.access_token || effectiveToken!
+      const refreshParam = desktopSession?.refresh_token
+        ? `&refresh=${encodeURIComponent(desktopSession.refresh_token)}`
+        : ''
+      const callbackUrl = `http://localhost:8765/oauth/callback?success=true&token=${encodeURIComponent(desktopToken)}${refreshParam}&user=${encodedUser}&state=${state || ''}`
+      console.log('Redirecting to HTTP callback server for:', authUser.email)
       return NextResponse.redirect(callbackUrl)
     } else {
       // Old protocol callback method
