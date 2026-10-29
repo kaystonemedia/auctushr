@@ -124,21 +124,19 @@ export function AddManagerModal({ isOpen, onClose, onSuccess }: AddManagerModalP
       if (!response.ok) {
         throw new Error(payload.error || 'Failed to create manager')
       }
-      const result = payload.employee as { id: string; emailFailed?: boolean }
+      const result = payload.employee as { id: string }
+      const invite = payload.invite as { sent: boolean; error: string | null } | undefined
 
-      // Check if the error message indicates email failure but manager was created
-      const emailFailed = Boolean((result as { emailFailed?: boolean } | null | undefined)?.emailFailed)
-      
-      if (emailFailed) {
+      if (invite?.sent) {
         toast({
           title: 'Manager added successfully',
-          description: 'Manager created, but onboarding email failed to send. Please check your SMTP configuration in Settings → Notifications → Email.',
-          variant: 'default',
+          description: 'An invite email with a link to set their password has been sent.',
         })
       } else {
         toast({
-          title: 'Manager added successfully',
-          description: 'The manager will receive an email with instructions to set up their account.',
+          title: 'Manager added, but the invite email was not sent',
+          description: invite?.error || 'Unknown error. You can resend the invite from the managers list.',
+          variant: 'destructive',
         })
       }
 

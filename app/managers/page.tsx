@@ -24,6 +24,7 @@ import { MoreHorizontal, Plus, Search, Users } from 'lucide-react'
 import { AddManagerModal } from '@/components/managers/add-manager-modal'
 import { TeamsTable } from '@/components/managers/teams-table'
 import { useToast } from '@/components/ui/use-toast'
+import { resendOnboardingInvite } from '@/lib/email-service'
 
 // Define the manager type
 interface Manager {
@@ -34,6 +35,7 @@ interface Manager {
   department?: string
   position?: string
   status: 'active' | 'inactive'
+  hasPassword: boolean
   createdAt: Date
 }
 
@@ -71,6 +73,7 @@ export default function ManagersPage() {
             department: employee.department,
             position: employee.position,
             status: employee.status || 'active',
+            hasPassword: Boolean(employee.hasPassword),
             createdAt: employee.createdAt ? new Date(employee.createdAt) : new Date(),
           })) as Manager[]
         setManagers(managersData)
@@ -251,6 +254,24 @@ export default function ManagersPage() {
                         >
                           Edit
                         </DropdownMenuItem>
+                        {!manager.hasPassword && (
+                          <DropdownMenuItem
+                            onClick={async () => {
+                              try {
+                                await resendOnboardingInvite(manager.id)
+                                toast({ title: 'Invite sent', description: `A new invite was emailed to ${manager.email}.` })
+                              } catch (error) {
+                                toast({
+                                  title: 'Invite not sent',
+                                  description: error instanceof Error ? error.message : 'Failed to resend invite',
+                                  variant: 'destructive',
+                                })
+                              }
+                            }}
+                          >
+                            Resend invite
+                          </DropdownMenuItem>
+                        )}
                         <DropdownMenuItem
                           className="text-red-600"
                           onClick={() => {
@@ -285,6 +306,7 @@ export default function ManagersPage() {
               department: manager.department || 'Unassigned',
               position: manager.position || 'Pending Assignment',
               status: 'active',
+              hasPassword: false,
               createdAt: manager.createdAt || new Date()
             },
             ...prev

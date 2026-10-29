@@ -2,16 +2,17 @@
 
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import { Employee } from '@/types/employee'
-import { Edit2, Trash2, ChevronLeft, ChevronRight, Search, ChevronUp, ChevronDown, Loader2 } from 'lucide-react'
+import { Edit2, Trash2, Mail, ChevronLeft, ChevronRight, Search, ChevronUp, ChevronDown, Loader2 } from 'lucide-react'
 
 interface EmployeeTableProps {
   employees: Employee[]
   onEdit: (employee: Employee) => void
   onDelete: (employeeId: string) => void
+  onResendInvite?: (employee: Employee) => void
   hideManagerColumn?: boolean
 }
 
-export function EmployeeTable({ employees, onEdit, onDelete, hideManagerColumn = false }: EmployeeTableProps) {
+export function EmployeeTable({ employees, onEdit, onDelete, onResendInvite, hideManagerColumn = false }: EmployeeTableProps) {
   const [sortField, setSortField] = useState<keyof Employee>('firstName')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
   const [currentPage, setCurrentPage] = useState(1)
@@ -239,6 +240,14 @@ export function EmployeeTable({ employees, onEdit, onDelete, hideManagerColumn =
                  >
                    Edit
                  </button>
+                 {onResendInvite && !employee.hasPassword && (
+                   <button
+                     onClick={() => onResendInvite(employee)}
+                     className="px-3 py-1 text-sm text-gray-700 hover:text-gray-900 font-medium"
+                   >
+                     Resend invite
+                   </button>
+                 )}
                  <button
                    onClick={() => onDelete(employee.id)}
                    className="px-3 py-1 text-sm text-red-600 hover:text-red-800 font-medium"
@@ -400,6 +409,15 @@ export function EmployeeTable({ employees, onEdit, onDelete, hideManagerColumn =
                       >
                         <Edit2 className="h-4 w-4" />
                       </button>
+                      {onResendInvite && !employee.hasPassword && (
+                        <button
+                          onClick={() => onResendInvite(employee)}
+                          className="inline-flex items-center justify-center h-8 w-8 text-gray-900 hover:text-white hover:bg-gray-900 rounded-full transition-colors"
+                          title="Resend invite email"
+                        >
+                          <Mail className="h-4 w-4" />
+                        </button>
+                      )}
                       <button
                         onClick={() => onDelete(employee.id)}
                         className="inline-flex items-center justify-center h-8 w-8 text-gray-900 hover:text-white hover:bg-gray-900 rounded-full transition-colors"

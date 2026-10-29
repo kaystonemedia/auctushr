@@ -46,7 +46,7 @@ interface AuthContextType {
   firebaseUser: LegacyFirebaseUser | null
   isLoading: boolean
   error: string | null
-  login: (email: string, password: string, isPasswordSetup?: boolean) => Promise<void>
+  login: (email: string, password: string, isPasswordSetup?: boolean, inviteToken?: string) => Promise<void>
   logout: () => Promise<void>
   updateUser: (data: Partial<User>) => Promise<void>
   requiresPasswordChange: boolean
@@ -137,7 +137,7 @@ export function NewAuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [user, isLoading, pathname, router])
 
-  const login = async (email: string, password: string, isPasswordSetup = false) => {
+  const login = async (email: string, password: string, isPasswordSetup = false, inviteToken?: string) => {
     try {
       setIsLoading(true)
       setError(null)
@@ -146,7 +146,7 @@ export function NewAuthProvider({ children }: { children: React.ReactNode }) {
         const setupResponse = await fetch('/api/auth/first-time-password', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, password })
+          body: JSON.stringify({ email, password, inviteToken })
         })
         const setupPayload = await setupResponse.json()
         if (!setupResponse.ok) {

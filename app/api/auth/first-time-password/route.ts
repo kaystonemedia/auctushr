@@ -1,12 +1,17 @@
 import { NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { isMigratedFirestoreProfile } from '@/lib/migrated-profile'
+import { validateSignUpPassword } from '@/lib/password-validation'
 
 export const dynamic = 'force-dynamic'
 
+const INVITE_REQUIRED_MESSAGE =
+  'For security, please open the link in your invite email to create your password. If you cannot find it, ask your administrator to resend the invite.'
+
 export async function POST(request: Request) {
   try {
-    const { email, password } = await request.json()
+    const { email, password, inviteToken } = await request.json()
     const normalizedEmail = String(email || '').trim().toLowerCase()
 
     if (!normalizedEmail || !password) {
@@ -29,6 +34,44 @@ export async function POST(request: Request) {
     }
 
     let authUserId = profile.auth_user_id as string | null
+    let authUserMetadata: Record<string, unknown> | null = null
+
+    // Users created through POST /api/employees can only set their first password
+    // with the invite code from their email (?invite=... on the sign-in link);
+    // otherwise anyone who knows their email address could claim the account here.
+    if (authUserId) {
+      const { data: authUserData } = await supabaseAdmin.auth.admin.getUserById(authUserId)
+      if (authUserData?.user?.user_metadata?.requires_password_setup === true) {
+        const inviteError = NextResponse.json(
+          { error: INVITE_REQUIRED_MESSAGE },
+          { status: 403 }
+        )
+        if (!inviteToken) return inviteError
+
+        // Check the password first: verifying the invite code uses it up.
+        const passwordError = validateSignUpPassword(password)
+        if (passwordError) {
+          return NextResponse.json({ error: passwordError }, { status: 400 })
+        }
+
+        const verifier = createClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+          { auth: { persistSession: false, autoRefreshToken: false } }
+        )
+        const { data: verified, error: verifyError } = await verifier.auth.verifyOtp({
+          type: 'recovery',
+          token_hash: inviteToken
+        })
+        if (verifyError || verified.user?.id !== authUserId) {
+          return NextResponse.json(
+            { error: 'This invite link is invalid, has expired, or belongs to a different email. Ask your administrator to resend the invite.' },
+            { status: 403 }
+          )
+        }
+        authUserMetadata = { ...(authUserData.user.user_metadata || {}), requires_password_setup: false }
+      }
+    }
 
     if (!authUserId) {
       const { data: createdUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
@@ -41,7 +84,10 @@ export async function POST(request: Request) {
       }
       authUserId = createdUser.user.id
     } else {
-      const { error: updateAuthError } = await supabaseAdmin.auth.admin.updateUserById(authUserId, { password })
+      const { error: updateAuthError } = await supabaseAdmin.auth.admin.updateUserById(
+        authUserId,
+        authUserMetadata ? { password, user_metadata: authUserMetadata } : { password }
+      )
       if (updateAuthError) {
         return NextResponse.json({ error: updateAuthError.message }, { status: 400 })
       }

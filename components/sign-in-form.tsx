@@ -15,7 +15,8 @@ type SignInStep = 'email' | 'password' | 'setup'
 export function SignInForm() {
   const { login, isLoading: authLoading, user } = useNewAuth()
   const searchParams = useSearchParams()
-  
+  const inviteToken = searchParams.get('invite') || undefined
+
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -136,6 +137,9 @@ export function SignInForm() {
       }
 
       if (preflight.needsPasswordSetup || !preflight.hasPassword || !preflight.hasAuthUser) {
+        if (preflight.requiresInviteLink && !inviteToken) {
+          throw new Error('Please open the link in your invite email to create your password. If you cannot find it, ask your administrator to resend the invite.')
+        }
         setStep('setup')
         if (preflight.isMigrated) {
           setError('Welcome back. Please choose a new password to finish moving your account to our new system.')
@@ -299,6 +303,7 @@ export function SignInForm() {
       {step === 'setup' && (
         <FirstTimePasswordChange
           email={email}
+          inviteToken={inviteToken}
           onSuccess={() => {
             // After successful password setup, redirect to dashboard
             window.location.href = '/dashboard'

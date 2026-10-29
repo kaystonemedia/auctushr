@@ -6,6 +6,7 @@ import { EmployeeTable } from '@/components/employee-table'
 import { EmployeeForm } from '@/components/employee-form'
 import { Employee, EmployeeFormData } from '@/types/employee'
 import { toast } from 'react-hot-toast'
+import { resendOnboardingInvite } from '@/lib/email-service'
 import { useNewAuth } from '@/contexts/new-auth-context'
 
 function normalizeEmployeeData(emp: Employee | null): EmployeeFormData | undefined {
@@ -98,20 +99,15 @@ export default function EmployeesPage() {
       throw new Error(err.error || 'Failed to create employee')
     }
 
-    const { employee } = await response.json()
+    const { employee, invite } = await response.json()
 
-    try {
-      const { sendOnboardingEmail } = await import('@/lib/email-service')
-      await sendOnboardingEmail({
-        name: `${data.firstName} ${data.lastName}`,
-        email: data.email,
-        role: 'employee',
-        position: data.position?.trim() || 'Pending Assignment',
-        department: data.department?.trim() || 'Unassigned',
-      })
+    if (invite?.sent) {
       toast.success('Employee added and onboarding email sent!')
-    } catch {
-      toast.success('Employee added successfully')
+    } else {
+      toast(`Employee added, but the onboarding email was not sent: ${invite?.error || 'unknown error'}`, {
+        icon: '⚠️',
+        duration: 8000,
+      })
     }
 
     setEmployees((prev) => [...prev, { ...employee, hireDate: new Date(employee.hireDate) }])
@@ -172,6 +168,15 @@ export default function EmployeesPage() {
     }
   }
 
+  const handleResendInvite = async (employee: Employee) => {
+    try {
+      await resendOnboardingInvite(employee.id)
+      toast.success(`A new invite was emailed to ${employee.email}`)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to resend invite')
+    }
+  }
+
   const handleEdit = (employee: Employee) => {
     setSelectedEmployee(employee)
     setIsFormOpen(true)
@@ -223,6 +228,7 @@ export default function EmployeesPage() {
           employees={employees}
           onEdit={handleEdit}
           onDelete={handleDelete}
+          onResendInvite={handleResendInvite}
           hideManagerColumn={user?.role === 'manager'}
         />
       </div>

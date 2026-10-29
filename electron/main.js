@@ -12,6 +12,38 @@ const {
   restoreStoredAuth
 } = require('./supabase-session');
 
+// Copy console output to %APPDATA%\<app>\logs\main.log, so problems in the installed
+// app (which has no terminal) can be diagnosed afterwards
+(function setupFileLog() {
+  const MAX_LOG_BYTES = 5 * 1024 * 1024;
+  let logFile = null;
+  const getLogFile = () => {
+    if (logFile) return logFile;
+    const dir = path.join(app.getPath('userData'), 'logs');
+    fs.mkdirSync(dir, { recursive: true });
+    logFile = path.join(dir, 'main.log');
+    try {
+      if (fs.statSync(logFile).size > MAX_LOG_BYTES) fs.renameSync(logFile, path.join(dir, 'main.old.log'));
+    } catch (_) {}
+    return logFile;
+  };
+  const write = (level, args) => {
+    try {
+      const text = args.map((a) => (a instanceof Error ? a.stack : typeof a === 'string' ? a : JSON.stringify(a))).join(' ');
+      // Never write tokens to disk
+      const safe = text.replace(/eyJ[\w-]+\.[\w-]+\.[\w-]+/g, '[token]');
+      fs.appendFileSync(getLogFile(), `${new Date().toISOString()} ${level} ${safe}\n`);
+    } catch (_) {}
+  };
+  for (const level of ['log', 'warn', 'error']) {
+    const original = console[level].bind(console);
+    console[level] = (...args) => {
+      original(...args);
+      write(level.toUpperCase(), args);
+    };
+  }
+})();
+
 const ENV_FILES = ['.env.local', '.env.production', '.env'];
 const DEFAULT_PROD_URL = 'https://www.auctushr.com';
 
@@ -4154,8 +4186,12 @@ class AuctusMonitor {
     this.markSessionChanged();
     this.pushWorkSession();
     if (this.sessionPushInterval) clearInterval(this.sessionPushInterval);
-    // Same cadence as the web app's own session sync
-    this.sessionPushInterval = setInterval(() => this.pushWorkSession(), 20 * 1000);
+    // Same cadence as the web app's own session sync. Check for a newer web change
+    // (stop, break) first, so the periodic save never overwrites it.
+    this.sessionPushInterval = setInterval(async () => {
+      await this.pollRemoteWorkSession();
+      if (this.isMonitoring || this.isPaused) this.pushWorkSession();
+    }, 20 * 1000);
   }
 
   stopSessionPush() {

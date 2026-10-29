@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { authenticateRequest } from "@/lib/api-auth"
 import { supabaseAdmin } from "@/lib/supabase/admin"
+import { sendOnboardingInvite } from "@/lib/onboarding-invite"
 
 export async function GET(request: Request) {
   try {
@@ -154,7 +155,17 @@ export async function POST(request: Request) {
       throw error
     }
 
+    const invite = await sendOnboardingInvite({
+      email,
+      name: `${data.first_name || ''} ${data.last_name || ''}`.trim(),
+      role,
+      position: data.position,
+      department: data.department,
+      origin: new URL(request.url).origin
+    })
+
     return NextResponse.json({
+      invite: { sent: invite.sent, error: invite.error || null },
       employee: {
         id: data.id,
         uid: data.auth_user_id,

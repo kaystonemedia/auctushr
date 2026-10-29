@@ -29,7 +29,15 @@ export async function GET(request: Request) {
 
     const needsPasswordSetup = profileNeedsPasswordSetup(profile)
 
+    // Invited users can only create their first password from their invite link.
+    let requiresInviteLink = false
+    if (needsPasswordSetup && profile.auth_user_id) {
+      const { data: authUserData } = await supabaseAdmin.auth.admin.getUserById(profile.auth_user_id)
+      requiresInviteLink = authUserData?.user?.user_metadata?.requires_password_setup === true
+    }
+
     return NextResponse.json({
+      requiresInviteLink,
       exists: true,
       id: profile.id,
       uid: profile.auth_user_id || null,

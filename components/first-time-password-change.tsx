@@ -10,12 +10,15 @@ import { validateSignUpPassword } from "@/lib/password-validation"
 
 interface FirstTimePasswordChangeProps {
   email: string
+  /** Invite code from the onboarding email link (?invite=...). */
+  inviteToken?: string
   onSuccess: () => void
   onCancel: () => void
 }
 
 export function FirstTimePasswordChange({
   email,
+  inviteToken,
   onSuccess,
   onCancel
 }: FirstTimePasswordChangeProps) {
@@ -42,7 +45,7 @@ export function FirstTimePasswordChange({
       }
 
       // Use login with isPasswordSetup=true to create the account and set the password
-      await login(email, password, true)
+      await login(email, password, true, inviteToken)
       onSuccess()
     } catch (error) {
       console.error('Password setup error:', error)

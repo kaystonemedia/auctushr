@@ -24,6 +24,7 @@ import { AddAdminModal } from '@/components/administrators/add-admin-modal'
 import { OverviewTable } from '@/components/administrators/overview-table'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { useToast } from '@/components/ui/use-toast'
+import { resendOnboardingInvite } from '@/lib/email-service'
 
 // Define the admin type
 interface Administrator {
@@ -34,6 +35,7 @@ interface Administrator {
   department: string
   position: string
   status: 'active' | 'inactive'
+  hasPassword: boolean
   createdAt: Date
 }
 
@@ -71,6 +73,7 @@ export default function AdministratorsPage() {
             department: employee.department || '',
             position: employee.position || '',
             status: employee.status || 'active',
+            hasPassword: Boolean(employee.hasPassword),
             createdAt: employee.createdAt ? new Date(employee.createdAt) : new Date(),
           })) as Administrator[]
         setAdministrators(adminsData)
@@ -247,6 +250,24 @@ export default function AdministratorsPage() {
                         >
                           Edit
                         </DropdownMenuItem>
+                        {!admin.hasPassword && (
+                          <DropdownMenuItem
+                            onClick={async () => {
+                              try {
+                                await resendOnboardingInvite(admin.id)
+                                toast({ title: 'Invite sent', description: `A new invite was emailed to ${admin.email}.` })
+                              } catch (error) {
+                                toast({
+                                  title: 'Invite not sent',
+                                  description: error instanceof Error ? error.message : 'Failed to resend invite',
+                                  variant: 'destructive',
+                                })
+                              }
+                            }}
+                          >
+                            Resend invite
+                          </DropdownMenuItem>
+                        )}
                         <DropdownMenuItem
                           className="text-red-600"
                           onClick={() => {
@@ -278,6 +299,7 @@ export default function AdministratorsPage() {
             lastName: admin.lastName,
             department: admin.department,
             position: admin.position,
+            hasPassword: false,
             createdAt: new Date()
           }])
           setIsAddModalOpen(false)

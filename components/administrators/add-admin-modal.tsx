@@ -125,6 +125,7 @@ export function AddAdminModal({ isOpen, onClose, onSuccess }: AddAdminModalProps
         throw new Error(payload.error || 'Failed to create administrator')
       }
       const result = payload.employee as { id: string }
+      const invite = payload.invite as { sent: boolean; error: string | null } | undefined
 
       const newAdmin: Administrator = {
         id: result.id,
@@ -137,10 +138,18 @@ export function AddAdminModal({ isOpen, onClose, onSuccess }: AddAdminModalProps
         createdAt: new Date()
       }
 
-      toast({
-        title: 'Success',
-        description: 'Administrator added successfully. They will receive instructions to set up their account.',
-      })
+      if (invite?.sent) {
+        toast({
+          title: 'Success',
+          description: 'Administrator added. An invite email with a link to set their password has been sent.',
+        })
+      } else {
+        toast({
+          title: 'Administrator added, but the invite email was not sent',
+          description: invite?.error || 'Unknown error. You can resend the invite from the administrators list.',
+          variant: 'destructive',
+        })
+      }
 
       onSuccess(newAdmin)
       onClose()
