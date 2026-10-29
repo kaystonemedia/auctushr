@@ -5,7 +5,7 @@ import { useNewAuth } from "@/contexts/new-auth-context"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Loader2 } from "lucide-react"
+import { Eye, EyeOff, Loader2 } from "lucide-react"
 import { validateSignUpPassword } from "@/lib/password-validation"
 
 interface FirstTimePasswordChangeProps {
@@ -25,6 +25,8 @@ export function FirstTimePasswordChange({
   const { login } = useNewAuth()
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
 
@@ -75,26 +77,46 @@ export function FirstTimePasswordChange({
         </Alert>
       )}
 
-      <div>
+      <div className="relative">
         <Input
-          type="password"
+          type={showPassword ? "text" : "password"}
           placeholder="New password"
+          autoComplete="new-password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required
           disabled={loading}
+          className="pr-10"
         />
+        <button
+          type="button"
+          onClick={() => setShowPassword((value) => !value)}
+          className="absolute inset-y-0 right-0 flex items-center px-3 text-gray-500 hover:text-gray-700"
+          aria-label={showPassword ? "Hide password" : "Show password"}
+        >
+          {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+        </button>
       </div>
 
-      <div>
+      <div className="relative">
         <Input
-          type="password"
+          type={showConfirmPassword ? "text" : "password"}
           placeholder="Confirm new password"
+          autoComplete="new-password"
           value={confirmPassword}
           onChange={(e) => setConfirmPassword(e.target.value)}
           required
           disabled={loading}
+          className="pr-10"
         />
+        <button
+          type="button"
+          onClick={() => setShowConfirmPassword((value) => !value)}
+          className="absolute inset-y-0 right-0 flex items-center px-3 text-gray-500 hover:text-gray-700"
+          aria-label={showConfirmPassword ? "Hide password" : "Show password"}
+        >
+          {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+        </button>
       </div>
 
       <div className="flex space-x-4">
